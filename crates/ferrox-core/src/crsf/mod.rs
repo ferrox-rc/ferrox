@@ -420,7 +420,7 @@ impl CrsfConfigEngine {
             folder_loading: false,
             folder_name: [0; MAX_FOLDER_NAME_LEN],
             folder_name_len: 0,
-            parent_map: [0xFF; MAX_PARAM_MAP],
+            parent_map: [0; MAX_PARAM_MAP], // Zeroed by default to sit in .bss
             has_root_folder: false,
             cmd_info: [0; 24],
             cmd_info_len: 0,
@@ -1123,6 +1123,7 @@ pub fn start_config() {
         CONFIG_ENGINE.folder_loading = false;
         CONFIG_ENGINE.folder_name = [0; MAX_FOLDER_NAME_LEN];
         CONFIG_ENGINE.folder_name_len = 0;
+        CONFIG_ENGINE.parent_map = [0xFF; MAX_PARAM_MAP];
         CONFIG_ENGINE.has_root_folder = false;
         CHUNK_LEN = 0;
         CHUNK_PARAM_ID = 0;
@@ -1509,6 +1510,7 @@ mod tests {
             CHUNK_LEN = 0;
             CHUNK_PARAM_ID = 0;
             CONFIG_ENGINE = CrsfConfigEngine::new();
+            CONFIG_ENGINE.parent_map = [0xFF; MAX_PARAM_MAP];
             TELEMETRY = CrsfTelemetry::new();
             uart::mock::clear();
         }

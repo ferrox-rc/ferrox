@@ -538,15 +538,15 @@ pub struct RadioStorage {
 
 impl RadioStorage {
     pub const fn empty() -> Self {
-        Self {
-            radio: RadioConfig::default_factory(),
-            active_model: ModelConfig::default_for_index(0),
-        }
+        unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
     }
 
     #[allow(dead_code)]
     pub const fn default_factory() -> Self {
-        Self::empty()
+        Self {
+            radio: RadioConfig::default_factory(),
+            active_model: ModelConfig::default_for_index(0),
+        }
     }
 
     pub fn init_default(&mut self) {
@@ -1291,7 +1291,12 @@ static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 /// Get global mutable reference to persistent RadioStorage.
 #[allow(static_mut_refs)]
 pub fn get_storage() -> &'static mut RadioStorage {
-    unsafe { &mut GLOBAL_STORAGE }
+    unsafe {
+        if GLOBAL_STORAGE.radio.magic == 0 {
+            GLOBAL_STORAGE.init_default();
+        }
+        &mut GLOBAL_STORAGE
+    }
 }
 
 /// CCITT CRC-16 (polynomial 0x1021, init 0xFFFF).
