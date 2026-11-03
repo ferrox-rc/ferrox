@@ -297,12 +297,34 @@ impl Buzzer {
                 self.remaining_ms = 0;
                 self.hardware_off();
 
-                // If repeats remain, start inter-beep pause
+                // If repeats remain, start inter-beep pause or immediately re-trigger
                 if self.repeat_count > 0 {
-                    self.pause_ms = self.active_pause_ms;
+                    if self.active_pause_ms > 0 {
+                        self.pause_ms = self.active_pause_ms;
+                    } else {
+                        self.repeat_count -= 1;
+                        self.remaining_ms = self.active_len_ms;
+                        self.hardware_on(self.active_freq);
+                    }
                 } else if self.seq_len > 0 {
-                    // Sequence note completed, pause before next note
-                    self.pause_ms = self.active_pause_ms;
+                    if self.active_pause_ms > 0 {
+                        self.pause_ms = self.active_pause_ms;
+                    } else {
+                        // Advance to next note in sequence without pause gap
+                        self.seq_idx += 1;
+                        if self.seq_idx < self.seq_len {
+                            let note = self.seq_notes[self.seq_idx as usize];
+                            self.active_freq = note.freq_hz;
+                            self.active_len_ms = note.duration_ms;
+                            self.active_pause_ms = note.pause_ms;
+                            self.remaining_ms = note.duration_ms;
+                            self.pause_ms = note.pause_ms;
+                            self.hardware_on(note.freq_hz);
+                        } else {
+                            self.seq_len = 0;
+                            self.seq_idx = 0;
+                        }
+                    }
                 }
             } else {
                 self.remaining_ms -= elapsed_ms;
@@ -623,5 +645,28 @@ mod tests {
         buzzer.tick(10);
         assert_eq!(buzzer.remaining_ms, 0);
         assert!(buzzer.is_vario_active());
+    }
+
+    #[test]
+    fn test_zero_pause_sequence_advances() {
+        let mut buzzer = Buzzer::new();
+        let notes = [
+            Note::new(1000, 50, 0), // 50ms pulse, 0ms pause (legato)
+            Note::new(2000, 50, 0),
+        ];
+        buzzer.play_sequence(&notes);
+        assert_eq!(buzzer.active_freq, 1000);
+        assert_eq!(buzzer.remaining_ms, 50);
+
+        // Tick 50ms: note 1 finishes, note 2 should immediately activate without being stuck
+        buzzer.tick(50);
+        assert_eq!(buzzer.active_freq, 2000);
+        assert_eq!(buzzer.remaining_ms, 50);
+        assert_eq!(buzzer.seq_idx, 1);
+
+        // Tick 50ms: note 2 finishes, sequence completes
+        buzzer.tick(50);
+        assert_eq!(buzzer.remaining_ms, 0);
+        assert_eq!(buzzer.seq_len, 0);
     }
 }

@@ -32,10 +32,10 @@ pub fn render(
     lcd.draw_str_6x10(36, 24, rx_str, false);
 
     // Line 3 (y = 34): Throttle Curve info
-    let c_pts = if active.thr_curve_pts == 9 {
-        "9-PT"
-    } else {
-        "5-PT"
+    let c_pts = match active.thr_curve_pts {
+        9 => "9-PT",
+        7 => "7-PT",
+        _ => "5-PT",
     };
     let c_sm = if active.thr_curve_smooth != 0 {
         "SMOOTH"

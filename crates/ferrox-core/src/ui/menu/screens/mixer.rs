@@ -622,9 +622,13 @@ pub fn update_mixer_line_edit(
         if ctrl.editing {
             ctrl.editing = false;
         } else {
+            let template = storage.active_model.wing_tail_mix;
+            let has_diff = template == 1 || template == 3;
+            let first_mix_row = if has_diff { 3 } else { 2 };
+            let target_row = first_mix_row + mix_idx;
             ctrl.state = MenuState::WingMixer;
-            ctrl.selected_item = mix_idx + 1;
-            ctrl.scroll_offset = (mix_idx + 1).saturating_sub(3);
+            ctrl.selected_item = target_row;
+            ctrl.scroll_offset = target_row.saturating_sub(3);
             ctrl.waiting_release = true;
             buzzer.click();
             return;
@@ -841,7 +845,13 @@ pub fn update_global_vars(
     } else {
         if keys.cancel {
             storage::save_active_model(storage);
-            ctrl.return_to_main_menu();
+            let template = storage.active_model.wing_tail_mix;
+            let has_diff = template == 1 || template == 3;
+            let gvar_item_idx = if has_diff { 2 } else { 1 };
+            ctrl.state = MenuState::WingMixer;
+            ctrl.selected_item = gvar_item_idx;
+            ctrl.scroll_offset = gvar_item_idx.saturating_sub(3);
+            ctrl.waiting_release = true;
             buzzer.click();
             return;
         }
