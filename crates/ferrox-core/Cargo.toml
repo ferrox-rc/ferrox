@@ -1,0 +1,28 @@
+[package]
+name = "ferrox-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "ferrox_core"
+path = "src/lib.rs"
+
+[dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+embedded-graphics = "0.8.1"
+usb-device = "0.3.2"
+stm32-usbd = "0.8.0"
+usbd-hid = "0.10.2"
+usbd-serial = "0.2.2"
+stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072"] }
+
+[features]
+default = ["board-i6x"]
+board-i6s = ["touch"]
+board-i6x = []
+touch = []
+stm32 = []
+apm32 = []

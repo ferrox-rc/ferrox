@@ -1,6 +1,7 @@
 //! Page 0 (P1/5): Primary Gimbals & Trims, Switches, Pots, and Trim status.
 
 use crate::adc;
+use crate::board::BoardProfile;
 use crate::display::St7567;
 use crate::input::InputState;
 use crate::storage::{AdcInputMode, RadioStorage};
@@ -144,7 +145,11 @@ pub fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &Rad
 
 /// Render the adaptive switch and pot layout (y = 46..53) based on dynamic channel mappings.
 pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
-    let max_aux = if storage.radio.ext_adc != 0 { 11 } else { 6 };
+    let max_aux = if storage.radio.ext_adc != 0 {
+        crate::board::ActiveBoard::TOTAL_ADC_COUNT
+    } else {
+        6
+    };
     let mut sw_list: [(&str, crate::input::SwitchPos, bool, u8); 16] =
         [("", crate::input::SwitchPos::Up, false, 0); 16];
     let mut sw_count = 0usize;

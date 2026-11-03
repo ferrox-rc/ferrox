@@ -50,7 +50,9 @@ pub struct TelemetryData {
     pub rssi: u8,           // 0..100%
     pub rx_voltage_mv: u16, // in millivolts (e.g. 5000 for 5.00V)
     pub alt_m: i16,         // in meters (e.g. 150 for 150m)
+    pub alt_dm: i16,        // in decimeters (0.1m, e.g. 1500 for 150.0m)
     pub vspeed_cms: i16,    // in cm/s (e.g. +120 for +1.2 m/s)
+    pub has_vspeed: bool,   // true if explicit vertical speed is reported by telemetry
     pub rpm: u32,           // RPM decoded from sensor 0x02
     pub temp_c_x10: i16,    // Temperature in 0.1 deg C decoded from sensor 0x01
     pub last_rx_voltage_ms: u32,
@@ -75,7 +77,9 @@ impl TelemetryData {
             rssi: 0,
             rx_voltage_mv: 0,
             alt_m: 0,
+            alt_dm: 0,
             vspeed_cms: 0,
+            has_vspeed: false,
             rpm: 0,
             temp_c_x10: 0,
             last_rx_voltage_ms: 0,
@@ -541,11 +545,14 @@ impl Afhds2a {
                     0x09 => {
                         // Climb / Vertical speed (signed 16-bit in 0.1 m/s = 10 cm/s units)
                         self.telemetry.vspeed_cms = (val as i16) * 10;
+                        self.telemetry.has_vspeed = true;
                         self.telemetry.last_vspd_ms = now_ms;
                     }
                     0x41 | 0x83 | 0xF9 => {
                         // Altitude sensor (signed 16-bit altitude in meters)
-                        self.telemetry.alt_m = val as i16;
+                        let alt = val as i16;
+                        self.telemetry.alt_m = alt;
+                        self.telemetry.alt_dm = alt.saturating_mul(10);
                         self.telemetry.last_alt_ms = now_ms;
                     }
                     0xFE => {
@@ -788,8 +795,6 @@ mod tests {
 
     #[test]
     fn test_afhds2a_rf_power_levels() {
-        use crate::rf::a7105;
-
         let mut radio = Afhds2a::new(0x1234_5678);
         assert_eq!(radio.rf_power_idx, 0);
 
@@ -852,23 +857,23 @@ mod tests {
         rx_buf[1..5].copy_from_slice(&radio.tx_id.to_le_bytes());
         rx_buf[5..9].copy_from_slice(&radio.rx_id.to_le_bytes());
 
-        // Sensor 1: 0x01 (Temperature: 25.5 C -> raw val = 255 + 400 = 655 -> 0x028F)
+        // Sensor 1: 0x01 (Temperature: 35.0 C -> val = 350 + 400 = 750 = 0x02EE)
         rx_buf[10] = 0x01;
         rx_buf[11] = 0x01;
-        rx_buf[12] = 0x8F;
+        rx_buf[12] = 0xEE;
         rx_buf[13] = 0x02;
 
-        // Sensor 2: 0x02 (RPM: 5400 -> 0x1518)
+        // Sensor 2: 0x02 (RPM = 4250 = 0x109A)
         rx_buf[14] = 0x02;
         rx_buf[15] = 0x02;
-        rx_buf[16] = 0x18;
-        rx_buf[17] = 0x15;
+        rx_buf[16] = 0x9A;
+        rx_buf[17] = 0x10;
 
         radio.process_rx_packet(&rx_buf);
         assert!(radio.telemetry.connected);
-        assert_eq!(radio.telemetry.temp_c_x10, 255);
+        assert_eq!(radio.telemetry.temp_c_x10, 350);
         assert_eq!(radio.telemetry.last_temp_ms, 7500);
-        assert_eq!(radio.telemetry.rpm, 5400);
+        assert_eq!(radio.telemetry.rpm, 4250);
         assert_eq!(radio.telemetry.last_rpm_ms, 7500);
     }
 }

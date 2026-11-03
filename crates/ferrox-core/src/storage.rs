@@ -11,6 +11,8 @@
 //! - 0x0200..0x3E00 (15,360 B / 240 pages): 20 Models x 768 B (12 pages each)
 //! - 0x3E00..0x4000 (512 B / 8 pages): Reserved / scratchpad
 
+use crate::board::BoardProfile;
+
 #[cfg(not(test))]
 use stm32f0xx_hal::pac;
 
@@ -1293,7 +1295,7 @@ pub fn get_storage() -> &'static mut RadioStorage {
 }
 
 /// CCITT CRC-16 (polynomial 0x1021, init 0xFFFF).
-pub fn crc16(data: &[u8]) -> u16 {
+pub fn crc16_ccitt_false(data: &[u8]) -> u16 {
     let mut crc = 0xFFFFu16;
     for &byte in data {
         crc ^= (byte as u16) << 8;
@@ -1306,6 +1308,27 @@ pub fn crc16(data: &[u8]) -> u16 {
         }
     }
     crc
+}
+
+/// Standard CRC-16 / ARC (polynomial 0x8005, init 0x0000, unreversed).
+pub fn crc16_arc(data: &[u8]) -> u16 {
+    let mut crc = 0u16;
+    for &b in data {
+        crc ^= (b as u16) << 8;
+        for _ in 0..8 {
+            if (crc & 0x8000) != 0 {
+                crc = (crc << 1) ^ 0x8005;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    crc
+}
+
+/// Compute board-specific CRC-16 for EEPROM slots.
+pub fn crc16(data: &[u8]) -> u16 {
+    crate::board::ActiveBoard::eeprom_crc16(data)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

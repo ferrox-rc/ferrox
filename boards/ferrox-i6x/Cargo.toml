@@ -1,19 +1,22 @@
 [package]
-name = "flysky-i6x-rs"
-version = "0.27.0"
-edition = "2021"
+name = "ferrox-i6x"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [lib]
-name = "ferrox"
+name = "ferrox_i6x"
 path = "src/lib.rs"
 
 [[bin]]
-name = "flysky-i6x-rs"
+name = "ferrox-i6x"
 path = "src/main.rs"
 test = false
 bench = false
 
 [dependencies]
+ferrox-core = { path = "../../crates/ferrox-core", features = ["board-i6x"] }
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
 stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072", "rt"] }
@@ -25,16 +28,5 @@ usbd-serial = "0.2.2"
 
 [features]
 default = ["stm32"]
-stm32 = []
-apm32 = []
-
-[profile.dev]
-opt-level = 1
-debug = true
-
-[profile.release]
-opt-level = "z"     # Optimize for size
-lto = "fat"         # Enable Link-Time Optimization
-codegen-units = 1   # Maximize LTO optimization across crates
-panic = "abort"     # Remove stack unwinding overhead
-debug = true        # Keep debug symbols for probe-rs / GDB
+stm32 = ["ferrox-core/stm32"]
+apm32 = ["ferrox-core/apm32"]

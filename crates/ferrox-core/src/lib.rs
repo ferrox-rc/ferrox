@@ -1,5 +1,8 @@
 #![cfg_attr(not(test), no_std)]
 
+pub mod board;
+pub use board::{ActiveBoard, BoardProfile};
+
 pub mod buzzer;
 pub mod calib;
 pub mod chip;

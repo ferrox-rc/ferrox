@@ -152,7 +152,7 @@ pub fn decode_board_switches(
     raw: &[u16; adc::NUM_CHANNELS],
     _ext_switches: bool,
     ext_adc: bool,
-    adc_modes: &[u8; 11],
+    adc_modes: &[u8],
 ) -> (
     SwitchPos,
     SwitchPos,

@@ -42,7 +42,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 use cortex_m_rt::entry;
 
-use ferrox::{
+use ferrox_core::{
     adc, boot, buzzer, calib, chip, crsf, curve, display, hw, input, mixer, rf, safety, storage,
     time, trainer, trim, ui, usb, vario, watchdog,
 };
@@ -197,33 +197,28 @@ impl FlightPipeline {
         }
 
         // 7. Map telemetry data based on active protocol
-        let (telem, baro_alt_dm, has_vspeed) = if is_crsf {
+        let telem = if is_crsf {
             let ct = crsf::get_telemetry();
-            (
-                rf::afhds2a::TelemetryData {
-                    connected: ct.connected,
-                    rssi: ct.uplink_link_quality,
-                    rx_voltage_mv: ct.rx_battery_mv,
-                    alt_m: ct.baro_alt_m,
-                    vspeed_cms: ct.vspeed_cms,
-                    rpm: ct.rpm,
-                    temp_c_x10: ct.temp_c_x10,
-                    last_rx_voltage_ms: ct.last_vbat_ms,
-                    last_alt_ms: ct.last_alt_ms,
-                    last_vspd_ms: ct.last_vspd_ms,
-                    last_rpm_ms: ct.last_rpm_ms,
-                    last_temp_ms: ct.last_temp_ms,
-                    packets_sent: 0,
-                    packets_received: 0,
-                },
-                ct.baro_alt_dm,
-                ct.has_vspeed,
-            )
+            rf::afhds2a::TelemetryData {
+                connected: ct.connected,
+                rssi: ct.uplink_link_quality,
+                rx_voltage_mv: ct.rx_battery_mv,
+                alt_m: ct.baro_alt_m,
+                alt_dm: ct.baro_alt_dm,
+                vspeed_cms: ct.vspeed_cms,
+                has_vspeed: ct.has_vspeed,
+                rpm: ct.rpm,
+                temp_c_x10: ct.temp_c_x10,
+                last_rx_voltage_ms: ct.last_vbat_ms,
+                last_alt_ms: ct.last_alt_ms,
+                last_vspd_ms: ct.last_vspd_ms,
+                last_rpm_ms: ct.last_rpm_ms,
+                last_temp_ms: ct.last_temp_ms,
+                packets_sent: 0,
+                packets_received: 0,
+            }
         } else {
-            let t = rf::get_telemetry_local(&mut self.telem_reading_idx);
-            let dm = t.alt_m.saturating_mul(10);
-            let has_v = t.vspeed_cms != 0;
-            (t, dm, has_v)
+            rf::get_telemetry_local(&mut self.telem_reading_idx)
         };
         let is_binding = !is_crsf && rf::is_binding();
 
@@ -243,9 +238,9 @@ impl FlightPipeline {
             let tone = self.vario.update(
                 now,
                 telem.alt_m,
-                baro_alt_dm,
+                telem.alt_dm,
                 telem.vspeed_cms,
-                has_vspeed,
+                telem.has_vspeed,
                 telem.connected,
                 sw_active || vario_preview,
                 thr_ch,

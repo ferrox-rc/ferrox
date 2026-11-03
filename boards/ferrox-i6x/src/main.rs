@@ -42,7 +42,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 use cortex_m_rt::entry;
 
-use ferrox::{
+use ferrox_core::{
     adc, boot, buzzer, calib, chip, crsf, curve, display, hw, input, mixer, rf, safety, storage,
     time, trainer, trim, ui, usb, vario, watchdog,
 };

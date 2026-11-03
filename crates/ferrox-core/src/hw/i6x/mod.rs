@@ -102,8 +102,9 @@ pub fn decode_board_switches(
     raw: &[u16; adc::NUM_CHANNELS],
     ext_switches: bool,
     ext_adc: bool,
-    adc_modes: &[u8; 10],
+    adc_modes: &[u8],
 ) -> (
+    SwitchPos,
     SwitchPos,
     SwitchPos,
     SwitchPos,
@@ -164,7 +165,7 @@ pub fn decode_board_switches(
         (SwitchPos::Up, SwitchPos::Up, SwitchPos::Up, SwitchPos::Up)
     };
 
-    (se, sf, SwitchPos::Up, SwitchPos::Up, swi, swj, swk, swl)
+    (se, sf, SwitchPos::Up, SwitchPos::Up, swi, swj, swk, swl, SwitchPos::Up)
 }
 
 /// Number of visible items in Input Setup menu.

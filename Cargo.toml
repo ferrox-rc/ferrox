@@ -1,33 +1,17 @@
-[package]
-name = "flysky-i6s-rs"
-version = "0.4.0"
+[workspace]
+members = [
+    "crates/ferrox-core",
+    "boards/ferrox-i6s",
+    "boards/ferrox-i6x",
+]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0-rc.1"
 edition = "2021"
-
-[lib]
-name = "ferrox"
-path = "src/lib.rs"
-
-[[bin]]
-name = "flysky-i6s-rs"
-path = "src/main.rs"
-test = false
-bench = false
-
-[dependencies]
-cortex-m = "0.7"
-cortex-m-rt = "0.7"
-stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072", "rt"] }
-embedded-graphics = "0.8.1"
-usb-device = "0.3.2"
-stm32-usbd = "0.8.0"
-usbd-hid = "0.10.2"
-usbd-serial = "0.2.2"
-
-
-[features]
-default = ["stm32"]
-stm32 = []
-apm32 = []
+authors = ["Bryan Souza", "FlySky Reverse Engineering Community"]
+license = "GPL-3.0-only"
+repository = "https://github.com/ferrox-rc/ferrox"
 
 [profile.dev]
 opt-level = 1

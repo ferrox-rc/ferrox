@@ -1,6 +1,7 @@
 //! Input normalization, stick axis processing, switch decoding, and battery calculation.
 
 use crate::adc;
+use crate::board::BoardProfile;
 use crate::storage::{AdcInputMode, RadioConfig};
 
 /// Default ADC deadband window around mechanical center detent (±16 counts ≈ ±0.4% travel).
@@ -536,7 +537,11 @@ pub fn process(raw: [u16; adc::NUM_CHANNELS]) -> InputState {
 
     // Process auxiliary analog channels (0..10)
     let mut aux_pots = [0i16; 11];
-    let max_channels = if calib.ext_adc { 11 } else { 6 };
+    let max_channels = if calib.ext_adc {
+        crate::board::ActiveBoard::TOTAL_ADC_COUNT
+    } else {
+        6
+    };
 
     for i in 0..max_channels {
         let raw_val = raw[aux_index_to_raw_adc(i)];
@@ -722,9 +727,11 @@ mod tests {
         assert_eq!(aux_index_to_raw_adc(7), 12); // VRD
         assert_eq!(aux_index_to_raw_adc(8), 13); // VRE
         assert_eq!(aux_index_to_raw_adc(9), 14); // VRF
+        #[cfg(feature = "board-i6s")]
         assert_eq!(aux_index_to_raw_adc(10), 15); // VRG
     }
 
+    #[cfg(feature = "board-i6s")]
     #[test]
     fn test_swm_switch_condition_change() {
         let mut prev = Switches::new();
@@ -769,6 +776,7 @@ mod tests {
         cfg.set_adc_mode_val(7, 3); // 3-pos switch
         cfg.set_adc_mode_val(8, 4); // 6-pos switch
         cfg.set_adc_mode_val(9, 5); // Pot
+        #[cfg(feature = "board-i6s")]
         cfg.set_adc_mode_val(10, 2); // 2-pos switch
 
         apply_calibration(&cfg);
@@ -779,7 +787,10 @@ mod tests {
         mock_adc[12] = 2048; // ch7: center count -> 3-pos switch Mid
         mock_adc[13] = 2500; // ch8: count 2500 -> 6-pos switch step 4
         mock_adc[14] = 4095; // ch9: max count -> Pot +1000
-        mock_adc[15] = 3800; // ch10: high count -> 2-pos switch Down
+        #[cfg(feature = "board-i6s")]
+        {
+            mock_adc[15] = 3800; // ch10: high count -> 2-pos switch Down
+        }
 
         crate::adc::set_test_adc_snapshot(mock_adc);
 
@@ -790,14 +801,18 @@ mod tests {
         assert_eq!(state.aux_pots[8], 200);
         // aux_pots[9] for pot at 4095 = 1000
         assert_eq!(state.aux_pots[9], 1000);
+        #[cfg(feature = "board-i6s")]
         assert_eq!(state.switches.swm, SwitchPos::Down);
 
-        // Turn ch10 (PC5) OFF (1 = Off)
-        cfg.set_adc_mode_val(10, 1);
-        apply_calibration(&cfg);
-        let state_off = poll();
-        assert_eq!(state_off.switches.swm, SwitchPos::Up);
-        assert_eq!(state_off.aux_pots[10], 0);
+        #[cfg(feature = "board-i6s")]
+        {
+            // Turn ch10 (PC5) OFF (1 = Off)
+            cfg.set_adc_mode_val(10, 1);
+            apply_calibration(&cfg);
+            let state_off = poll();
+            assert_eq!(state_off.switches.swm, SwitchPos::Up);
+            assert_eq!(state_off.aux_pots[10], 0);
+        }
     }
 
     #[test]

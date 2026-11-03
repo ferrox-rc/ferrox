@@ -145,6 +145,11 @@ impl MenuController {
         self.state != MenuState::Closed
     }
 
+    /// Returns true if the vario setup screen is currently open.
+    pub fn is_vario_setup(&self) -> bool {
+        self.state == MenuState::VarioSetup
+    }
+
     /// Process navigation keys, update menu state, and render display.
     #[inline(never)]
     #[allow(clippy::too_many_arguments)]
@@ -996,7 +1001,7 @@ mod tests {
         let mut trims = crate::trim::TrimController::new();
 
         ctrl.state = MenuState::RadioSetup;
-        ctrl.selected_item = 14; // Gimbals row
+        ctrl.selected_item = if cfg!(feature = "board-i6s") { 14 } else { 12 }; // Gimbals row
         ctrl.scroll_offset = 10;
 
         assert_eq!(storage.radio.gimbal_type, 0);
