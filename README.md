@@ -1,29 +1,26 @@
-# flysky-i6s-rs
+# ferrox
 
-A minimalist, clean-slate RC transmitter firmware for the **FlySky FS-i6S**, written in `no_std` Rust.
+A minimalist, high-performance, clean-slate RC transmitter firmware monorepo written in `no_std` Rust.
 
-Powered by the unified **`ferrox`** flight-control core and a dedicated FS-i6S Hardware Abstraction Layer (`src/hw/`), supporting the built-in **A7105** 2.4 GHz RF transceiver (**AFHDS 2A** protocol), external **CRSF / ExpressLRS** modules, **FT6236 Capacitive Touchscreen**, **Electronic Power Management**, **TIM15 Trainer Subsystem (PPM Out & In)**, and **128×64 LCD** interface.
+Targeting both the **FlySky FS-i6S** and **FlySky FS-i6X**, powered by the unified **`ferrox-core`** flight-control engine with zero-cost compile-time `BoardProfile` const trait specialization.
 
-
-![FlySky FS-I6S](docs/img/IMG_20261025_185240.jpg)
+Supports the built-in **A7105** 2.4 GHz RF transceiver (**AFHDS 2A** protocol), external **CRSF / ExpressLRS** modules, zero-dependency direct PAC **USB 2.0 Full-Speed** driver (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** (i6S), **Electronic Power Management** (i6S), **Optical Jog Wheel** (i6X), **TIM15 Trainer Subsystem (PPM Out & In)**, and **128×64 Monochrome LCD** interface.
 
 ---
 
-## 1. Overview & Philosophy
+## 1. Monorepo Architecture & Philosophy
 
-The FlySky FS-i6S features an industrial design with an integrated capacitive touchscreen, electronic power latching, dual front/rear tactile buttons, self-centering or friction gimbals, and rich internal expansion headers (`J15`, `H1`, `J4`, `PC1..PC4`).
+The `ferrox` workspace unifies the development, testing, and release process for both major FlySky transmitters into a single monorepo while retaining 100% board-specific optimizations:
 
-`flysky-i6s-rs` provides a clean-slate firmware written in bare-metal `no_std` Rust designed with:
-- **Unified `ferrox` Core & Zero Dead-Code HAL (`src/hw/`):** Shares a 100% byte-for-byte identical hardware-agnostic flight, mixer, storage, UI, RF, CRSF, trainer, and USB core with [`flysky-i6x-rs`](https://github.com/bryansouza/flysky-i6x-rs), while isolating all FS-i6S board peripherals inside [`src/hw/`](src/hw/).
-- **Zero-Heap, Deterministic Memory:** Fully static allocation with bare-metal `no_std` and in-tree 1bpp bitmap fonts (`src/display/fonts.rs`), eliminating dynamic allocation overhead, allocator stalls, and heap fragmentation.
-- **Lock-Free Concurrency & Watchdog Recovery:** Deterministic priority-driven interrupt scheduling (`TIM16` 260 Hz packet sync, `EXTI2` RF ready, `USART1` CRSF RX, `TIM15` PPM In/Out) paired with lock-free atomic triple-buffering (`CHANNEL_BUFFER`). 2.0s independent hardware watchdog (`pac::IWDG`) with LSI clock isolation, debug halt freezing, bounded sync, and <2 ms in-flight warm reset recovery that bypasses startup interlocks to prevent lockouts.
-- **Hardware Integration for FS-i6S:**
-  - **Electronic Power Latching (`PB15` / `PB14` / `PD10` / `PD11`):** Instant power rail lock at boot, soft-power hold detection (>= 1.5s) with safe Flash flush, and dual blue power button LED indication.
-  - **FocalTech FT6236 Capacitive Touchscreen (`PB8` / `PB9` / `PA15` / `PC12`):** Hardware I2C1 Fast Mode driver @ 400 kHz, gesture decoding (Swipe Up/Down/Left/Right), direct tap zones, and virtual dashboard trims.
-  - **Front/Rear Tactile Buttons (`PA9` / `PA10`):** Direct hardware buttons for Cancel/Back (`PA9`) and OK/Select (`PA10`), configurable in flight mode as RC switches (`SWE`/`SWF`), Timer Reset, 3-Axis Instant Trim, or Stick Trim Modifiers.
-  - **Zero-Disassembly DFU Bootloader:** Cold boot combo (hold Front Buttons `PA9` + `PA10`), System Info menu reboot option (`[OK] Reboot DFU`), and USB CDC serial command (`dfu`).
-- **Full 18-Channel Flight Engine:** Dedicated support for built-in A7105 AFHDS 2A (18-channel interleaved i-BUS/S.BUS encoding + configurable TX power), external CRSF/ELRS modules (up to 1.875M baud, full/half-duplex), 20-model external I2C EEPROM storage, 18-channel freeform matrix mixer, universal ADC input modes (`2-POS`, `3-POS`, `6-POS`, `POT`, `POT-D`, `INST-TRIM`), and configurable 4-tile telemetry dashboard.
-- **Lightweight Footprint:** **~110.0 KB Binary** (`.text` 92,288B + `.rodata` 11,700B + `.data` 5,876B = 109,864B out of 128 KB flash partition, leaving ~18.1 KB headroom) and **~6.9 KB static RAM** (`.data` 5,876B + `.bss` 1,060B = 6,936B out of 16 KB SRAM, leaving >9.0 KB stack safety margin).
+- **Unified `ferrox-core` (`crates/ferrox-core`):** Contains the shared flight pipeline, 18-channel matrix mixer, Catmull-Rom spline curves, EEPROM storage, pre-flight safety interlocks, calibration wizard, AFHDS 2A & CRSF engines, and direct PAC USB stack.
+- **Board Crates (`boards/ferrox-i6s` & `boards/ferrox-i6x`):** Thin board entrypoints implementing target-specific startup, vector tables, pin mappings, and memory layouts.
+- **`BoardProfile` Const Trait:** Hardware parameters (touch presence, power latch, ADC channel counts, SWD buttons, jog wheel, EEPROM CRC polynomials, and default modes) are evaluated at compile time with zero runtime overhead and zero dynamic dispatch.
+- **Direct PAC USB Driver:** Zero third-party USB crates. Implements USB 2.0 Full-Speed directly against the STM32F072 dedicated 1 KB Packet Memory Area (PMA), saving ~4 KB Flash and eliminating all heap/generic overhead.
+- **Circular DMA CRSF UART:** 256-byte circular RX DMA with hardware half-duplex receiver gating (`RE` pin gating), eliminating UART self-echo without software skip counters.
+- **Deterministic Concurrency:** Priority-driven interrupt scheduling paired with lock-free atomic `TripleBuffer` channel passing, protected critical sections during RF strobes and trainer reads, and a 2.0s hardware independent watchdog with sub-2ms warm reset recovery.
+- **Lightweight Footprint:**
+  - **FS-i6S**: **~105.1 KB Flash** out of 128 KB (~25.9 KB free headroom, 80.2% flash used) and **~6.3 KB static RAM** out of 16 KB.
+  - **FS-i6X**: **~100.8 KB Flash** out of 128 KB (~30.2 KB free headroom, 76.9% flash used) and **~6.2 KB static RAM** out of 16 KB.
 
 ---
 
@@ -227,14 +224,29 @@ Before flashing custom firmware, pull your complete 128 KB on-chip Flash memory 
 dfu-util -a 0 -s 0x08000000:131072 -U stock_backup.bin
 ```
 
-### Step 3: Flash flysky-i6s-rs
-Flash the compiled release binary via USB DFU:
-```bash
-# Flash release binary (STM32F072):
-dfu-util -a 0 -s 0x08000000:leave -D flysky-i6s.bin
+### Step 3: Build & Flash ferrox
 
-# For APM32F072 silicon:
-dfu-util -a 0 -d 314b:0106 -s 0x08000000:leave -D flysky-i6s.bin
+Build release binaries for your specific target hardware:
+```bash
+# Build for FlySky FS-i6S:
+cargo build --release --target thumbv6m-none-eabi -p ferrox-i6s
+arm-none-eabi-objcopy -O binary target/thumbv6m-none-eabi/release/ferrox-i6s ferrox-i6s.bin
+
+# Build for FlySky FS-i6X:
+cargo build --release --target thumbv6m-none-eabi -p ferrox-i6x
+arm-none-eabi-objcopy -O binary target/thumbv6m-none-eabi/release/ferrox-i6x ferrox-i6x.bin
+```
+
+Flash the compiled binary via USB DFU:
+```bash
+# Flash FS-i6S (STM32F072):
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
+
+# Flash FS-i6S (APM32F072):
+dfu-util -a 0 -d 314b:0106 -s 0x08000000:leave -D ferrox-i6s.bin
+
+# Flash FS-i6X (STM32F072):
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
 ```
 
 > [!TIP]
@@ -249,17 +261,22 @@ dfu-util -a 0 -s 0x08000000:leave -D stock_backup.bin
 
 ---
 
-## 10. Development Methodology, Automated Testing, & AI Assistance
+## 10. Development Methodology & Automated Testing
 
 This project was built through a **human-directed, AI-assisted development workflow** with physical hardware bench testing and automated host verification.
 
-### Automated Testing & Dual-Target Harness
-To guarantee mathematical correctness and protocol compliance without requiring a physical radio or slow hardware emulators, `flysky-i6s-rs` features a **zero-file-move dual-target test harness** via the unified `ferrox` library crate:
-- **Host Unit Test Execution**: Running `cargo test-host` compiles `ferrox` against the host target (`x86_64`) with standard library support, executing **140 unit and adversarial regression tests** across flight curves, digital trims, touchscreen gesture decoding, matrix mixers, trainer PPM handover, and CRSF/ELRS state machines in **sub-second time**.
-- **Peripheral & Timing Decoupling**: Peripheral drivers in `src/hw/` and `src/trainer/` use `#[cfg(test)]` mocks to simulate serial UART FIFO queues, touch coordinates, and advance virtual time deterministically.
-- **Physical Hardware Validation**: Every subsystem (DMA ADC scanning, FT6236 capacitive touchscreen, electronic power latch, A7105 SPI/RF state machine, ST7567 parallel bus LCD, USB HID/CDC descriptors, `USART1` CRSF/ELRS engine, `TIM15` PPM In/Out, and Flash storage) has been verified on hardware.
+### Automated Testing Harness
+To guarantee mathematical correctness and protocol compliance across both target boards without requiring physical hardware:
+- **Host Unit Test Execution**:
+  ```bash
+  # Test with FS-i6S hardware profile (178 unit tests):
+  cargo test -p ferrox-core --features board-i6s --lib --target x86_64-unknown-linux-gnu -- --test-threads=1
 
-For detailed test architecture, adversarial verification scenarios, and developer commands, refer to the **[Testing Methodology & Verification Guide](docs/TESTING.md)**.
+  # Test with FS-i6X hardware profile (159 unit tests):
+  cargo test -p ferrox-core --features board-i6x --lib --target x86_64-unknown-linux-gnu -- --test-threads=1
+  ```
+- **Peripheral & Timing Decoupling**: Peripheral drivers in `crates/ferrox-core/src/hw/` use `#[cfg(test)]` mocks to simulate serial UART FIFO queues, touch coordinates, and advance virtual time deterministically.
+- **Physical Hardware Validation**: Every subsystem (DMA ADC scanning, FT6236 capacitive touchscreen, electronic power latch, optical jog wheel, A7105 SPI/RF state machine, ST7567 LCD, zero-dependency direct PAC USB HID/CDC, circular DMA CRSF/ELRS engine, TIM15 PPM In/Out, and external EEPROM) has been verified on physical hardware.
 
 ---
 

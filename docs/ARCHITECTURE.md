@@ -1,10 +1,10 @@
 # SOFTWARE ARCHITECTURE & TIMING MODEL
 
-`flysky-i6s-rs` uses a bare-metal, `no_std` reactive architecture powered by the unified **`ferrox`** flight-control core and a board-specific Hardware Abstraction Layer (`src/hw/`), designed for deterministic RF packet timing and sub-millisecond control latency on the STM32F072VB / APM32F072VB Cortex-M0 microcontroller.
+`ferrox` uses a bare-metal, `no_std` reactive architecture powered by the unified **`ferrox-core`** flight engine and board targets (`boards/ferrox-i6s` and `boards/ferrox-i6x`), designed for deterministic RF packet timing and sub-millisecond control latency on STM32F072 / APM32F072 Cortex-M0 microcontrollers.
 
 ---
 
-## 1. Clock Tree & Unified `ferrox` Core Architecture
+## 1. Clock Tree & Unified `ferrox` Workspace Architecture
 
 ### 1.1 Clock Tree Configuration
 
@@ -16,22 +16,19 @@
 | **System Busses** | **AHB = 48 MHz, APB = 48 MHz** | Prescalers set to 1 for maximum peripheral throughput |
 | **USB Physical Clock** | **USBSW = 1 (PLLCLK)** | Routes 48.000 MHz PLL directly to USB peripheral (`RCC_CFGR3` bit 7) |
 
-Implemented in [`src/chip/mod.rs`](../src/chip/mod.rs) using pure PAC direct register access (`pac::RCC`).
+Implemented in [`crates/ferrox-core/src/chip/mod.rs`](../crates/ferrox-core/src/chip/mod.rs) using pure PAC direct register access (`pac::RCC`).
 
-### 1.2 Unified `ferrox` Core & `src/hw/` Hardware Isolation
+### 1.2 Unified `ferrox-core` & `BoardProfile` Const Trait Architecture
 
-`flysky-i6s-rs` and `flysky-i6x-rs` share a **100% byte-for-byte identical hardware-agnostic core** (`diff -rq -x hw src/` produces zero differences), while isolating all board-specific peripherals inside [`src/hw/`](../src/hw/):
+The repository is organized as a Cargo workspace with zero runtime branch penalty between targets:
 
 | Layer | Module Path | Responsibility |
 | :--- | :--- | :--- |
-| **Unified Core (`ferrox`)** | `src/{main.rs, lib.rs, input.rs, mixer.rs, storage.rs, safety.rs, calib.rs, curve.rs, trim.rs, buzzer.rs, watchdog.rs, time.rs}` | Real-time flight pipeline, 18-channel matrix mixer, Catmull-Rom curves, sequential Flash storage, pre-flight safety, calibration wizard, and audio engine |
-| **Protocol & UI Subsystems** | `src/{rf/, crsf/, trainer/, usb/, display/, ui/}` | AFHDS 2A / A7105 driver, CRSF / ExpressLRS configurator, `TIM15` CPPM Out/In & buddy-box handover, USB HID/CDC stack, ST7567 1bpp display, and 5-page UI |
-| **FS-i6S Hardware Layer** | [`src/hw/mod.rs`](../src/hw/mod.rs) | Board identity, 10 kΩ / 5.1 kΩ battery divider math, 21-item `Radio Setup` extensions, adaptive dashboard switch/pot rendering, and `BoardIdleState` |
-| | [`src/hw/power.rs`](../src/hw/power.rs) | `PB15` electronic power latch, `PB14` hold-to-shutdown (>= 1.5s) state machine, and `PD10`/`PD11` blue LEDs |
-| | [`src/hw/touch/`](../src/hw/touch/mod.rs) | FocalTech FT6236 400 kHz `I2C1` driver (`ft6236.rs`) and gesture / tap / stick-modifier navigation engine (`nav.rs`) |
-| | [`src/hw/adc.rs`](../src/hw/adc.rs) | Autonomous `ADC1` + `DMA1_CH1` scanner for 11 standard channels (`0x07FF`) or 16 channels (`0xFFFF`, adding `PC1..PC5`) |
-| | [`src/hw/keys.rs`](../src/hw/keys.rs) | Front/rear tactile buttons (`PA9`/`PA10`), J4 SWD buttons (`PA13`/`PA14`), and cold/warm DFU bootloader entry |
-| | [`src/hw/uart.rs`](../src/hw/uart.rs) | `USART1` (`PB6` TX / `PB7` RX on `J15`, IRQ 27) interrupt-driven CRSF transceiver and `PF6` (`H1`) module power control |
+| **Board Spec Trait** | [`crates/ferrox-core/src/board.rs`](../crates/ferrox-core/src/board.rs) | `BoardProfile` const trait specifying `NAME`, `HAS_TOUCH`, `HAS_POWER_LATCH`, `NUM_ANALOG_CHANNELS`, `HAS_EXT_ADC`, `HAS_SWD_BUTTONS`, `HAS_JOG_WHEEL`, and EEPROM CRC parameters |
+| **Unified Core (`ferrox-core`)** | `crates/ferrox-core/src/{lib.rs, input.rs, mixer.rs, storage.rs, safety.rs, calib.rs, curve.rs, trim.rs, buzzer.rs, watchdog.rs, time.rs}` | Real-time flight pipeline, 18-channel matrix mixer, Catmull-Rom curves, sequential Flash/EEPROM storage, pre-flight safety, calibration wizard, and audio engine |
+| **Protocol & Direct USB** | `crates/ferrox-core/src/{rf/, crsf/, trainer/, usb/, display/, ui/}` | AFHDS 2A / A7105 driver, CRSF / ExpressLRS configurator, `TIM15` CPPM Out/In & buddy-box handover, zero-dependency direct PAC USB 2.0 driver, ST7567 1bpp display, and 5-page UI |
+| **FS-i6S Hardware & Board Target** | `boards/ferrox-i6s/`, `crates/ferrox-core/src/hw/i6s/` | FT6236 capacitive touch, electronic power latch, front/rear tactile buttons, `USART1` circular DMA CRSF UART |
+| **FS-i6X Hardware & Board Target** | `boards/ferrox-i6x/`, `crates/ferrox-core/src/hw/i6x/` | Optical jog wheel, physical trim switches, `USART2` (`USART2_DMA_RMP`) circular DMA CRSF UART |
 
 ---
 

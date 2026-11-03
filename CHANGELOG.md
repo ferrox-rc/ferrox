@@ -1,11 +1,52 @@
 # Changelog
 
-All notable changes to the `flysky-i6s-rs` project will be documented in this file.
+All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysky-i6x-rs`) will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-10-30
+## [1.0.0-rc1] - 2026-11-03
+
+### Added
+- **Unified Monorepo Architecture (`ferrox`)**:
+  - Unified `flysky-i6s-rs` and `flysky-i6x-rs` into a single, cohesive Cargo workspace repository at `/home/bryansouza/Repos/ferrox`.
+  - Preserved complete Git commit histories from both repositories via merge commit `06834e0`.
+  - Structured workspace with root `Cargo.toml`, `crates/ferrox-core`, `boards/ferrox-i6s`, and `boards/ferrox-i6x`.
+- **Compile-Time `BoardProfile` Const Trait Architecture ([`crates/ferrox-core/src/board.rs`](crates/ferrox-core/src/board.rs))**:
+  - Implemented zero-cost `BoardProfile` const trait parameterized with `I6sSpec` and `I6xSpec`.
+  - Enforces compile-time constants for hardware parameters: `NAME`, `HAS_TOUCH`, `HAS_POWER_LATCH`, `NUM_ANALOG_CHANNELS`, `HAS_EXT_ADC`, `HAS_SWD_BUTTONS`, `HAS_JOG_WHEEL`, `DEFAULT_STICK_MODE`, `DEFAULT_USB_MODE`, `EEPROM_CRC_POLYNOMIAL`, and `EEPROM_SAFE_SAVE_PAGES`.
+  - Guarantees 100% zero-cost abstraction with zero runtime branch overhead and zero dynamic dispatch.
+- **Direct PAC USB 2.0 Full-Speed Driver ([`crates/ferrox-core/src/usb/`](crates/ferrox-core/src/usb/))**:
+  - Completely eliminated 4 third-party USB crates (`usb-device`, `stm32-usbd`, `usbd-hid`, `usbd-serial`).
+  - Implemented direct PAC USB peripheral driver directly mapping STM32F072 dedicated 1 KB USB SRAM (PMA at `0x4000_6000`, BTABLE offset 0).
+  - Supports Joystick HID (100 Hz), Serial CDC-ACM with CLI and 10 Hz telemetry streaming, Composite mode, and deferred DFU/Reboot timer.
+  - Eliminated ~4 KB of Flash memory and all dynamic/generic dispatch overhead.
+- **Circular DMA CRSF UART with Hardware Half-Duplex Gating ([`crates/ferrox-core/src/hw/i6s/uart.rs`](crates/ferrox-core/src/hw/i6s/uart.rs), [`crates/ferrox-core/src/hw/i6x/uart.rs`](crates/ferrox-core/src/hw/i6x/uart.rs))**:
+  - Implemented 256-byte circular RX DMA and 64-byte linear TX DMA across both targets (`DMA1_Channel3`/`2` on i6S `USART1`, `DMA1_Channel6`/`7` with `USART2_DMA_RMP` on i6x `USART2`).
+  - Hardware half-duplex receiver gating: automatically clears `USART_CR1_RE` prior to DMA TX trigger and re-enables `RE` upon DMA `TC` interrupt, completely eliminating UART self-echo without software skip counters.
+- **Zero-Allocation Flash & SRAM Optimizations**:
+  - Relocated large static lookup tables (`parent_map: [u8; 1024]` and EEPROM flash mirrors) from `.data` to zero-initialized `.bss`, saving 3,768 bytes of initial Flash footprint.
+  - Replaced 64-bit runtime division in `decode_packed_vspeed` with compile-time precomputed `PACKED_VSPEED` LUT, eliminating compiler 64-bit helper builtins (`__aeabi_ldivmod`).
+  - Applied `#[inline(never)]` to complex dashboard page rendering to curb Cortex-M0 inlining bloat.
+
+### Fixed
+- **Warm-Reboot DFU Entry Reliability**:
+  - Prioritized SRAM magic signature detection (`0xDEAD_BEEF` at `0x2000_3FF0`) before watchdog reset flags in `main.rs`, ensuring reliable DFU bootloader jumps during warm reboots and USB CLI requests.
+- **RF Transceiver & Trainer Concurrency Hardening**:
+  - Hardened `TripleBuffer` publication with atomic `Release` ordering on `reading_idx` to prevent race conditions during rapid RF reads.
+  - Enforced RF silencing delays (72,000 cycles) and critical sections (`cortex_m::interrupt::free`) during `STROBE_STANDBY` and `STROBE_SLEEP` transitions.
+  - Wrapped `trainer::read_input()` in critical sections to eliminate concurrency hazards with `TIM15` trainer interrupts.
+  - Relocated 3ms mid-frame stall detection in CRSF telemetry polling to run after byte draining.
+- **UI & Audio Engine Polish**:
+  - Corrected `MixerLineEdit` return row index for differential thrust configurations.
+  - Restored proper return row index when cancelling Global Variable adjustments in the mixer.
+  - Fixed 7-point curve dashboard page label.
+  - Fixed buzzer sequencer stalling on zero-duration pauses (`pause_ms == 0`).
+
+### Changed
+- Target version locked to `1.0.0-rc1` across the workspace.
+- Retained full EEPROM CRC-16 backwards compatibility (`0x1021` on i6S, `0x8005` on i6x).
+
 
 ### Added
 - **ExpressLRS / CRSF Switch-Based Arming (`0x16` Extended Frame) ([`src/crsf/protocol.rs`](src/crsf/protocol.rs), [`src/crsf/mod.rs`](src/crsf/mod.rs), [`src/storage.rs`](src/storage.rs), [`src/ui/menu/screens/setup.rs`](src/ui/menu/screens/setup.rs))**:
