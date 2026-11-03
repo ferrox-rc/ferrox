@@ -472,12 +472,7 @@ pub fn poll_telemetry(now_ms: u32) {
             return;
         }
 
-        // Inter-byte silence timeout: if bytes stalled mid-frame for >=3ms, reset parser to recover
-        if RX_LEN > 0 && now_ms.wrapping_sub(LAST_RX_BYTE_MS) >= 3 {
-            RX_LEN = 0;
-        }
-
-        // Drain available bytes from USART2 RX
+        // Drain available bytes from USART RX
         let mut count = 0;
         while let Some(b) = uart::read_byte() {
             LAST_RX_BYTE_MS = now_ms;
@@ -544,6 +539,11 @@ pub fn poll_telemetry(now_ms: u32) {
             if count >= 128 {
                 break;
             }
+        }
+
+        // Inter-byte silence timeout: if bytes stalled mid-frame for >=3ms, reset parser to recover
+        if RX_LEN > 0 && now_ms.wrapping_sub(LAST_RX_BYTE_MS) >= 3 {
+            RX_LEN = 0;
         }
 
         // Connection timeout: if no telemetry received for 1000ms, mark disconnected

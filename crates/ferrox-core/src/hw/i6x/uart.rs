@@ -1,9 +1,13 @@
 //! Hardware USART2 driver and PC13 power switch control for CRSF / ExpressLRS.
 //!
 //! Pin mapping:
-//! - PD5:  USART2_TX (AF0, Push-Pull, High Speed)
-//! - PA15: USART2_RX (AF1, Pull-Up, High Speed)
+//! - PD5:  USART2_TX (AF0, Push-Pull, High Speed; bi-directional half-duplex in single-wire mode)
+//! - PA15: USART2_RX (AF1, Pull-Up, High Speed in full-duplex mode)
 //! - PC13: Module Power Switch (GPIO Output, Push-Pull, High = Power ON)
+//!
+//! DMA mapping (via SYSCFG_CFGR1_USART2_DMA_RMP remap):
+//! - USART2_RX: DMA1 Channel 6 (circular 256-byte ring buffer)
+//! - USART2_TX: DMA1 Channel 7 (linear 64-byte buffer)
 
 #![allow(dead_code)]
 
@@ -13,18 +17,31 @@ use stm32f0xx_hal::pac::{self, interrupt};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 #[cfg(not(test))]
-const RX_RING_SIZE: usize = 128;
+const RX_BUF_SIZE: usize = 256;
 #[cfg(not(test))]
-static mut RX_RING: [u8; RX_RING_SIZE] = [0; RX_RING_SIZE];
+const TX_BUF_SIZE: usize = 64;
+
 #[cfg(not(test))]
-static RX_HEAD: AtomicUsize = AtomicUsize::new(0);
+const DMA_CCR_EN: u32 = 1 << 0;
+#[cfg(not(test))]
+const DMA_CCR_DIR: u32 = 1 << 4;
+#[cfg(not(test))]
+const DMA_CCR_CIRC: u32 = 1 << 5;
+#[cfg(not(test))]
+const DMA_CCR_MINC: u32 = 1 << 7;
+
+#[cfg(not(test))]
+static mut RX_DMA_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
+#[cfg(not(test))]
+static mut TX_DMA_BUF: [u8; TX_BUF_SIZE] = [0; TX_BUF_SIZE];
 #[cfg(not(test))]
 static RX_TAIL: AtomicUsize = AtomicUsize::new(0);
+#[cfg(not(test))]
+static TX_BUSY: AtomicBool = AtomicBool::new(false);
 
 static ACTIVE_HIGH: AtomicBool = AtomicBool::new(true);
 static POWER_ON: AtomicBool = AtomicBool::new(false);
 static HALF_DUPLEX_ACTIVE: AtomicBool = AtomicBool::new(false);
-static ECHO_SKIP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Apply current PC13 pin state based on power state and active polarity.
 #[cfg(not(test))]
@@ -107,10 +124,18 @@ pub fn is_half_duplex() -> bool {
     HALF_DUPLEX_ACTIVE.load(Ordering::Relaxed)
 }
 
-/// Configure and enable/disable USART2
+/// Write position of RX circular DMA buffer.
+#[cfg(not(test))]
+fn rx_head() -> usize {
+    unsafe {
+        let ndtr = (*pac::DMA1::ptr()).ch6.ndtr.read().ndt().bits() as usize;
+        (RX_BUF_SIZE.wrapping_sub(ndtr)) & (RX_BUF_SIZE - 1)
+    }
+}
+
+/// Configure and enable/disable USART2 with DMA
 pub fn set_uart_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
     HALF_DUPLEX_ACTIVE.store(half_duplex, Ordering::Relaxed);
-    ECHO_SKIP_COUNT.store(0, Ordering::Relaxed);
 
     #[cfg(not(test))]
     unsafe {
@@ -118,10 +143,26 @@ pub fn set_uart_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
         let gpiod = &*pac::GPIOD::ptr();
         let gpioa = &*pac::GPIOA::ptr();
         let usart2 = &*pac::USART2::ptr();
+        let dma = &*pac::DMA1::ptr();
 
         if enabled {
-            // 1. Enable USART2 clock in RCC_APB1ENR (bit 17)
+            // 1. Enable USART2, SYSCFG, GPIOA, GPIOC, GPIOD, and DMA1 clocks
             rcc.apb1enr.modify(|_, w| w.usart2en().set_bit());
+            rcc.apb2enr.modify(|_, w| w.syscfgen().set_bit());
+            rcc.ahbenr.modify(|_, w| {
+                w.iopaen()
+                    .set_bit()
+                    .iopcen()
+                    .set_bit()
+                    .iopden()
+                    .set_bit()
+                    .dmaen()
+                    .set_bit()
+            });
+
+            // Remap USART2 DMA to Channel 6 (RX) and Channel 7 (TX) in SYSCFG_CFGR1
+            let syscfg = &*pac::SYSCFG::ptr();
+            syscfg.cfgr1.modify(|r, w| w.bits(r.bits() | (1 << 9)));
 
             // 2. Configure PD5 as AF0 (USART2_TX): MODER=10, AFRL bit 20..23 = 0000
             gpiod.moder.modify(|_, w| w.moder5().alternate());
@@ -150,56 +191,70 @@ pub fn set_uart_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
             usart2.cr1.reset();
             usart2.cr2.reset();
 
-            // In half-duplex mode, enable HDSEL (bit 3 in CR3)
-            if half_duplex {
-                usart2.cr3.write(|w| w.hdsel().set_bit());
-            } else {
-                usart2.cr3.reset();
-            }
+            // CR3: DMAR | DMAT | (if half_duplex HDSEL)
+            // HDSEL = bit 3 (0x08), DMAR = bit 6 (0x40), DMAT = bit 7 (0x80)
+            let cr3_val = if half_duplex { 0x08 | 0x40 | 0x80 } else { 0x40 | 0x80 };
+            usart2.cr3.write(|w| w.bits(cr3_val));
 
             // 5. Set Baud rate divisor
             let brr = get_brr_for_baud(baud_idx);
             usart2.brr.write(|w| w.brr().bits(brr as u16));
 
-            // Clear any pending error flags
+            // Clear any pending error/status flags
             usart2.icr.write(|w| w.bits(0xFFFF_FFFF));
 
-            // Reset RX ring buffer indices
-            RX_HEAD.store(0, Ordering::Relaxed);
-            RX_TAIL.store(0, Ordering::Relaxed);
+            // 6. Setup RX DMA (DMA1 Channel 6)
+            dma.ch6.cr.write(|w| w.bits(0));
+            dma.ch6
+                .par
+                .write(|w| w.bits(core::ptr::addr_of!((*pac::USART2::ptr()).rdr) as u32));
+            dma.ch6
+                .mar
+                .write(|w| w.bits(core::ptr::addr_of!(RX_DMA_BUF) as *const u8 as u32));
+            dma.ch6.ndtr.write(|w| w.ndt().bits(RX_BUF_SIZE as u16));
+            dma.ch6
+                .cr
+                .write(|w| w.bits(DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_EN));
 
-            // Configure NVIC for USART2 (IRQ 28)
+            // Reset RX ring buffer tail to current head
+            RX_TAIL.store(rx_head(), Ordering::Relaxed);
+
+            // 7. Setup TX DMA (DMA1 Channel 7)
+            dma.ch7.cr.write(|w| w.bits(0));
+            dma.ch7
+                .par
+                .write(|w| w.bits(core::ptr::addr_of!((*pac::USART2::ptr()).tdr) as u32));
+            TX_BUSY.store(false, Ordering::Relaxed);
+
+            // 8. Configure NVIC for USART2 (IRQ 28)
             cortex_m::peripheral::NVIC::unpend(pac::Interrupt::USART2);
             let mut cp = cortex_m::peripheral::Peripherals::steal();
             cp.NVIC.set_priority(pac::Interrupt::USART2, 0x40);
             cortex_m::peripheral::NVIC::unmask(pac::Interrupt::USART2);
 
-            // 6. Enable UE, TE, RE, and RXNEIE
-            usart2.cr1.write(|w| {
-                w.ue()
-                    .enabled()
-                    .te()
-                    .enabled()
-                    .re()
-                    .enabled()
-                    .rxneie()
-                    .enabled()
-            });
+            // 9. Enable UE, TE, RE, IDLEIE, TCIE
+            // UE = bit 0 (0x01), RE = bit 2 (0x04), TE = bit 3 (0x08), IDLEIE = bit 4 (0x10), TCIE = bit 6 (0x40)
+            usart2.cr1.write(|w| w.bits(0x01 | 0x04 | 0x08 | 0x10 | 0x40));
         } else {
             // Mask USART2 in NVIC
             cortex_m::peripheral::NVIC::mask(pac::Interrupt::USART2);
 
-            // Disable UE & RXNEIE
+            // Disable DMA channels
+            dma.ch6.cr.write(|w| w.bits(0));
+            dma.ch7.cr.write(|w| w.bits(0));
+
+            // Disable USART2
             usart2.cr1.reset();
+            usart2.cr3.reset();
 
-            // Reset RX ring buffer indices
-            RX_HEAD.store(0, Ordering::Relaxed);
+            // Reset indices & flags
             RX_TAIL.store(0, Ordering::Relaxed);
+            TX_BUSY.store(false, Ordering::Relaxed);
 
-            // Disable USART2 clock in RCC_APB1ENR (bit 17)
+            // Disable USART2 clock in RCC_APB1ENR
             rcc.apb1enr.modify(|_, w| w.usart2en().clear_bit());
 
-            // Set PD5 and PA15 back to inputs to float pins
+            // Set PD5 and PA15 back to inputs
             gpiod.moder.modify(|_, w| w.moder5().input());
             gpiod.otyper.modify(|_, w| w.ot5().push_pull());
             gpioa.moder.modify(|_, w| w.moder15().input());
@@ -209,7 +264,9 @@ pub fn set_uart_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
     let _ = (enabled, baud_idx, half_duplex);
 }
 
-/// Transmit a buffer over USART2 (non-blocking if space available, bounded timeout)
+/// Transmit a buffer over USART2 using DMA.
+/// In half-duplex mode, disables RE during TX to hardware-gate own echo bytes,
+/// re-enabling it atomically in the TC interrupt.
 pub fn write_bytes(bytes: &[u8]) -> usize {
     #[cfg(test)]
     {
@@ -218,46 +275,70 @@ pub fn write_bytes(bytes: &[u8]) -> usize {
     }
     #[cfg(not(test))]
     unsafe {
-        let is_hd = HALF_DUPLEX_ACTIVE.load(Ordering::Relaxed);
-        let usart2 = &*pac::USART2::ptr();
-        let mut sent = 0;
-        for &b in bytes {
-            let mut timeout = 2500u32;
-            while usart2.isr.read().txe().bit_is_clear() {
-                timeout -= 1;
-                if timeout == 0 {
-                    return sent;
-                }
+        let mut timeout = 50_000u32;
+        while TX_BUSY.load(Ordering::Acquire) {
+            timeout -= 1;
+            if timeout == 0 {
+                return 0;
             }
-            if is_hd {
-                cortex_m::interrupt::free(|_| {
-                    let cur = ECHO_SKIP_COUNT.load(Ordering::Relaxed);
-                    ECHO_SKIP_COUNT.store(cur + 1, Ordering::Relaxed);
-                });
-            }
-            usart2.tdr.write(|w| w.tdr().bits(b as u16));
-            sent += 1;
         }
-        sent
+
+        let n = bytes.len().min(TX_BUF_SIZE);
+        if n == 0 {
+            return 0;
+        }
+
+        for i in 0..n {
+            TX_DMA_BUF[i] = bytes[i];
+        }
+
+        let usart2 = &*pac::USART2::ptr();
+        let dma = &*pac::DMA1::ptr();
+
+        if HALF_DUPLEX_ACTIVE.load(Ordering::Relaxed) {
+            // Hardware-gate receiver off during transmission so echo bytes are never sampled
+            usart2.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 2))); // Clear RE (bit 2)
+        }
+
+        // Clear Transmission Complete flag before starting new transmit
+        usart2.icr.write(|w| w.bits(1 << 6)); // TCCF = bit 6
+
+        TX_BUSY.store(true, Ordering::Release);
+
+        let ch7 = &dma.ch7;
+        ch7.cr.write(|w| w.bits(0));
+        ch7.mar
+            .write(|w| w.bits(core::ptr::addr_of!(TX_DMA_BUF) as *const u8 as u32));
+        ch7.ndtr.write(|w| w.ndt().bits(n as u16));
+        ch7.cr.write(|w| w.bits(DMA_CCR_MINC | DMA_CCR_DIR | DMA_CCR_EN));
+
+        n
     }
 }
 
-/// Read a byte from USART2 RX if available
+/// Read a byte from circular RX DMA ring buffer if available.
 pub fn read_byte() -> Option<u8> {
     #[cfg(test)]
     {
         mock::pop_rx_byte()
     }
     #[cfg(not(test))]
-    {
-        let head = RX_HEAD.load(Ordering::Acquire);
+    unsafe {
+        let usart2 = &*pac::USART2::ptr();
+        if usart2.isr.read().ore().bit_is_set() {
+            usart2.icr.write(|w| w.orecf().clear());
+        }
+
+        let head = rx_head();
         let tail = RX_TAIL.load(Ordering::Relaxed);
-        if head != tail {
-            let b = unsafe { RX_RING[tail] };
-            RX_TAIL.store((tail + 1) & (RX_RING_SIZE - 1), Ordering::Release);
-            Some(b)
-        } else {
+        if tail == head {
             None
+        } else {
+            core::sync::atomic::compiler_fence(Ordering::SeqCst);
+            let byte = RX_DMA_BUF[tail];
+            core::sync::atomic::compiler_fence(Ordering::SeqCst);
+            RX_TAIL.store((tail + 1) & (RX_BUF_SIZE - 1), Ordering::Release);
+            Some(byte)
         }
     }
 }
@@ -268,28 +349,22 @@ fn USART2() {
     unsafe {
         let usart2 = &*pac::USART2::ptr();
         let isr = usart2.isr.read();
+
         // Clear overrun error if present
         if isr.ore().bit_is_set() {
             usart2.icr.write(|w| w.orecf().clear());
         }
 
-        if isr.rxne().bit_is_set() {
-            let b = (usart2.rdr.read().rdr().bits() & 0xFF) as u8;
-            if HALF_DUPLEX_ACTIVE.load(Ordering::Relaxed) {
-                let skip = ECHO_SKIP_COUNT.load(Ordering::SeqCst);
-                if skip > 0 {
-                    ECHO_SKIP_COUNT.store(skip - 1, Ordering::SeqCst);
-                    return;
-                }
-            }
+        // Transmission Complete: hardware-re-enable RE and clear busy flag
+        if isr.tc().bit_is_set() {
+            usart2.icr.write(|w| w.tccf().clear());
+            usart2.cr1.modify(|r, w| w.bits(r.bits() | (1 << 2))); // Set RE (bit 2)
+            TX_BUSY.store(false, Ordering::Release);
+        }
 
-            let head = RX_HEAD.load(Ordering::Relaxed);
-            let tail = RX_TAIL.load(Ordering::Acquire);
-            let next_head = (head + 1) & (RX_RING_SIZE - 1);
-            if next_head != tail {
-                RX_RING[head] = b;
-                RX_HEAD.store(next_head, Ordering::Release);
-            }
+        // Line idle flag
+        if isr.idle().bit_is_set() {
+            usart2.icr.write(|w| w.idlecf().clear());
         }
     }
 }
