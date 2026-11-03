@@ -86,9 +86,9 @@ impl<T: Copy> TripleBuffer<T> {
         let published_val = self.published.load(Ordering::Acquire);
         let read_idx = if (published_val & 0x80) != 0 {
             let idx = published_val & 0x03;
+            self.reading_idx.store(idx, Ordering::Release);
             self.published.store(idx, Ordering::Relaxed);
             *local_reading_idx = idx;
-            self.reading_idx.store(idx, Ordering::Release);
             idx
         } else {
             *local_reading_idx
@@ -110,8 +110,8 @@ impl<T: Copy> TripleBuffer<T> {
         let read_idx = if (published_val & 0x80) != 0 {
             // Clear dirty bit so we know it has been consumed
             let idx = published_val & 0x03;
+            self.reading_idx.store(idx, Ordering::Release);
             self.published.store(idx, Ordering::Relaxed);
-            self.reading_idx.store(idx, Ordering::Relaxed);
             idx
         } else {
             // No new data: continue reading from current slot
@@ -165,19 +165,24 @@ pub fn get_last_chip_id() -> u8 {
 /// Put RF frontend and A7105 into ultra-low-power sleep (< 1 µA) during CRSF
 /// or USB Joystick simulator mode, or wake back up to standby for AFHDS 2A.
 pub fn set_silenced(silenced: bool) {
-    let prev = RF_SILENCED.load(Ordering::Relaxed);
+    let prev = RF_SILENCED.load(Ordering::Acquire);
     if prev != silenced {
-        RF_SILENCED.store(silenced, Ordering::Relaxed);
         if silenced {
-            // 1. Disable external PA and LNA frontend
-            spi::set_tx_rx_mode(spi::RF_MODE_OFF);
-            // 2. Strobe A7105 into deep power-down sleep (< 1 µA, XTAL off)
-            a7105::strobe(a7105::STROBE_SLEEP);
+            RF_SILENCED.store(true, Ordering::Release);
+            cortex_m::interrupt::free(|_| {
+                // 1. Disable external PA and LNA frontend
+                spi::set_tx_rx_mode(spi::RF_MODE_OFF);
+                // 2. Strobe A7105 into deep power-down sleep (< 1 µA, XTAL off)
+                a7105::strobe(a7105::STROBE_SLEEP);
+            });
         } else {
-            // Wake A7105 back to standby (turns on crystal oscillator)
-            a7105::strobe(a7105::STROBE_STANDBY);
+            // Wake A7105 back to standby (turns on crystal oscillator) while RF_SILENCED is still true
+            cortex_m::interrupt::free(|_| {
+                a7105::strobe(a7105::STROBE_STANDBY);
+            });
             // Delay ~1.5 ms (72,000 cycles at 48 MHz) for XTAL oscillator and on-chip LDO to stabilize
             cortex_m::asm::delay(72_000);
+            RF_SILENCED.store(false, Ordering::Release);
         }
     }
 }

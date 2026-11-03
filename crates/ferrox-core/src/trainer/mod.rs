@@ -143,16 +143,16 @@ pub fn is_ppm_in_enabled() -> bool {
 
 /// Update output channel pulse widths for PPM transmission (clamped 900..2100 µs).
 pub fn update_out_channels(chs: &[u16]) {
-    unsafe {
+    cortex_m::interrupt::free(|_| unsafe {
         PPM_OUT_GEN.update_channels(chs);
-    }
+    });
 }
 
 /// Periodic tick (dt_ms) to manage student signal loss timeout.
 pub fn tick_ms(dt_ms: u16) {
-    unsafe {
+    cortex_m::interrupt::free(|_| unsafe {
         PPM_IN_DEC.tick_ms(dt_ms);
-    }
+    });
 }
 
 /// Periodic 10ms tick helper.
@@ -162,12 +162,12 @@ pub fn tick_10ms() {
 
 /// Get decoded student channel inputs if valid.
 pub fn get_student_channels() -> Option<[u16; 8]> {
-    unsafe { PPM_IN_DEC.get_channels() }
+    cortex_m::interrupt::free(|_| unsafe { PPM_IN_DEC.get_channels() })
 }
 
 /// Get current safety handover status.
 pub fn get_handover_state() -> TrainerState {
-    unsafe { HANDOVER.state }
+    cortex_m::interrupt::free(|_| unsafe { HANDOVER.state })
 }
 
 /// Process safety handover between instructor sticks and decoded student stream.
@@ -176,7 +176,7 @@ pub fn process_handover(
     instructor_chs: &[u16],
     output_chs: &mut [u16],
 ) {
-    unsafe {
+    cortex_m::interrupt::free(|_| unsafe {
         let student_chs = PPM_IN_DEC.get_channels();
         HANDOVER.process(
             trainer_switch_active,
@@ -184,7 +184,7 @@ pub fn process_handover(
             instructor_chs,
             output_chs,
         );
-    }
+    });
 }
 
 #[cfg(not(test))]
