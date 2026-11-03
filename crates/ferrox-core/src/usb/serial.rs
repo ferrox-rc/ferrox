@@ -1,37 +1,31 @@
 //! USB CDC-ACM Serial communications and telemetry streaming driver.
 //!
 //! Provides virtual COM port communication with standard JSON-lines telemetry streaming,
-//! model inspection, and interactive serial CLI.
+//! model inspection, and interactive serial CLI without third-party crate dependencies.
+
+#![allow(dead_code)]
 
 use crate::rf::afhds2a::TelemetryData;
-use usbd_serial::SerialPort;
 
-/// Helper to write as many bytes as possible without blocking.
-pub fn write_all<
-    B: usb_device::bus::UsbBus,
-    RS: core::borrow::BorrowMut<[u8]>,
-    WS: core::borrow::BorrowMut<[u8]>,
->(
-    serial: &mut SerialPort<B, RS, WS>,
-    data: &[u8],
-) {
-    let mut written = 0;
-    while written < data.len() {
-        match serial.write(&data[written..]) {
-            Ok(n) if n > 0 => written += n,
-            _ => break,
-        }
-    }
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ResetAction {
+    None,
+    Reboot(u32),
+    Dfu(u32),
 }
 
 pub struct SerialHandler {
     rx_queue: [u8; 128],
     rx_head: usize,
     rx_tail: usize,
+    tx_queue: [u8; 512],
+    tx_head: usize,
+    tx_tail: usize,
     cmd_buf: [u8; 64],
     cmd_len: usize,
     last_was_cr: bool,
     stream_enabled: bool,
+    reset_action: ResetAction,
 }
 
 impl Default for SerialHandler {
@@ -46,10 +40,14 @@ impl SerialHandler {
             rx_queue: [0u8; 128],
             rx_head: 0,
             rx_tail: 0,
+            tx_queue: [0u8; 512],
+            tx_head: 0,
+            tx_tail: 0,
             cmd_buf: [0u8; 64],
             cmd_len: 0,
             last_was_cr: false,
-            stream_enabled: false, // Default OFF: clean interactive CLI on connect
+            stream_enabled: false,
+            reset_action: ResetAction::None,
         }
     }
 
@@ -57,47 +55,61 @@ impl SerialHandler {
         self.stream_enabled
     }
 
-    /// Drain incoming data from the USB serial OUT endpoint into the internal FIFO queue.
-    /// MUST be called from the USB interrupt handler (or when polling) so that
-    /// the STM32 hardware `CTR_RX` flag on the CDC OUT endpoint is cleared.
-    pub fn drain_rx<
-        B: usb_device::bus::UsbBus,
-        RS: core::borrow::BorrowMut<[u8]>,
-        WS: core::borrow::BorrowMut<[u8]>,
-    >(
-        &mut self,
-        serial: &mut SerialPort<B, RS, WS>,
-    ) {
-        let mut buf = [0u8; 64];
-        while let Ok(count) = serial.read(&mut buf) {
-            if count == 0 {
-                break;
-            }
-            for &b in &buf[..count] {
-                let next = (self.rx_head + 1) % self.rx_queue.len();
-                if next != self.rx_tail {
-                    self.rx_queue[self.rx_head] = b;
-                    self.rx_head = next;
-                }
+    pub fn pending_reset(&self) -> ResetAction {
+        self.reset_action
+    }
+
+    /// Push incoming bytes received from the USB CDC OUT endpoint into the internal RX FIFO.
+    pub fn push_rx(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            let next = (self.rx_head + 1) % self.rx_queue.len();
+            if next != self.rx_tail {
+                self.rx_queue[self.rx_head] = b;
+                self.rx_head = next;
             }
         }
     }
 
+    /// Queue bytes to transmit over the USB CDC IN endpoint.
+    pub fn write_bytes(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            let next = (self.tx_head + 1) % self.tx_queue.len();
+            if next != self.tx_tail {
+                self.tx_queue[self.tx_head] = b;
+                self.tx_head = next;
+            } else {
+                break; // TX buffer full, drop excess
+            }
+        }
+    }
+
+    pub fn write_str(&mut self, s: &str) {
+        self.write_bytes(s.as_bytes());
+    }
+
+    /// Pop up to `dst.len()` bytes from the TX queue to transmit over hardware PMA.
+    pub fn pop_tx(&mut self, dst: &mut [u8]) -> usize {
+        let mut count = 0;
+        while count < dst.len() && self.tx_tail != self.tx_head {
+            dst[count] = self.tx_queue[self.tx_tail];
+            self.tx_tail = (self.tx_tail + 1) % self.tx_queue.len();
+            count += 1;
+        }
+        count
+    }
+
+    pub fn has_pending_tx(&self) -> bool {
+        self.tx_head != self.tx_tail
+    }
+
     /// Process queued incoming data from the main loop and write pending telemetry frames.
-    pub fn update<
-        B: usb_device::bus::UsbBus,
-        RS: core::borrow::BorrowMut<[u8]>,
-        WS: core::borrow::BorrowMut<[u8]>,
-    >(
+    pub fn update(
         &mut self,
-        serial: &mut SerialPort<B, RS, WS>,
+        now_ms: u32,
         rf_chs: &[u16; crate::mixer::NUM_CHANNELS],
         telem: &TelemetryData,
         battery_mv: u16,
     ) {
-        // Drain any pending data from the USB hardware endpoint
-        self.drain_rx(serial);
-
         while self.rx_tail != self.rx_head {
             let b = self.rx_queue[self.rx_tail];
             self.rx_tail = (self.rx_tail + 1) % self.rx_queue.len();
@@ -107,7 +119,7 @@ impl SerialHandler {
                 self.stream_enabled = false;
                 self.cmd_len = 0;
                 self.last_was_cr = false;
-                write_all(serial, crate::hw::CLI_PAUSE_PROMPT);
+                self.write_bytes(crate::hw::CLI_PAUSE_PROMPT);
                 continue;
             }
 
@@ -115,13 +127,13 @@ impl SerialHandler {
                 let is_crlf_second = b == b'\n' && self.last_was_cr;
                 self.last_was_cr = b == b'\r';
                 if !is_crlf_second {
-                    write_all(serial, b"\r\n");
+                    self.write_bytes(b"\r\n");
                     if self.cmd_len > 0 {
-                        self.handle_command(serial, rf_chs, telem, battery_mv);
+                        self.handle_command(now_ms, rf_chs, telem, battery_mv);
                         self.cmd_len = 0;
                     }
                     if !self.stream_enabled {
-                        write_all(serial, crate::hw::CLI_PROMPT);
+                        self.write_bytes(crate::hw::CLI_PROMPT);
                     }
                 }
             } else if b == 0x08 || b == 0x7F {
@@ -129,25 +141,21 @@ impl SerialHandler {
                 // Backspace
                 if self.cmd_len > 0 {
                     self.cmd_len -= 1;
-                    write_all(serial, b"\x08 \x08");
+                    self.write_bytes(b"\x08 \x08");
                 }
             } else if self.cmd_len < self.cmd_buf.len() {
                 self.last_was_cr = false;
                 self.cmd_buf[self.cmd_len] = b;
                 self.cmd_len += 1;
-                write_all(serial, &[b]); // Local echo
+                self.write_bytes(&[b]); // Local echo
             }
         }
     }
 
     /// Dispatch interactive CLI command responses.
-    fn handle_command<
-        B: usb_device::bus::UsbBus,
-        RS: core::borrow::BorrowMut<[u8]>,
-        WS: core::borrow::BorrowMut<[u8]>,
-    >(
+    fn handle_command(
         &mut self,
-        serial: &mut SerialPort<B, RS, WS>,
+        now_ms: u32,
         rf_chs: &[u16; crate::mixer::NUM_CHANNELS],
         telem: &TelemetryData,
         battery_mv: u16,
@@ -157,58 +165,51 @@ impl SerialHandler {
             .trim();
 
         if cmd.eq_ignore_ascii_case("help") {
-            write_all(
-                serial,
+            self.write_bytes(
                 b"Commands:\r\n  help      - Show this help\r\n  status    - Firmware & battery info\r\n  channels  - Dump RF channel values (CH1..CH18)\r\n  storage   - Dump EEPROM bus, address & I/O diagnostics\r\n  telem     - Dump single telemetry frame\r\n  stream    - Start continuous telemetry streaming (any key to stop)\r\n  dfu       - Reboot into STM32 factory ROM DFU bootloader\r\n  reboot    - Reboot transmitter\r\n",
             );
         } else if cmd.eq_ignore_ascii_case("storage") || cmd.eq_ignore_ascii_case("eeprom") {
             let status = crate::storage::get_eeprom_status();
-            write_all(serial, b"Storage Diagnostics:\r\n");
+            self.write_bytes(b"Storage Diagnostics:\r\n");
             if status.detected {
                 let bus = match status.bus {
                     2 => "I2C2 (PB10/PB11)",
                     1 => "I2C1 (PB8/PB9)",
                     _ => "Unknown I2C",
                 };
-                write_all(serial, b"  Detected: YES\r\n  Bus:      ");
-                write_all(serial, bus.as_bytes());
-                write_all(serial, b"\r\n  Address:  0x");
+                self.write_bytes(b"  Detected: YES\r\n  Bus:      ");
+                self.write_bytes(bus.as_bytes());
+                self.write_bytes(b"\r\n  Address:  0x");
                 let hex = [
                     b"0123456789ABCDEF"[(status.addr >> 4) as usize],
                     b"0123456789ABCDEF"[(status.addr & 0x0F) as usize],
                 ];
-                write_all(serial, &hex);
-                write_all(serial, b"\r\n  Read:     ");
-                write_all(
-                    serial,
-                    if status.read_ok {
-                        b"OK\r\n"
-                    } else {
-                        b"FAIL\r\n"
-                    },
-                );
-                write_all(serial, b"  Write:    ");
-                write_all(
-                    serial,
-                    if status.write_err {
-                        b"FAIL\r\n"
-                    } else if status.write_ok {
-                        b"OK\r\n"
-                    } else {
-                        b"OK (READY)\r\n"
-                    },
-                );
+                self.write_bytes(&hex);
+                self.write_bytes(b"\r\n  Read:     ");
+                self.write_bytes(if status.read_ok {
+                    b"OK\r\n"
+                } else {
+                    b"FAIL\r\n"
+                });
+                self.write_bytes(b"  Write:    ");
+                self.write_bytes(if status.write_err {
+                    b"FAIL\r\n"
+                } else if status.write_ok {
+                    b"OK\r\n"
+                } else {
+                    b"OK (READY)\r\n"
+                });
             } else {
-                write_all(serial, b"  Detected: NO (No external I2C EEPROM found)\r\n");
+                self.write_bytes(b"  Detected: NO (No external I2C EEPROM found)\r\n");
             }
         } else if cmd.eq_ignore_ascii_case("status") {
-            write_all(serial, crate::hw::STATUS_BANNER);
+            self.write_bytes(crate::hw::STATUS_BANNER);
             if crate::crsf::is_enabled() {
-                write_all(serial, crate::hw::CRSF_UART_STATUS);
+                self.write_bytes(crate::hw::CRSF_UART_STATUS);
             } else {
-                write_all(serial, b"Protocol: AFHDS 2A (A7105 SPI active)\r\n");
+                self.write_bytes(b"Protocol: AFHDS 2A (A7105 SPI active)\r\n");
             }
-            self.send_telemetry_line(serial, rf_chs, telem, battery_mv);
+            self.send_telemetry_line(rf_chs, telem, battery_mv);
         } else if cmd.eq_ignore_ascii_case("channels") {
             let mut cbuf = [0u8; 128];
             let mut pos = 0;
@@ -234,44 +235,37 @@ impl SerialHandler {
                 append_ch!(&num);
             }
             append_ch!(b"]}\r\n");
-            write_all(serial, &cbuf[..pos]);
+            self.write_bytes(&cbuf[..pos]);
         } else if cmd.eq_ignore_ascii_case("telem") {
-            self.send_telemetry_line(serial, rf_chs, telem, battery_mv);
+            self.send_telemetry_line(rf_chs, telem, battery_mv);
         } else if cmd.eq_ignore_ascii_case("stream")
             || cmd.eq_ignore_ascii_case("telem on")
             || cmd.eq_ignore_ascii_case("telem stream")
         {
             self.stream_enabled = true;
-            write_all(
-                serial,
-                b"[Streaming telemetry @ 10Hz. Press any key to stop.]\r\n",
-            );
+            self.write_bytes(b"[Streaming telemetry @ 10Hz. Press any key to stop.]\r\n");
         } else if cmd.eq_ignore_ascii_case("telem off") {
             self.stream_enabled = false;
-            write_all(serial, b"Telemetry streaming disabled\r\n");
+            self.write_bytes(b"Telemetry streaming disabled\r\n");
         } else if cmd.eq_ignore_ascii_case("dfu")
             || cmd.eq_ignore_ascii_case("reboot bootloader")
             || cmd.eq_ignore_ascii_case("reboot-bootloader")
         {
-            write_all(serial, b"Rebooting to STM32 DFU bootloader...\r\n");
-            crate::boot::reboot_to_dfu();
+            self.write_bytes(b"Rebooting to STM32 DFU bootloader...\r\n");
+            // Set deferred DFU grace timer (200 ms) so buffer flushes to host
+            self.reset_action = ResetAction::Dfu(now_ms.wrapping_add(200));
         } else if cmd.eq_ignore_ascii_case("reboot") {
-            write_all(serial, b"Rebooting...\r\n");
-            cortex_m::peripheral::SCB::sys_reset();
+            self.write_bytes(b"Rebooting...\r\n");
+            // Set deferred reboot grace timer (200 ms)
+            self.reset_action = ResetAction::Reboot(now_ms.wrapping_add(200));
         } else if !cmd.is_empty() {
-            write_all(serial, b"Unknown command. Type 'help'\r\n");
+            self.write_bytes(b"Unknown command. Type 'help'\r\n");
         }
     }
 
     /// Stream a single formatted JSON telemetry line over USB CDC.
-    /// Format: {"vbat":5.18,"rssi":98,"rx_v":5.02,"tx":15820,"rx":15798,"err":22,"crsf":{...},"ch":[1500,...]}\r\n
-    pub fn send_telemetry_line<
-        B: usb_device::bus::UsbBus,
-        RS: core::borrow::BorrowMut<[u8]>,
-        WS: core::borrow::BorrowMut<[u8]>,
-    >(
-        &self,
-        serial: &mut SerialPort<B, RS, WS>,
+    pub fn send_telemetry_line(
+        &mut self,
         rf_chs: &[u16; crate::mixer::NUM_CHANNELS],
         telem: &TelemetryData,
         battery_mv: u16,
@@ -298,31 +292,17 @@ impl SerialHandler {
         if crate::crsf::is_enabled() {
             let crsf = crate::crsf::get_telemetry();
             append_bytes(&mut buf, &mut pos, b",\"crsf\":{\"conn\":");
-            if crsf.connected {
-                append_bytes(&mut buf, &mut pos, b"true");
-            } else {
-                append_bytes(&mut buf, &mut pos, b"false");
-            }
+            append_bytes(&mut buf, &mut pos, if crsf.connected { b"true" } else { b"false" });
             append_bytes(&mut buf, &mut pos, b",\"lq\":");
             append_u32(&mut buf, &mut pos, crsf.uplink_link_quality as u32);
-            append_bytes(&mut buf, &mut pos, b",\"rssi_dbm\":");
+            append_bytes(&mut buf, &mut pos, b",\"rssi\":");
             append_i32(&mut buf, &mut pos, crsf.uplink_rssi_1 as i32);
-            append_bytes(&mut buf, &mut pos, b",\"snr_db\":");
+            append_bytes(&mut buf, &mut pos, b",\"snr\":");
             append_i32(&mut buf, &mut pos, crsf.uplink_snr as i32);
-            append_bytes(&mut buf, &mut pos, b",\"ant\":");
-            append_u32(&mut buf, &mut pos, crsf.active_antenna as u32);
             append_bytes(&mut buf, &mut pos, b",\"pwr_mw\":");
             append_u32(&mut buf, &mut pos, crsf.tx_power_mw as u32);
-            append_bytes(&mut buf, &mut pos, b",\"rf_rate\":\"");
-            append_bytes(
-                &mut buf,
-                &mut pos,
-                crate::crsf::protocol::rf_mode_to_str(crsf.rf_mode).as_bytes(),
-            );
-            append_bytes(&mut buf, &mut pos, b"\",\"rx_vbat_mv\":");
-            append_u32(&mut buf, &mut pos, crsf.rx_battery_mv as u32);
-            append_bytes(&mut buf, &mut pos, b",\"rx_cap_mah\":");
-            append_u32(&mut buf, &mut pos, crsf.rx_capacity_mah);
+            append_bytes(&mut buf, &mut pos, b",\"rf_mode\":");
+            append_u32(&mut buf, &mut pos, crsf.rf_mode as u32);
             append_bytes(&mut buf, &mut pos, b"}");
         }
         append_bytes(&mut buf, &mut pos, b",\"ch\":[");
@@ -334,58 +314,51 @@ impl SerialHandler {
         }
         append_bytes(&mut buf, &mut pos, b"]}\r\n");
 
-        write_all(serial, &buf[..pos]);
+        self.write_bytes(&buf[..pos]);
     }
 }
 
-#[inline]
-fn append_bytes(buf: &mut [u8], pos: &mut usize, slice: &[u8]) {
-    if *pos + slice.len() <= buf.len() {
-        buf[*pos..*pos + slice.len()].copy_from_slice(slice);
-        *pos += slice.len();
+fn append_bytes(buf: &mut [u8], pos: &mut usize, bytes: &[u8]) {
+    let p = *pos;
+    if p + bytes.len() <= buf.len() {
+        buf[p..p + bytes.len()].copy_from_slice(bytes);
+        *pos += bytes.len();
     }
 }
 
-fn append_u32(buf: &mut [u8], pos: &mut usize, mut n: u32) {
-    if n == 0 {
+fn append_u32(buf: &mut [u8], pos: &mut usize, mut val: u32) {
+    if val == 0 {
         append_bytes(buf, pos, b"0");
-    } else {
-        let mut num_buf = [0u8; 10];
-        let mut idx = 10;
-        while n > 0 {
-            idx -= 1;
-            num_buf[idx] = b'0' + (n % 10) as u8;
-            n /= 10;
-        }
-        append_bytes(buf, pos, &num_buf[idx..]);
+        return;
+    }
+    let mut temp = [0u8; 10];
+    let mut len = 0;
+    while val > 0 {
+        temp[len] = b'0' + (val % 10) as u8;
+        val /= 10;
+        len += 1;
+    }
+    for i in (0..len).rev() {
+        append_bytes(buf, pos, &[temp[i]]);
     }
 }
 
-fn append_i32(buf: &mut [u8], pos: &mut usize, v: i32) {
-    if v < 0 {
+fn append_i32(buf: &mut [u8], pos: &mut usize, val: i32) {
+    if val < 0 {
         append_bytes(buf, pos, b"-");
-        append_u32(buf, pos, (-v) as u32);
+        append_u32(buf, pos, (-val) as u32);
     } else {
-        append_u32(buf, pos, v as u32);
+        append_u32(buf, pos, val as u32);
     }
 }
 
 fn append_volt(buf: &mut [u8], pos: &mut usize, mv: u16) {
-    let v = (mv / 1000) as u32;
-    let rem = (mv % 1000) as u32;
-    let d1 = (rem / 100) as u8;
-    let d2 = ((rem % 100) / 10) as u8;
-    if v >= 10 {
-        let v_buf = [
-            b'0' + ((v / 10) % 10) as u8,
-            b'0' + (v % 10) as u8,
-            b'.',
-            b'0' + d1,
-            b'0' + d2,
-        ];
-        append_bytes(buf, pos, &v_buf);
-    } else {
-        let v_buf = [b'0' + (v as u8), b'.', b'0' + d1, b'0' + d2];
-        append_bytes(buf, pos, &v_buf);
-    }
+    let mut temp = [b'0'; 5];
+    let v = mv / 1000;
+    let rem = mv % 1000;
+    temp[0] = b'0' + (v % 10) as u8;
+    temp[1] = b'.';
+    temp[2] = b'0' + ((rem / 100) % 10) as u8;
+    temp[3] = b'0' + ((rem / 10) % 10) as u8;
+    append_bytes(buf, pos, &temp[..4]);
 }
