@@ -67,6 +67,7 @@ pub fn render(
 }
 
 /// Render the 4 primary flight stick channels (Roll, Pitch, Throttle, Yaw) with gauges and percentages.
+#[inline(never)]
 pub fn render_primary_sticks(
     lcd: &mut St7567,
     state: &InputState,
@@ -144,6 +145,7 @@ pub fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &Rad
 }
 
 /// Render the adaptive switch and pot layout (y = 46..53) based on dynamic channel mappings.
+#[inline(never)]
 pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
     let max_aux = if storage.radio.ext_adc != 0 {
         crate::board::ActiveBoard::TOTAL_ADC_COUNT
@@ -280,6 +282,7 @@ pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &Ra
 }
 
 /// Render the standardized footer (y = 55..63) with bind status, active trims, timer, or navigation hints.
+#[inline(never)]
 pub fn render_footer(
     lcd: &mut St7567,
     trims: &TrimController,

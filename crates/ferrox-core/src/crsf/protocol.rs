@@ -524,18 +524,29 @@ pub fn parse_telemetry_frame(frame: &[u8], telem: &mut CrsfTelemetry, now_ms: u3
     false
 }
 
+const PACKED_VSPEED: [i16; 128] = {
+    let mut table = [0i16; 128];
+    let mut i = 0;
+    while i < 128 {
+        let z = i as i64 * 2600;
+        let term1 = z / 40;
+        let term2 = (z * z) / 8_000_000;
+        let term3 = ((z * z) / 1_000_000 * z) / 2_400_000_000;
+        let cms = term1 + term2 + term3;
+        table[i] = if cms > 32767 { 32767 } else { cms as i16 };
+        i += 1;
+    }
+    table
+};
+
 /// Decode 1-byte packed logarithmic vertical speed used by Betaflight and ExpressLRS in 3-byte CRSF 0x09 frame.
-/// Formula: vspeed = 100 * (25 * (e^(abs(raw) * 0.026) - 1)) cm/s
+/// Uses compile-time precomputed table to eliminate 64-bit division routines on Cortex-M0.
 pub fn decode_packed_vspeed(raw: i8) -> i16 {
     if raw == 0 {
         return 0;
     }
-    let abs_v = (raw as i32).abs().min(127);
-    let z = abs_v * 2600; // z in units of 1/100,000
-    let term1 = z / 40;
-    let term2 = (z as i64 * z as i64) / 8_000_000;
-    let term3 = (z as i64 * z as i64 / 1_000_000 * z as i64) / 2_400_000_000;
-    let cms = (term1 as i64 + term2 + term3).min(32767) as i16;
+    let abs_v = (raw as i32).abs().min(127) as usize;
+    let cms = PACKED_VSPEED[abs_v];
     if raw < 0 {
         -cms
     } else {
