@@ -185,13 +185,17 @@ pub fn reboot_to_dfu() -> ! {
     panic!("reboot_to_dfu called in test");
 }
 
-/// Power-on boot check for DFU entry.
-pub fn check_dfu_entry(profile: &McuProfile) {
-    init_keys();
-
+/// Check if a soft reboot to DFU was requested via SRAM magic flag.
+pub fn check_sram_dfu_entry(profile: &McuProfile) {
     if check_and_clear_sram_dfu_flag() {
         chip::enter_dfu_bootloader(profile);
     }
+}
+
+/// Power-on boot check for DFU entry.
+pub fn check_dfu_entry(profile: &McuProfile) {
+    init_keys();
+    check_sram_dfu_entry(profile);
 
     // Wait ~20ms for power rails and switch contacts to settle at power-on
     delay_cycles(40_000);

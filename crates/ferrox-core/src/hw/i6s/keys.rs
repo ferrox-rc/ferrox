@@ -344,9 +344,9 @@ pub fn reboot_to_dfu() -> ! {
 /// 1. SRAM warm-reboot flag at `0x2000_3FF0 == 0xDEADBEEF`: If set, clear flag and jump to DFU.
 /// 2. Zero-disassembly cold-boot combo: If both Left (`PA9`) and Right (`PA10`) front buttons
 ///    are held at power-on for ~20ms, latch `PB15` HIGH and jump to DFU.
-pub fn check_dfu_entry(profile: &McuProfile) {
+/// Check if a soft reboot to DFU was requested via SRAM magic flag.
+pub fn check_sram_dfu_entry(profile: &McuProfile) {
     let _ = profile;
-    // 1. Check warm-reboot DFU flag in SRAM
     #[cfg(not(test))]
     unsafe {
         if core::ptr::read_volatile(DFU_FLAG_ADDR) == DFU_MAGIC_FLAG {
@@ -360,9 +360,13 @@ pub fn check_dfu_entry(profile: &McuProfile) {
     {
         if TEST_SRAM_FLAG.load(core::sync::atomic::Ordering::SeqCst) == DFU_MAGIC_FLAG {
             TEST_SRAM_FLAG.store(0, core::sync::atomic::Ordering::SeqCst);
-            return;
         }
     }
+}
+
+/// Power-on boot check for DFU entry.
+pub fn check_dfu_entry(profile: &McuProfile) {
+    check_sram_dfu_entry(profile);
 
     // 2. Initialize GPIOA for front buttons
     init_keys();

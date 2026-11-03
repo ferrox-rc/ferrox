@@ -1030,6 +1030,8 @@ fn main() -> ! {
 
     // 1. MCU Profile & Fast DFU Bootloader Check
     let mcu_profile = chip::get_mcu_profile();
+    boot::check_sram_dfu_entry(&mcu_profile);
+
     if !was_watchdog_reset {
         boot::check_dfu_entry(&mcu_profile);
     } else {
