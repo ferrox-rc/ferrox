@@ -48,7 +48,7 @@ pub fn update_diag_anas(
 
         for (i, &name) in names.iter().enumerate() {
             let adc_idx = start_idx + i;
-            let y = 14 + (i as i32 * 7);
+            let y = 13 + (i as i32 * 7);
             let raw = raw_adc[adc_idx].min(4095);
             let fill_w = ((raw as u32 * 38) / 4095).min(38);
             widgets::draw_gauge_row(lcd, y, name, fill_w, raw);
