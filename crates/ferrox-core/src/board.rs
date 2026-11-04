@@ -39,7 +39,7 @@ pub struct I6sSpec;
 
 impl BoardProfile for I6sSpec {
     const MODEL_NAME: &'static str = "FS-i6S";
-    const FIRMWARE_ID: &'static str = "flysky-i6s-rs";
+    const FIRMWARE_ID: &'static str = "ferrox-flysky-i6s";
     const USB_PRODUCT_JOYSTICK: &'static str = "FS-i6S Joystick";
     const USB_SERIAL_JOYSTICK: &'static str = "FS-I6S-SIM";
     const USB_PRODUCT_SERIAL: &'static str = "FS-i6S Serial";
@@ -70,7 +70,7 @@ pub struct I6xSpec;
 
 impl BoardProfile for I6xSpec {
     const MODEL_NAME: &'static str = "FS-i6X";
-    const FIRMWARE_ID: &'static str = "flysky-i6x-rs";
+    const FIRMWARE_ID: &'static str = "ferrox-flysky-i6x";
     const USB_PRODUCT_JOYSTICK: &'static str = "FS-i6X Joystick";
     const USB_SERIAL_JOYSTICK: &'static str = "FS-I6X-SIM";
     const USB_PRODUCT_SERIAL: &'static str = "FS-i6X Serial";

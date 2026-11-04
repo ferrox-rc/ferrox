@@ -16,7 +16,7 @@ use crate::ui::glyphs::draw_switch_arrow;
 use crate::ui::menu::{MenuController, MenuState};
 use crate::ui::widgets;
 
-pub const FIRMWARE_ID: &str = "flysky-i6x-rs";
+pub const FIRMWARE_ID: &str = "ferrox-flysky-i6x";
 pub const DEFAULT_SB_MODE: AdcInputMode = AdcInputMode::TwoPos;
 pub const HAS_JOG_WHEELS: bool = false;
 

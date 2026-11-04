@@ -241,7 +241,6 @@ unsafe fn ep0_send_data(data: &[u8], wanted: usize) {
     }
     CONTROL_ZLP = len > 0 && len < wanted && (len % CONTROL_PACKET_SIZE) == 0;
     CONTROL_STAGE = ControlStage::DataIn;
-    ep_clear_dtog_tx(0);
     ep0_send_next();
 }
 
@@ -255,13 +254,11 @@ unsafe fn ep0_send_next() {
 
 unsafe fn ep0_status_in() {
     CONTROL_STAGE = ControlStage::StatusIn;
-    ep_clear_dtog_tx(0);
     ep_send(0, EP0_TX_OFF, &[]);
 }
 
 unsafe fn ep0_expect_out(stage: ControlStage) {
     CONTROL_STAGE = stage;
-    ep_clear_dtog_rx(0);
     ep_set_stat_rx(0, STAT_VALID);
 }
 
@@ -348,22 +345,42 @@ pub fn init(mode: u8) {
             return;
         }
 
-        // Configure PA11 & PA12 as AF0 (USB_DM & USB_DP)
+        // Configure PA11 & PA12 as Input Floating (MODER = 00, PUPDR = 00)
+        // STM32F072 connects the USB analog PHY directly to PA11/PA12 when configured as inputs.
         gpioa.moder.modify(|r, w| {
-            w.bits((r.bits() & !((0b11 << 22) | (0b11 << 24))) | ((0b10 << 22) | (0b10 << 24)))
+            w.bits(r.bits() & !((0b11 << 22) | (0b11 << 24)))
         });
-        gpioa
-            .afrh
-            .modify(|r, w| w.bits(r.bits() & !((0xF << 12) | (0xF << 16))));
-
-        cortex_m::asm::delay(48_000);
+        gpioa.pupdr.modify(|r, w| {
+            w.bits(r.bits() & !((0b11 << 22) | (0b11 << 24)))
+        });
 
         // 5. Initialize USB hardware registers
-        usb.cntr.write(|w| w.fres().clear_bit()); // Release reset
-        cortex_m::asm::delay(48_000);
+        // Clear PDWN to wake analog transceiver from power-down
+        usb.cntr.modify(|_, w| w.pdwn().clear_bit());
 
+        // Wait t_STARTUP (datasheet requires >= 1 µs, wait 10 µs / 480 cycles at 48 MHz)
+        cortex_m::asm::delay(480);
+
+        // Configure BTABLE offset
         usb.btable.write(|w| w.btable().bits(BTABLE_OFF));
-        usb.daddr.write(|w| w.ef().set_bit()); // Enable function
+
+        // Release reset (FRES=0, PDWN=0) and enable interrupts in one clean write
+        usb.cntr.write(|w| {
+            w.pdwn()
+                .clear_bit()
+                .fres()
+                .clear_bit()
+                .resetm()
+                .set_bit()
+                .ctrm()
+                .set_bit()
+        });
+
+        // Clear any spurious pending interrupt flags in ISTR
+        usb.istr.write(|w| w.bits(0));
+
+        // Enable USB device function (Address 0)
+        usb.daddr.write(|w| w.ef().set_bit());
 
         // Setup EP0 (Control)
         ep_write(0, EP_TYPE_CONTROL);
@@ -371,19 +388,7 @@ pub fn init(mode: u8) {
         ep_set_stat_rx(0, STAT_VALID);
         ep_set_stat_tx(0, STAT_NAK);
 
-        // Enable interrupts: Correct Transfer, Reset, Suspend, Wakeup
-        usb.cntr.write(|w| {
-            w.ctrm()
-                .set_bit()
-                .resetm()
-                .set_bit()
-                .suspm()
-                .set_bit()
-                .wkupm()
-                .set_bit()
-        });
-
-        // 6. Connect internal pull-up on D+ (DPPU)
+        // 6. Connect internal pull-up on D+ (DPPU) to signal Full-Speed attachment to the host
         usb.bcdr.write(|w| w.dppu().set_bit());
 
         // 7. Configure NVIC for USB Interrupt (IRQ 31)
@@ -415,8 +420,8 @@ pub fn on_interrupt() {
 
             // USB Reset event
             if (bits & (1 << 10)) != 0 {
-                // RESET
-                usb.istr.write(|w| w.bits(!((1 << 10) as u16) as u32));
+                // RESET: clear flag by writing 0 to bit 10
+                usb.istr.write(|w| w.bits(0xFFFF & !(1 << 10)));
                 usb.btable.write(|w| w.btable().bits(BTABLE_OFF));
                 ep_write(0, EP_TYPE_CONTROL);
                 set_buffers(0, EP0_TX_OFF, EP0_RX_OFF, RX_COUNT_64);
@@ -432,7 +437,7 @@ pub fn on_interrupt() {
             // Clear harmless status flags (SUSP, WKUP, ERR, PMAOVR)
             let misc = (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14);
             if (bits & misc) != 0 {
-                usb.istr.write(|w| w.bits(!(bits & misc)));
+                usb.istr.write(|w| w.bits(0xFFFF & !(bits & misc)));
             }
 
             // Correct Transfer (CTR)

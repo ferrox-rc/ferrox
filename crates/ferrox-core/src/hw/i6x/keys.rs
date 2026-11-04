@@ -171,14 +171,14 @@ pub fn set_sram_dfu_flag() {
     }
 }
 
-/// Trigger a warm reboot directly into the STM32 factory ROM DFU bootloader.
+/// Trigger a jump directly into the STM32 factory ROM DFU bootloader.
 pub fn reboot_to_dfu() -> ! {
     set_sram_dfu_flag();
 
     #[cfg(not(test))]
     {
-        cortex_m::asm::dsb();
-        cortex_m::peripheral::SCB::sys_reset();
+        let profile = chip::get_mcu_profile();
+        chip::enter_dfu_bootloader(&profile);
     }
 
     #[cfg(test)]

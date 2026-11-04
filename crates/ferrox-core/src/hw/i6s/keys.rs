@@ -318,17 +318,17 @@ pub fn is_dfu_requested(keys: u16) -> bool {
     (keys & ((1 << 10) | (1 << 11))) == ((1 << 10) | (1 << 11))
 }
 
-/// Trigger a warm reboot into the STM32 factory ROM DFU bootloader.
+/// Trigger a jump directly into the STM32 factory ROM DFU bootloader.
 ///
-/// Sets `0xDEADBEEF` at SRAM `0x2000_3FF0`, keeps `PB15` power latch HIGH,
-/// and triggers an immediate software reset.
+/// Keeps `PB15` power latch HIGH and bootstraps directly into factory ROM DFU.
 pub fn reboot_to_dfu() -> ! {
     crate::hw::power::latch_on();
 
     #[cfg(not(test))]
     unsafe {
         core::ptr::write_volatile(DFU_FLAG_ADDR, DFU_MAGIC_FLAG);
-        cortex_m::peripheral::SCB::sys_reset();
+        let profile = chip::get_mcu_profile();
+        chip::enter_dfu_bootloader(&profile);
     }
 
     #[cfg(test)]

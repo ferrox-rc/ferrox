@@ -48,7 +48,7 @@ pub fn update_diag_anas(
 
         for (i, &name) in names.iter().enumerate() {
             let adc_idx = start_idx + i;
-            let y = 12 + (i as i32 * 7);
+            let y = 14 + (i as i32 * 7);
             let raw = raw_adc[adc_idx].min(4095);
             let fill_w = ((raw as u32 * 38) / 4095).min(38);
             widgets::draw_gauge_row(lcd, y, name, fill_w, raw);
@@ -77,18 +77,18 @@ pub fn update_system_info(
 
     widgets::draw_header(lcd, "SYSTEM INFORMATION");
 
-    lcd.draw_str_4x6(4, 12, "MCU:      ", false);
-    lcd.draw_str_4x6(48, 12, profile.name, false);
+    lcd.draw_str_4x6(4, 14, "MCU:      ", false);
+    lcd.draw_str_4x6(48, 14, profile.name, false);
 
-    lcd.draw_str_4x6(4, 18, "Firmware: ", false);
+    lcd.draw_str_4x6(4, 21, "Firmware: ", false);
     lcd.draw_str_4x6(
         48,
-        18,
+        21,
         concat!(env!("FIRMWARE_VERSION"), " (", env!("GIT_HASH"), ")"),
         false,
     );
 
-    lcd.draw_str_4x6(4, 25, "Flash: 128KB | SRAM: 16KB", false);
+    lcd.draw_str_4x6(4, 28, "Flash: 128KB | SRAM: 16KB", false);
 
     let status = crate::storage::get_eeprom_status();
     let mut st_buf = *b"Storage:  xxxx @ 0x00 (OK) ";
@@ -109,13 +109,13 @@ pub fn update_system_info(
             b"(ERR)"
         };
         st_buf[22..27].copy_from_slice(state);
-        lcd.draw_str_4x6(4, 32, ascii_as_str(&st_buf[..27]), false);
+        lcd.draw_str_4x6(4, 35, ascii_as_str(&st_buf[..27]), false);
     } else {
-        lcd.draw_str_4x6(4, 32, "Storage:  None (No EEPROM)", false);
+        lcd.draw_str_4x6(4, 35, "Storage:  None (No EEPROM)", false);
     }
 
-    lcd.draw_str_4x6(4, 39, "Profiles: 20 Models (16KB)", false);
-    lcd.draw_str_4x6(4, 46, "Bootloader: [OK] Reboot DFU", false);
+    lcd.draw_str_4x6(4, 42, "Profiles: 20 Models (16KB)", false);
+    lcd.draw_str_4x6(4, 49, "Bootloader: [OK] Reboot DFU", false);
 
     if keys.ok {
         buzzer.play_tone(2400, 100);
