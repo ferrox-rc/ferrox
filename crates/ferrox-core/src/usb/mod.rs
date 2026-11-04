@@ -12,9 +12,10 @@ pub mod serial;
 
 use crate::input::Switches;
 use crate::rf::afhds2a::TelemetryData;
+use descriptors::CONTROL_PACKET_SIZE;
+#[cfg(not(test))]
 use descriptors::{
-    config_descriptor, device_descriptor, string_descriptor, CDC_PACKET_SIZE, CONTROL_PACKET_SIZE,
-    LINE_CODING_DEFAULT,
+    config_descriptor, device_descriptor, string_descriptor, CDC_PACKET_SIZE, LINE_CODING_DEFAULT,
 };
 pub use serial::ResetAction;
 use serial::SerialHandler;

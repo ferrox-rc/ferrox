@@ -119,6 +119,15 @@ pub fn update_system_info(
 
     if keys.ok {
         buzzer.play_tone(2400, 100);
+        crate::ui::splash::draw_bootloader(lcd);
+        lcd.flush();
+        #[cfg(not(test))]
+        {
+            let start = crate::time::millis();
+            while crate::time::millis().wrapping_sub(start) < 120 {
+                crate::watchdog::feed();
+            }
+        }
         crate::boot::reboot_to_dfu();
     }
 

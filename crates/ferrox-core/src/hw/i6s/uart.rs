@@ -14,7 +14,9 @@
 #[cfg(not(test))]
 use stm32f0xx_hal::pac::{self, interrupt};
 
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(test))]
+use core::sync::atomic::AtomicUsize;
 
 #[cfg(not(test))]
 const RX_BUF_SIZE: usize = 256;
