@@ -13,3 +13,6 @@ build-i6x = "build --release -p ferrox-i6x"
 test-host-i6s = "test -p ferrox-core --features board-i6s --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 test-host-i6x = "test -p ferrox-core --features board-i6x --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 test-host = "test --workspace --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
+test-all = "test --workspace --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
+
+
