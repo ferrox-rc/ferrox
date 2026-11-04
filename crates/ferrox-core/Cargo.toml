@@ -19,6 +19,7 @@ stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072"] }
 default = ["board-i6x"]
 board-i6s = ["touch"]
 board-i6x = []
+board-pocket = []
 touch = []
 stm32 = []
 apm32 = []

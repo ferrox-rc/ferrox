@@ -1,0 +1,14 @@
+[package]
+name = "ferrox-stm32f0"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072"] }
+embedded-graphics = "0.8.1"
+ferrox-core = { path = "../ferrox-core" }
