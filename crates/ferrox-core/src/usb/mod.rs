@@ -240,7 +240,7 @@ unsafe fn ep0_send_data(data: &[u8], wanted: usize) {
     if len > 0 {
         CONTROL_DATA[..len].copy_from_slice(&data[..len]);
     }
-    CONTROL_ZLP = len > 0 && len < wanted && (len % CONTROL_PACKET_SIZE) == 0;
+    CONTROL_ZLP = len > 0 && len < wanted && len.is_multiple_of(CONTROL_PACKET_SIZE);
     CONTROL_STAGE = ControlStage::DataIn;
     ep0_send_next();
 }

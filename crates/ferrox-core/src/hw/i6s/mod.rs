@@ -214,9 +214,6 @@ pub fn decode_board_switches(
     )
 }
 
-/// Number of visible items in Input Setup menu.
-
-
 /// Render the default switch and dual pot layout (y = 46..53) on FS-i6S.
 pub fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
     let sg_sh_active = storage.radio.j4_sg_sh_en != 0;

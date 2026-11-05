@@ -753,19 +753,17 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            1 => {
-                if current_proto == RfProtocol::Crsf {
-                    if keys.up {
-                        storage.active_model.crsf_baud = (storage.active_model.crsf_baud + 1) % 5;
-                        buzzer.play_tone(2200, 30);
-                    } else if keys.down {
-                        storage.active_model.crsf_baud = if storage.active_model.crsf_baud > 0 {
-                            storage.active_model.crsf_baud - 1
-                        } else {
-                            4
-                        };
-                        buzzer.play_tone(2200, 30);
-                    }
+            1 if current_proto == RfProtocol::Crsf => {
+                if keys.up {
+                    storage.active_model.crsf_baud = (storage.active_model.crsf_baud + 1) % 5;
+                    buzzer.play_tone(2200, 30);
+                } else if keys.down {
+                    storage.active_model.crsf_baud = if storage.active_model.crsf_baud > 0 {
+                        storage.active_model.crsf_baud - 1
+                    } else {
+                        4
+                    };
+                    buzzer.play_tone(2200, 30);
                 }
             }
             _ => {}

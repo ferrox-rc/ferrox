@@ -57,8 +57,10 @@ pub trait StorageBus {
     fn init(&mut self) -> bool;
 
     /// Read a slice of bytes from non-volatile storage.
+    #[allow(clippy::result_unit_err)]
     fn read(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()>;
 
     /// Write a slice of bytes to non-volatile storage.
+    #[allow(clippy::result_unit_err)]
     fn write(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()>;
 }

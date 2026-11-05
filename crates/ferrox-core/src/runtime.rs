@@ -1028,6 +1028,7 @@ pub fn draw_timer_reset_modal(lcd: &mut St7567, progress_pct: u8, completed: boo
 ///
 /// Executes initialization stages, bootloader checks, peripheral discovery,
 /// safety interlocks, and the dual-rate flight loop.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn run(panic_count_ptr: *mut u32) -> ! {
     // 0. Early board initialization (e.g. electronic power latch on FS-i6S)
     hw::pre_init();

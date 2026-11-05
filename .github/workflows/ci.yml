@@ -43,11 +43,15 @@ jobs:
       - name: Run host unit tests
         run: cargo test-host
 
-      - name: Build release binary
-        run: cargo build --release --target thumbv6m-none-eabi
+      - name: Build release binaries
+        run: |
+          cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi
+          cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi
 
       - name: Install cargo-binutils
         run: cargo install cargo-binutils || true
 
-      - name: Check binary footprint
-        run: cargo size --release -- -A
+      - name: Check binary footprints
+        run: |
+          cargo size --bin ferrox-i6s --release -- -A
+          cargo size --bin ferrox-i6x --release -- -A

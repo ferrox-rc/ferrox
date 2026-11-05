@@ -84,6 +84,15 @@ impl<const N: usize> DescriptorBuf<N> {
             len: 0,
         }
     }
+}
+
+impl<const N: usize> Default for DescriptorBuf<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> DescriptorBuf<N> {
 
     pub fn push(&mut self, byte: u8) {
         if self.len < N {

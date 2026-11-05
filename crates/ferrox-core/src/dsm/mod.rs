@@ -62,9 +62,9 @@ pub fn pack_multi_dsm_frame(
     let mut bits_in_acc: u8 = 0;
     let mut byte_idx = 4;
 
-    for ch in 0..16 {
-        let us = channels_us[ch].clamp(988, 2012) as u32;
-        let val11 = (((us - 988) * 1639) / 1024 + 172).min(2047);
+    for &us in channels_us[..16].iter() {
+        let us_clamped = us.clamp(988, 2012) as u32;
+        let val11 = (((us_clamped - 988) * 1639) / 1024 + 172).min(2047);
         bit_acc |= val11 << bits_in_acc;
         bits_in_acc += 11;
         while bits_in_acc >= 8 && byte_idx < 26 {

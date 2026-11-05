@@ -277,9 +277,7 @@ pub fn write_bytes(bytes: &[u8]) -> usize {
             return 0;
         }
 
-        for i in 0..n {
-            TX_DMA_BUF[i] = bytes[i];
-        }
+        TX_DMA_BUF[..n].copy_from_slice(&bytes[..n]);
 
         let usart1 = &*pac::USART1::ptr();
         let dma = &*pac::DMA1::ptr();

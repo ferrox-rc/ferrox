@@ -338,13 +338,7 @@ pub fn reboot_to_dfu() -> ! {
     }
 }
 
-/// Power-on boot check for DFU entry.
-///
-/// Checks:
-/// 1. SRAM warm-reboot flag at `0x2000_3FF0 == 0xDEADBEEF`: If set, clear flag and jump to DFU.
-/// 2. Zero-disassembly cold-boot combo: If both Left (`PA9`) and Right (`PA10`) front buttons
-///    are held at power-on for ~20ms, latch `PB15` HIGH and jump to DFU.
-/// Check if a soft reboot to DFU was requested via SRAM magic flag.
+/// Checks if a soft reboot to DFU was requested via SRAM magic flag.
 pub fn check_sram_dfu_entry(profile: &McuProfile) {
     let _ = profile;
     #[cfg(not(test))]
