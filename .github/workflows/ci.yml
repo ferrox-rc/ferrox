@@ -41,7 +41,9 @@ jobs:
         run: cargo clippy --target thumbv6m-none-eabi -- -D warnings
 
       - name: Run host unit tests
-        run: cargo test-host
+        run: |
+          cargo test-host-i6s
+          cargo test-host-i6x
 
       - name: Build release binaries
         run: |
