@@ -1,5 +1,6 @@
 //! Startup splash screen renderer with Ferrox-RC logo and firmware information.
 
+use crate::board::BoardProfile;
 use crate::display::St7567;
 use crate::ui::glyphs::draw_ferrox_logo;
 
@@ -18,8 +19,8 @@ pub fn draw_splash(lcd: &mut St7567) {
     lcd.draw_str_6x10(37, 34, "FERROX-RC", false);
 
     // 3. Draw firmware ID dynamically centered horizontally in 4x6
-    let id_x = ((128i32 - crate::hw::FIRMWARE_ID.len() as i32 * 4) / 2).max(0);
-    lcd.draw_str_4x6(id_x, 45, crate::hw::FIRMWARE_ID, false);
+    let id_x = ((128i32 - crate::board::ActiveBoard::FIRMWARE_ID.len() as i32 * 4) / 2).max(0);
+    lcd.draw_str_4x6(id_x, 45, crate::board::ActiveBoard::FIRMWARE_ID, false);
 
     // 4. Draw Version Tag dynamically centered horizontally (4x6 is 4px wide)
     const VERSION_TAG: &str = concat!(env!("FIRMWARE_VERSION"), " (", env!("GIT_HASH"), ")");

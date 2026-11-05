@@ -160,7 +160,7 @@ pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &Ra
 
     for ch in 0..max_aux {
         let mode = storage.radio.get_adc_mode(ch);
-        let sw_name = crate::hw::ADAPTIVE_CH_NAMES[ch];
+        let sw_name = crate::board::ActiveBoard::ADAPTIVE_CH_NAMES[ch];
         match mode {
             AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim => {
                 let pos = match ch {

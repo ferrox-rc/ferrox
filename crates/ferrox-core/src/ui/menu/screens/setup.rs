@@ -1,5 +1,6 @@
 //! Radio settings and Protocol configuration screens.
 
+use crate::board::{ActiveBoard, BoardProfile, DsmSubProtocol, HardwareExtItem, RadioSetupItem, RfProtocol};
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::menu::format::{
@@ -25,37 +26,35 @@ pub fn update_radio_setup(
         return;
     }
 
+    let items = ActiveBoard::RADIO_SETUP_ITEMS;
+    let item_count = items.len();
+
     widgets::navigate_4slot_list(
         &mut ctrl.selected_item,
         &mut ctrl.scroll_offset,
-        crate::hw::SETUP_ITEMS,
+        item_count,
         keys.up,
         keys.down,
         buzzer,
     );
 
-    if keys.ok {
-        match ctrl.selected_item {
-            0 => {
+    if keys.ok && ctrl.selected_item < item_count {
+        match items[ctrl.selected_item] {
+            RadioSetupItem::ThrottleTrim => {
                 buzzer.click();
                 storage.radio.throttle_trim = (storage.radio.throttle_trim + 1) % 3;
                 trims.throttle_enabled = storage.radio.throttle_trim != 0;
                 storage::save_radio_config(storage);
             }
-            1 => {
-                storage.radio.audio_enabled = if storage.radio.audio_enabled == 0 {
-                    1
-                } else {
-                    0
-                };
+            RadioSetupItem::Beeper => {
+                storage.radio.audio_enabled = if storage.radio.audio_enabled == 0 { 1 } else { 0 };
                 buzzer.enabled = storage.radio.audio_enabled != 0;
                 if buzzer.enabled {
                     buzzer.click();
                 }
                 storage::save_radio_config(storage);
             }
-            2 => {
-                // Toggle Tone Style: 0=Simple, 1=Rich
+            RadioSetupItem::ToneStyle => {
                 storage.radio.tone_style = if storage.radio.tone_style == 0 { 1 } else { 0 };
                 buzzer.tone_style = crate::buzzer::ToneStyle::from_u8(storage.radio.tone_style);
                 storage::save_radio_config(storage);
@@ -65,12 +64,12 @@ pub fn update_radio_setup(
                     buzzer.click();
                 }
             }
-            3 => {
+            RadioSetupItem::BacklightTimeout => {
                 buzzer.click();
                 storage.radio.backlight_timeout = (storage.radio.backlight_timeout + 1) % 4;
                 storage::save_radio_config(storage);
             }
-            4 => {
+            RadioSetupItem::BacklightBrightness => {
                 buzzer.click();
                 storage.radio.backlight_brightness = if storage.radio.backlight_brightness >= 10 {
                     1
@@ -80,7 +79,7 @@ pub fn update_radio_setup(
                 lcd.set_backlight_level(storage.radio.backlight_brightness * 10);
                 storage::save_radio_config(storage);
             }
-            5 => {
+            RadioSetupItem::LcdContrast => {
                 buzzer.click();
                 storage.radio.lcd_contrast = if storage.radio.lcd_contrast >= 50 {
                     20
@@ -90,7 +89,7 @@ pub fn update_radio_setup(
                 lcd.set_contrast(storage.radio.lcd_contrast);
                 storage::save_radio_config(storage);
             }
-            6 => {
+            RadioSetupItem::BatteryWarn => {
                 buzzer.click();
                 storage.radio.vbat_warn_deci = if storage.radio.vbat_warn_deci >= 50 {
                     40
@@ -99,17 +98,56 @@ pub fn update_radio_setup(
                 };
                 storage::save_radio_config(storage);
             }
-            7 => {
+            RadioSetupItem::UsbMode => {
                 buzzer.click();
                 storage.radio.usb_mode = (storage.radio.usb_mode + 1) % 4;
                 storage::save_radio_config(storage);
                 crate::usb::request_init(storage.radio.usb_mode);
             }
-            idx => {
-                crate::hw::handle_board_setup_ok(idx, ctrl, storage, trims, buzzer);
-                if ctrl.state != MenuState::RadioSetup {
-                    return;
-                }
+            RadioSetupItem::HardwareSetupSubmenu => {
+                buzzer.click();
+                ctrl.state = MenuState::HardwareSetup;
+                ctrl.selected_item = 0;
+                ctrl.scroll_offset = 0;
+                return;
+            }
+            RadioSetupItem::RearLeftFunc => {
+                buzzer.click();
+                storage.radio.rear_left_func = (storage.radio.rear_left_func + 1) % 3;
+                storage::save_radio_config(storage);
+            }
+            RadioSetupItem::RearRightFunc => {
+                buzzer.click();
+                storage.radio.rear_right_func = (storage.radio.rear_right_func + 1) % 3;
+                storage::save_radio_config(storage);
+            }
+            RadioSetupItem::TouchEnabled => {
+                buzzer.click();
+                storage.radio.touch_disabled = if storage.radio.touch_disabled == 0 { 1 } else { 0 };
+                storage::save_radio_config(storage);
+            }
+            RadioSetupItem::StickMode => {
+                buzzer.click();
+                storage.radio.stick_mode = (storage.radio.stick_mode + 1) % 4;
+                storage::save_radio_config(storage);
+            }
+            RadioSetupItem::GimbalType => {
+                buzzer.click();
+                storage.radio.gimbal_type = if storage.radio.gimbal_type == 0 { 1 } else { 0 };
+                crate::input::apply_calibration(&storage.radio);
+                storage::save_radio_config(storage);
+            }
+            RadioSetupItem::SwitchBeep => {
+                buzzer.click();
+                storage.radio.switch_beep = if storage.radio.switch_beep == 0 { 1 } else { 0 };
+                storage::save_radio_config(storage);
+            }
+            RadioSetupItem::InputSetupSubmenu => {
+                buzzer.click();
+                ctrl.state = MenuState::InputSetup;
+                ctrl.selected_item = 0;
+                ctrl.scroll_offset = 0;
+                return;
             }
         }
     }
@@ -118,27 +156,26 @@ pub fn update_radio_setup(
 
     for slot in 0..4 {
         let idx = ctrl.scroll_offset + slot;
-        if idx >= crate::hw::SETUP_ITEMS {
+        if idx >= item_count {
             break;
         }
         let is_sel = idx == ctrl.selected_item;
-
-        render_radio_setup_row(lcd, slot, idx, is_sel, storage);
+        render_radio_setup_item(lcd, slot, items[idx], is_sel, storage);
     }
 
     widgets::draw_footer(lcd, "[OK] Toggle/Cycle   [ESC] Back");
 }
 
 #[inline(never)]
-fn render_radio_setup_row(
+fn render_radio_setup_item(
     lcd: &mut St7567,
     slot: usize,
-    idx: usize,
+    item: RadioSetupItem,
     is_sel: bool,
     storage: &RadioStorage,
 ) {
-    match idx {
-        0 => {
+    match item {
+        RadioSetupItem::ThrottleTrim => {
             let val_str = match storage.radio.throttle_trim {
                 1 => "IDLE",
                 2 => "LINEAR",
@@ -146,7 +183,7 @@ fn render_radio_setup_row(
             };
             widgets::draw_list_row_right(lcd, slot, is_sel, "Thr Trim:", Some(val_str));
         }
-        1 => {
+        RadioSetupItem::Beeper => {
             let beeper_str = if storage.radio.audio_enabled != 0 {
                 "ENABLED"
             } else {
@@ -154,7 +191,7 @@ fn render_radio_setup_row(
             };
             widgets::draw_list_row_right(lcd, slot, is_sel, "Beeper:", Some(beeper_str));
         }
-        2 => {
+        RadioSetupItem::ToneStyle => {
             let tone_str = if storage.radio.tone_style != 0 {
                 "RICH"
             } else {
@@ -162,7 +199,7 @@ fn render_radio_setup_row(
             };
             widgets::draw_list_row_right(lcd, slot, is_sel, "Tones:", Some(tone_str));
         }
-        3 => {
+        RadioSetupItem::BacklightTimeout => {
             let timer_str = match storage.radio.backlight_timeout {
                 1 => "15 SEC",
                 2 => "30 SEC",
@@ -171,23 +208,23 @@ fn render_radio_setup_row(
             };
             widgets::draw_list_row_right(lcd, slot, is_sel, "BL Timer:", Some(timer_str));
         }
-        4 => {
+        RadioSetupItem::BacklightBrightness => {
             let mut b_buf = [0u8; 4];
             let pct = (storage.radio.backlight_brightness * 10).min(100);
             let b_str = format_pct_3(pct, &mut b_buf);
             widgets::draw_list_row_right(lcd, slot, is_sel, "BL Level:", Some(b_str));
         }
-        5 => {
+        RadioSetupItem::LcdContrast => {
             let mut c_buf = [0u8; 2];
             let c_str = format_u8_2(storage.radio.lcd_contrast, &mut c_buf);
             widgets::draw_list_row_right(lcd, slot, is_sel, "Contrast:", Some(c_str));
         }
-        6 => {
+        RadioSetupItem::BatteryWarn => {
             let mut v_buf = [0u8; 4];
             let v_str = format_deci_volt(storage.radio.vbat_warn_deci, &mut v_buf);
             widgets::draw_list_row_right(lcd, slot, is_sel, "Bat Warn:", Some(v_str));
         }
-        7 => {
+        RadioSetupItem::UsbMode => {
             let usb_str = match storage.radio.usb_mode {
                 1 => "JOYSTICK",
                 2 => "SERIAL",
@@ -196,8 +233,216 @@ fn render_radio_setup_row(
             };
             widgets::draw_list_row_right(lcd, slot, is_sel, "USB Mode:", Some(usb_str));
         }
-        idx => {
-            crate::hw::draw_board_setup_row(lcd, slot, idx, is_sel, storage);
+        RadioSetupItem::HardwareSetupSubmenu => {
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Hardware Ext", Some(">"));
+        }
+        RadioSetupItem::RearLeftFunc => {
+            let s = match storage.radio.rear_left_func {
+                1 => "TIMR RST",
+                2 => "TRIM MOD",
+                _ => "SWE (2P)",
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Rear L (SWE):", Some(s));
+        }
+        RadioSetupItem::RearRightFunc => {
+            let s = match storage.radio.rear_right_func {
+                1 => "INST TRIM",
+                2 => "TRIM MOD",
+                _ => "SWF (MOM)",
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Rear R (SWF):", Some(s));
+        }
+        RadioSetupItem::TouchEnabled => {
+            let t_str = if storage.radio.touch_disabled == 0 {
+                "ENABLED"
+            } else {
+                "DISABLED"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Touch Scr:", Some(t_str));
+        }
+        RadioSetupItem::StickMode => {
+            let mode_str = match storage.radio.stick_mode {
+                0 => "MODE 1",
+                1 => "MODE 2",
+                2 => "MODE 3",
+                _ => "MODE 4",
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Stick Mode:", Some(mode_str));
+        }
+        RadioSetupItem::GimbalType => {
+            let gmb_str = if storage.radio.is_hall_gimbals() {
+                "HALL"
+            } else {
+                "POT"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Gimbals:", Some(gmb_str));
+        }
+        RadioSetupItem::SwitchBeep => {
+            let swb_str = if storage.radio.switch_beep != 0 {
+                "ENABLED"
+            } else {
+                "MUTED"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Switch Beep:", Some(swb_str));
+        }
+        RadioSetupItem::InputSetupSubmenu => {
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Input Modes", Some(">"));
+        }
+    }
+}
+
+/// Standalone declarative Hardware Extensions configuration screen.
+#[inline(never)]
+pub fn update_hardware_setup(
+    ctrl: &mut MenuController,
+    lcd: &mut St7567,
+    keys: &NavKeys,
+    storage: &mut RadioStorage,
+    buzzer: &mut Buzzer,
+) {
+    if keys.cancel {
+        ctrl.state = MenuState::RadioSetup;
+        // Return to the HardwareSetupSubmenu slot in RadioSetup
+        let items = ActiveBoard::RADIO_SETUP_ITEMS;
+        let pos = items
+            .iter()
+            .position(|&it| it == RadioSetupItem::HardwareSetupSubmenu)
+            .unwrap_or(0);
+        ctrl.selected_item = pos;
+        ctrl.scroll_offset = pos.saturating_sub(2);
+        buzzer.click();
+        return;
+    }
+
+    let items = ActiveBoard::HARDWARE_EXT_ITEMS;
+    let item_count = items.len();
+
+    widgets::navigate_4slot_list(
+        &mut ctrl.selected_item,
+        &mut ctrl.scroll_offset,
+        item_count,
+        keys.up,
+        keys.down,
+        buzzer,
+    );
+
+    if keys.ok && ctrl.selected_item < item_count {
+        match items[ctrl.selected_item] {
+            HardwareExtItem::ExtModulePwr => {
+                buzzer.click();
+                storage.radio.ext_module_pwr = if storage.radio.ext_module_pwr == 0 { 1 } else { 0 };
+                crate::crsf::set_power_polarity(storage.radio.ext_module_pwr == 0);
+                storage::save_radio_config(storage);
+            }
+            HardwareExtItem::ExtSwitches => {
+                buzzer.click();
+                storage.radio.ext_switches = if storage.radio.ext_switches == 0 { 1 } else { 0 };
+                crate::input::set_ext_switches_enabled(storage.radio.ext_switches != 0);
+                storage::save_radio_config(storage);
+            }
+            HardwareExtItem::J4Mode => {
+                buzzer.click();
+                storage.radio.j4_sg_sh_en = if storage.radio.j4_sg_sh_en == 0 { 1 } else { 0 };
+                ActiveBoard::set_j4_mode_enabled(storage.radio.j4_sg_sh_en != 0);
+                storage::save_radio_config(storage);
+            }
+            HardwareExtItem::ExtAdc => {
+                buzzer.click();
+                storage.radio.ext_adc = if storage.radio.ext_adc == 0 { 1 } else { 0 };
+                crate::adc::set_ext_adc_enabled(storage.radio.ext_adc != 0);
+                crate::input::set_ext_adc_enabled(storage.radio.ext_adc != 0);
+                crate::input::apply_calibration(&storage.radio);
+                storage::save_radio_config(storage);
+            }
+            HardwareExtItem::PpmOut => {
+                buzzer.click();
+                let en = !storage.radio.is_ppm_out_enabled();
+                storage.radio.set_ppm_out_enabled(en);
+                crate::trainer::set_ppm_out(en);
+                storage::save_radio_config(storage);
+            }
+            HardwareExtItem::PpmIn => {
+                buzzer.click();
+                storage.radio.cycle_trainer_in_mode();
+                let ppm_en = storage.radio.is_ppm_in_enabled();
+                crate::trainer::set_ppm_in(ppm_en);
+                storage::save_radio_config(storage);
+            }
+        }
+    }
+
+    widgets::draw_header(lcd, "HARDWARE EXT");
+
+    for slot in 0..4 {
+        let idx = ctrl.scroll_offset + slot;
+        if idx >= item_count {
+            break;
+        }
+        let is_sel = idx == ctrl.selected_item;
+        render_hardware_ext_item(lcd, slot, items[idx], is_sel, storage);
+    }
+
+    widgets::draw_footer(lcd, "[OK] Toggle/Cycle   [ESC] Back");
+}
+
+#[inline(never)]
+fn render_hardware_ext_item(
+    lcd: &mut St7567,
+    slot: usize,
+    item: HardwareExtItem,
+    is_sel: bool,
+    storage: &RadioStorage,
+) {
+    match item {
+        HardwareExtItem::ExtModulePwr => {
+            let pwr_str = if storage.radio.ext_module_pwr == 0 {
+                "HIGH (N)"
+            } else {
+                "LOW (P)"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, ActiveBoard::EXT_PWR_LABEL, Some(pwr_str));
+        }
+        HardwareExtItem::ExtSwitches => {
+            let sw_str = if storage.radio.ext_switches != 0 {
+                "PC12+PC15"
+            } else {
+                "OFF"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Ext Sw:", Some(sw_str));
+        }
+        HardwareExtItem::J4Mode => {
+            let j4_str = if storage.radio.j4_sg_sh_en != 0 {
+                "SG/SH BTN"
+            } else {
+                "SWD (DBG)"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "J4 Mode:", Some(j4_str));
+        }
+        HardwareExtItem::ExtAdc => {
+            let adc_str = if storage.radio.ext_adc != 0 {
+                ActiveBoard::EXT_ADC_ON_STR
+            } else {
+                ActiveBoard::EXT_ADC_OFF_STR
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, ActiveBoard::EXT_ADC_LABEL, Some(adc_str));
+        }
+        HardwareExtItem::PpmOut => {
+            let out_str = if storage.radio.is_ppm_out_enabled() {
+                ActiveBoard::PPM_OUT_ON_STR
+            } else {
+                "OFF"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "PPM Out:", Some(out_str));
+        }
+        HardwareExtItem::PpmIn => {
+            let in_str = if storage.radio.is_ppm_in_enabled() {
+                ActiveBoard::PPM_IN_ON_STR
+            } else if storage.radio.is_dsm_sat_in_enabled() {
+                "DSMX SAT"
+            } else {
+                "OFF"
+            };
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Trainer In:", Some(in_str));
         }
     }
 }
@@ -223,13 +468,18 @@ pub fn update_input_setup(
 ) {
     if keys.cancel {
         ctrl.state = MenuState::RadioSetup;
-        ctrl.selected_item = crate::hw::INPUT_SETUP_RETURN.0;
-        ctrl.scroll_offset = crate::hw::INPUT_SETUP_RETURN.1;
+        let items = ActiveBoard::RADIO_SETUP_ITEMS;
+        let pos = items
+            .iter()
+            .position(|&it| it == RadioSetupItem::InputSetupSubmenu)
+            .unwrap_or(0);
+        ctrl.selected_item = pos;
+        ctrl.scroll_offset = pos.saturating_sub(2);
         buzzer.click();
         return;
     }
 
-    let input_items = crate::hw::input_setup_items(storage);
+    let input_items = ActiveBoard::input_setup_items(storage.radio.ext_adc != 0);
 
     widgets::navigate_4slot_list(
         &mut ctrl.selected_item,
@@ -263,7 +513,12 @@ pub fn update_input_setup(
         let is_sel = idx == ctrl.selected_item;
         let mode_idx = (storage.radio.get_adc_mode_val(idx) as usize).min(MODE_STRS.len() - 1);
         let mode_str = MODE_STRS[mode_idx];
-        widgets::draw_list_row_right(lcd, slot, is_sel, crate::hw::AUX_NAMES[idx], Some(mode_str));
+        let name = if idx < ActiveBoard::AUX_NAMES.len() {
+            ActiveBoard::AUX_NAMES[idx]
+        } else {
+            "AUX:"
+        };
+        widgets::draw_list_row_right(lcd, slot, is_sel, name, Some(mode_str));
     }
 
     widgets::draw_footer(lcd, "[OK] Cycle Mode    [ESC] Back");
@@ -345,10 +600,23 @@ pub fn update_rx_setup(
     storage: &mut RadioStorage,
     buzzer: &mut Buzzer,
 ) {
-    let proto = storage.active_model.rf_protocol;
-    // 0: AFHDS 2A -> 6 items (0: Proto, 1: [Bind Receiver], 2: RF Power, 3: Servo Hz, 4: RX Out, 5: Serial)
-    // 1: CRSF -> 5 items (0: Proto, 1: Baud, 2: Duplex, 3: Arm Mode, 4: [Configure Module])
-    let item_count = if proto == 0 { 6 } else { 5 };
+    let current_proto = ActiveBoard::resolve_protocol(storage.active_model.rf_protocol);
+    if storage.active_model.rf_protocol != current_proto as u8 {
+        storage.active_model.rf_protocol = current_proto as u8;
+        storage::save_active_model(storage);
+    }
+
+    let item_count = match current_proto {
+        RfProtocol::Afhds2a => 6,
+        RfProtocol::Crsf => 5,
+        RfProtocol::Cc2500 => 4,
+        RfProtocol::Dsm => {
+            #[cfg(feature = "dsm-fwd-prog")]
+            { 5 }
+            #[cfg(not(feature = "dsm-fwd-prog"))]
+            { 4 }
+        }
+    };
 
     if keys.cancel {
         if ctrl.editing {
@@ -365,7 +633,6 @@ pub fn update_rx_setup(
     }
 
     if !ctrl.editing {
-        // Navigation Phase: UP/DOWN moves selection
         widgets::navigate_4slot_list(
             &mut ctrl.selected_item,
             &mut ctrl.scroll_offset,
@@ -376,148 +643,134 @@ pub fn update_rx_setup(
         );
 
         if keys.ok {
-            match (proto, ctrl.selected_item) {
+            match (current_proto, ctrl.selected_item) {
                 (_, 0) => {
                     // Enter edit mode for Protocol
                     ctrl.editing = true;
                     buzzer.click();
                 }
-                (0, 1) => {
-                    // AFHDS 2A: Trigger Bind
+                (RfProtocol::Afhds2a, 1) => {
                     ctrl.request_bind = true;
                     ctrl.state = MenuState::Closed;
                     buzzer.click();
                     return;
                 }
-                (1, 1) => {
-                    // CRSF: Enter edit mode for Baud Rate
+                (RfProtocol::Afhds2a, 2) => {
+                    buzzer.click();
+                    storage.active_model.rf_power = (storage.active_model.rf_power + 1) % 4;
+                    storage::save_active_model(storage);
+                }
+                (RfProtocol::Afhds2a, 3) => {
+                    buzzer.click();
+                    storage.active_model.servo_rate_hz = match storage.active_model.servo_rate_hz {
+                        50 => 100,
+                        100 => 200,
+                        200 => 333,
+                        333 => 400,
+                        _ => 50,
+                    };
+                    storage::save_active_model(storage);
+                }
+                (RfProtocol::Afhds2a, 4) => {
+                    buzzer.click();
+                    storage.active_model.rx_out_mode = if storage.active_model.rx_out_mode == 0 { 1 } else { 0 };
+                    storage::save_active_model(storage);
+                }
+                (RfProtocol::Afhds2a, 5) => {
+                    buzzer.click();
+                    storage.active_model.rx_serial_proto = if storage.active_model.rx_serial_proto == 0 { 1 } else { 0 };
+                    storage::save_active_model(storage);
+                }
+                (RfProtocol::Crsf, 1) => {
                     ctrl.editing = true;
                     buzzer.click();
                 }
-                (1, 2) => {
-                    // CRSF: Toggle Duplex mode (Full / Half)
+                (RfProtocol::Crsf, 2) => {
                     buzzer.click();
-                    storage.active_model.crsf_half_duplex =
-                        if storage.active_model.crsf_half_duplex == 0 {
-                            1
-                        } else {
-                            0
-                        };
-                    storage::save_storage(storage);
+                    storage.active_model.crsf_half_duplex = if storage.active_model.crsf_half_duplex == 0 { 1 } else { 0 };
+                    storage::save_active_model(storage);
                 }
-                (1, 3) => {
-                    // CRSF: Toggle Arm Mode: 0: CH5 (Std), 1: Switch (Extended 23B payload)
+                (RfProtocol::Crsf, 3) => {
                     buzzer.click();
-                    storage.active_model.crsf_arm_mode = if storage.active_model.crsf_arm_mode == 0
-                    {
-                        1
-                    } else {
-                        0
-                    };
-                    storage::save_storage(storage);
+                    storage.active_model.crsf_arm_mode = if storage.active_model.crsf_arm_mode == 0 { 1 } else { 0 };
+                    storage::save_active_model(storage);
                 }
-                (1, 4) => {
-                    // CRSF: Enter Configurator
+                (RfProtocol::Crsf, 4) => {
+                    buzzer.click();
                     ctrl.state = MenuState::CrsfSetup;
-                    ctrl.return_state = MenuState::RxSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
-                    ctrl.waiting_release = true;
-                    crate::crsf::start_config();
-                    buzzer.click();
                     return;
                 }
-                (0, 2) => {
-                    // AFHDS 2A: Cycle RF Power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
+                (RfProtocol::Dsm, 1) => {
                     buzzer.click();
-                    storage.active_model.rf_power = (storage.active_model.rf_power + 1) % 4;
-                    crate::rf::set_rf_power(storage.active_model.rf_power);
-                    storage::save_storage(storage);
+                    let cur = DsmSubProtocol::from_u8(storage.active_model.dsm_sub_proto);
+                    storage.active_model.dsm_sub_proto = cur.next() as u8;
+                    storage::save_active_model(storage);
                 }
-                (0, 3) => {
-                    // AFHDS 2A: Cycle Servo Hz
+                (RfProtocol::Dsm, 2) => {
                     buzzer.click();
-                    storage.active_model.servo_rate_hz = match storage.active_model.servo_rate_hz {
-                        50 => 60,
-                        60 => 100,
-                        100 => 150,
-                        150 => 200,
-                        200 => 250,
-                        250 => 300,
-                        300 => 350,
-                        350 => 400,
-                        _ => 50,
-                    };
-                    crate::rf::set_rx_settings(
-                        storage.active_model.servo_rate_hz,
-                        storage.active_model.rx_out_mode,
-                        storage.active_model.rx_serial_proto,
-                    );
-                    storage::save_storage(storage);
+                    ctrl.request_bind = true;
+                    ctrl.state = MenuState::Closed;
+                    return;
                 }
-                (0, 4) => {
-                    // AFHDS 2A: Toggle RX Out (PWM/PPM)
+                (RfProtocol::Dsm, 3) => {
                     buzzer.click();
-                    storage.active_model.rx_out_mode = if storage.active_model.rx_out_mode == 0 {
-                        1
-                    } else {
-                        0
-                    };
-                    crate::rf::set_rx_settings(
-                        storage.active_model.servo_rate_hz,
-                        storage.active_model.rx_out_mode,
-                        storage.active_model.rx_serial_proto,
-                    );
-                    storage::save_storage(storage);
+                    storage.active_model.rf_power = if storage.active_model.rf_power == 0 { 1 } else { 0 };
+                    storage::save_active_model(storage);
                 }
-                (0, 5) => {
-                    // AFHDS 2A: Toggle Serial Proto (i-BUS/S.BUS)
-                    buzzer.click();
-                    storage.active_model.rx_serial_proto =
-                        if storage.active_model.rx_serial_proto == 0 {
-                            1
-                        } else {
-                            0
-                        };
-                    crate::rf::set_rx_settings(
-                        storage.active_model.servo_rate_hz,
-                        storage.active_model.rx_out_mode,
-                        storage.active_model.rx_serial_proto,
-                    );
-                    storage::save_storage(storage);
+                (RfProtocol::Dsm, 4) => {
+                    #[cfg(feature = "dsm-fwd-prog")]
+                    {
+                        ctrl.state = MenuState::DsmSetup;
+                        ctrl.return_state = MenuState::RxSetup;
+                        ctrl.selected_item = 0;
+                        ctrl.scroll_offset = 0;
+                        ctrl.waiting_release = true;
+                        crate::dsm::start_forward_prog();
+                        buzzer.click();
+                        return;
+                    }
+                    #[cfg(not(feature = "dsm-fwd-prog"))]
+                    {
+                        buzzer.click();
+                    }
                 }
                 _ => {}
             }
         }
     } else {
-        // Edit Phase: UP/DOWN modifies the selected parameter
+        // Editing Phase
         match ctrl.selected_item {
             0 => {
-                // Protocol: 0 = AFHDS 2A, 1 = CRSF
-                if keys.up || keys.down {
-                    let new_proto = if proto == 0 { 1 } else { 0 };
-                    storage.active_model.rf_protocol = new_proto;
+                if keys.up {
+                    let next = ActiveBoard::next_protocol(storage.active_model.rf_protocol);
+                    storage.active_model.rf_protocol = next as u8;
+                    buzzer.play_tone(2200, 30);
+                } else if keys.down {
+                    let prev = ActiveBoard::prev_protocol(storage.active_model.rf_protocol);
+                    storage.active_model.rf_protocol = prev as u8;
                     buzzer.play_tone(2200, 30);
                 }
             }
             1 => {
-                // Baud Rate (CRSF only): 0 = 115.2k, 1 = 416.6k, 2 = 420k, 3 = 921.6k, 4 = 1.875M
-                if keys.up {
-                    storage.active_model.crsf_baud = (storage.active_model.crsf_baud + 1) % 5;
-                    buzzer.play_tone(2200, 30);
-                } else if keys.down {
-                    storage.active_model.crsf_baud = if storage.active_model.crsf_baud > 0 {
-                        storage.active_model.crsf_baud - 1
-                    } else {
-                        4
-                    };
-                    buzzer.play_tone(2200, 30);
+                if current_proto == RfProtocol::Crsf {
+                    if keys.up {
+                        storage.active_model.crsf_baud = (storage.active_model.crsf_baud + 1) % 5;
+                        buzzer.play_tone(2200, 30);
+                    } else if keys.down {
+                        storage.active_model.crsf_baud = if storage.active_model.crsf_baud > 0 {
+                            storage.active_model.crsf_baud - 1
+                        } else {
+                            4
+                        };
+                        buzzer.play_tone(2200, 30);
+                    }
                 }
             }
             _ => {}
         }
 
-        // OK saves selection to Flash and returns to navigation phase
         if keys.ok {
             ctrl.editing = false;
             storage::save_storage(storage);
@@ -527,46 +780,113 @@ pub fn update_rx_setup(
 
     widgets::draw_header(lcd, "PROTOCOL SETUP");
 
-    let current_proto = storage.active_model.rf_protocol;
-
-    if current_proto == 0 {
-        for slot in 0..4 {
-            let idx = ctrl.scroll_offset + slot;
-            if idx >= item_count {
-                break;
+    match current_proto {
+        RfProtocol::Afhds2a => {
+            for slot in 0..4 {
+                let idx = ctrl.scroll_offset + slot;
+                if idx >= item_count {
+                    break;
+                }
+                render_afhds_row(lcd, slot, idx, idx == ctrl.selected_item, ctrl.editing, storage);
             }
-            render_afhds_row(lcd, slot, idx, idx == ctrl.selected_item, ctrl.editing, storage);
+            let footer = if ctrl.editing {
+                "[OK] Save   [UP/DN] Change"
+            } else if ctrl.selected_item == 1 {
+                "[OK] Start Bind   [ESC] Exit"
+            } else if ctrl.selected_item >= 2 {
+                "[OK] Toggle/Cycle [ESC] Exit"
+            } else {
+                "[OK] Edit   [ESC] Exit"
+            };
+            widgets::draw_footer(lcd, footer);
         }
-
-        let footer = if ctrl.editing {
-            "[OK] Save   [UP/DN] Change"
-        } else if ctrl.selected_item == 1 {
-            "[OK] Start Bind   [ESC] Exit"
-        } else if ctrl.selected_item >= 2 {
-            "[OK] Toggle/Cycle [ESC] Exit"
-        } else {
-            "[OK] Edit   [ESC] Exit"
-        };
-        widgets::draw_footer(lcd, footer);
-    } else {
-        for slot in 0..4 {
-            let idx = ctrl.scroll_offset + slot;
-            if idx >= item_count {
-                break;
+        RfProtocol::Crsf => {
+            for slot in 0..4 {
+                let idx = ctrl.scroll_offset + slot;
+                if idx >= item_count {
+                    break;
+                }
+                render_crsf_row(lcd, slot, idx, idx == ctrl.selected_item, ctrl.editing, storage);
             }
-            render_crsf_row(lcd, slot, idx, idx == ctrl.selected_item, ctrl.editing, storage);
+            let footer = if ctrl.editing {
+                "[OK] Save   [UP/DN] Change"
+            } else if ctrl.selected_item == 2 || ctrl.selected_item == 3 {
+                "[OK] Toggle Mode  [ESC] Exit"
+            } else if ctrl.selected_item == 4 {
+                "[OK] Open Config  [ESC] Exit"
+            } else {
+                "[OK] Edit   [ESC] Exit"
+            };
+            widgets::draw_footer(lcd, footer);
         }
-
-        let footer = if ctrl.editing {
-            "[OK] Save   [UP/DN] Change"
-        } else if ctrl.selected_item == 2 || ctrl.selected_item == 3 {
-            "[OK] Toggle Mode  [ESC] Exit"
-        } else if ctrl.selected_item == 4 {
-            "[OK] Open Config  [ESC] Exit"
-        } else {
-            "[OK] Edit   [ESC] Exit"
-        };
-        widgets::draw_footer(lcd, footer);
+        RfProtocol::Cc2500 => {
+            for slot in 0..4 {
+                let idx = ctrl.scroll_offset + slot;
+                if idx >= item_count {
+                    break;
+                }
+                match idx {
+                    0 => {
+                        let proto_val = if ctrl.editing && idx == ctrl.selected_item {
+                            "[CC2500]"
+                        } else {
+                            "CC2500"
+                        };
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Proto:", Some(proto_val));
+                    }
+                    1 => widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Mode:", Some("FRSKY D16")),
+                    2 => widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "[Bind Receiver]", None),
+                    3 => widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Power:", Some("100mW (HI)")),
+                    _ => {}
+                }
+            }
+            widgets::draw_footer(lcd, "[OK] Select   [ESC] Exit");
+        }
+        RfProtocol::Dsm => {
+            for slot in 0..4 {
+                let idx = ctrl.scroll_offset + slot;
+                if idx >= item_count {
+                    break;
+                }
+                match idx {
+                    0 => {
+                        let proto_val = if ctrl.editing && idx == ctrl.selected_item {
+                            "[SPEKTRUM DSM]"
+                        } else {
+                            "SPEKTRUM DSM"
+                        };
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Proto:", Some(proto_val));
+                    }
+                    1 => {
+                        let sub = DsmSubProtocol::from_u8(storage.active_model.dsm_sub_proto);
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Mode:", Some(sub.name()));
+                    }
+                    2 => {
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "[Bind DSM Receiver]", None);
+                    }
+                    3 => {
+                        let pwr = if storage.active_model.rf_power == 0 { "NORMAL" } else { "RANGE TEST" };
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Power:", Some(pwr));
+                    }
+                    4 => {
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "[Forward Prog]", Some(">"));
+                    }
+                    _ => {}
+                }
+            }
+            let footer = if ctrl.editing {
+                "[OK] Save   [UP/DN] Change"
+            } else if ctrl.selected_item == 1 || ctrl.selected_item == 3 {
+                "[OK] Cycle Mode   [ESC] Exit"
+            } else if ctrl.selected_item == 2 {
+                "[OK] Start Bind   [ESC] Exit"
+            } else if ctrl.selected_item == 4 {
+                "[OK] Open Config  [ESC] Exit"
+            } else {
+                "[OK] Edit   [ESC] Exit"
+            };
+            widgets::draw_footer(lcd, footer);
+        }
     }
 }
 

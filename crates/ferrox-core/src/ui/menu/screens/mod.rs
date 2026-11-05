@@ -7,3 +7,5 @@ pub mod main_menu;
 pub mod mixer;
 pub mod model;
 pub mod setup;
+#[cfg(feature = "dsm-fwd-prog")]
+pub mod dsm;

@@ -10,6 +10,7 @@ pub use crate::ui::widgets;
 pub mod screens;
 
 use crate::adc;
+use crate::board::{ActiveBoard, BoardProfile};
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::storage::RadioStorage;
@@ -29,11 +30,13 @@ pub enum MenuState {
     AuxChannels,
     ChannelReverse,
     RadioSetup,
+    HardwareSetup,
     InputSetup,
     TelemSetup,
     VarioSetup,
     RxSetup,
     CrsfSetup,
+    DsmSetup,
     ChannelMonitor,
     DiagAnas,
     SystemInfo,
@@ -231,9 +234,9 @@ impl MenuController {
         let vrb_mode = storage.radio.get_raw_adc_mode(5);
 
         if is_source_selection {
-            if crate::hw::HAS_JOG_WHEELS && vra_mode.is_pot() && pots.vr1.abs() >= 300 {
+            if ActiveBoard::HAS_JOG_WHEELS && vra_mode.is_pot() && pots.vr1.abs() >= 300 {
                 pot_change = Some(5); // MixSource::Vra
-            } else if crate::hw::HAS_JOG_WHEELS && vrb_mode.is_pot() && pots.vr2.abs() >= 300 {
+            } else if ActiveBoard::HAS_JOG_WHEELS && vrb_mode.is_pot() && pots.vr2.abs() >= 300 {
                 pot_change = Some(6); // MixSource::Vrb
             } else if (pots.vr1 - self.prev_vr1).abs() >= 300 {
                 pot_change = Some(5); // MixSource::Vra
@@ -251,7 +254,7 @@ impl MenuController {
         // - Must return to the neutral middle deadband ([-300, 300]) to re-arm for the next line change.
         // - Active for Default (spring wheels), Pot, and PotDetent (detented pots).
         // - Switch modes (TwoPos, ThreePos, etc.) and InputSetup screen are excluded to prevent runaway scrolling.
-        if crate::hw::HAS_JOG_WHEELS && !is_source_selection && self.state != MenuState::InputSetup
+        if ActiveBoard::HAS_JOG_WHEELS && !is_source_selection && self.state != MenuState::InputSetup
         {
             let mut current_dir: i8 = 0;
 
@@ -369,6 +372,9 @@ impl MenuController {
             MenuState::RadioSetup => {
                 screens::setup::update_radio_setup(self, lcd, &nav_keys, storage, trims, buzzer);
             }
+            MenuState::HardwareSetup => {
+                screens::setup::update_hardware_setup(self, lcd, &nav_keys, storage, buzzer);
+            }
             MenuState::InputSetup => {
                 screens::setup::update_input_setup(self, lcd, &nav_keys, storage, buzzer);
             }
@@ -383,6 +389,14 @@ impl MenuController {
             }
             MenuState::CrsfSetup => {
                 screens::crsf::update(self, lcd, &nav_keys, buzzer);
+            }
+            MenuState::DsmSetup => {
+                #[cfg(feature = "dsm-fwd-prog")]
+                screens::dsm::update(self, lcd, &nav_keys, buzzer);
+                #[cfg(not(feature = "dsm-fwd-prog"))]
+                {
+                    self.state = MenuState::RxSetup;
+                }
             }
             MenuState::ChannelMonitor => {
                 screens::channels::update_channel_monitor(
@@ -437,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_jog_wheel_menu_navigation() {
-        if !crate::hw::HAS_JOG_WHEELS {
+        if !ActiveBoard::HAS_JOG_WHEELS {
             return;
         }
         let mut ctrl = MenuController::new();
@@ -560,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_continuous_pot_detent_rotary_navigation() {
-        if !crate::hw::HAS_JOG_WHEELS {
+        if !ActiveBoard::HAS_JOG_WHEELS {
             return;
         }
         let mut ctrl = MenuController::new();
@@ -657,7 +671,7 @@ mod tests {
 
     #[test]
     fn test_input_setup_cycling_does_not_trigger_jog_scroll() {
-        if !crate::hw::HAS_JOG_WHEELS {
+        if !ActiveBoard::HAS_JOG_WHEELS {
             return;
         }
         let mut ctrl = MenuController::new();
@@ -695,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_switch_mode_on_pot_does_not_trigger_jog_scroll() {
-        if !crate::hw::HAS_JOG_WHEELS {
+        if !ActiveBoard::HAS_JOG_WHEELS {
             return;
         }
         let mut ctrl = MenuController::new();
@@ -920,11 +934,16 @@ mod tests {
         let mut buzzer = Buzzer::new();
         let mut lcd = St7567::new();
         let mut storage = RadioStorage::default_factory();
-        let mut trims = crate::trim::TrimController::new();
 
-        ctrl.state = MenuState::RadioSetup;
-        ctrl.selected_item = crate::hw::PPM_OUT_SETUP_IDX;
-        ctrl.scroll_offset = crate::hw::PPM_OUT_SETUP_IDX.saturating_sub(2);
+        ctrl.state = MenuState::HardwareSetup;
+        let items = ActiveBoard::HARDWARE_EXT_ITEMS;
+        let Some(ppm_out_pos) = items.iter().position(|&it| it == crate::board::HardwareExtItem::PpmOut) else {
+            return;
+        };
+        let ppm_in_pos = items.iter().position(|&it| it == crate::board::HardwareExtItem::PpmIn).unwrap();
+
+        ctrl.selected_item = ppm_out_pos;
+        ctrl.scroll_offset = ppm_out_pos.saturating_sub(2);
 
         assert!(!storage.radio.is_ppm_out_enabled());
         assert!(!storage.radio.is_ppm_in_enabled());
@@ -941,55 +960,54 @@ mod tests {
         };
 
         // Press OK on PPM Out -> Toggle PPM Out ON
-        screens::setup::update_radio_setup(
+        screens::setup::update_hardware_setup(
             &mut ctrl,
             &mut lcd,
             &nav,
             &mut storage,
-            &mut trims,
             &mut buzzer,
         );
         assert!(storage.radio.is_ppm_out_enabled());
         assert!(!storage.radio.is_ppm_in_enabled());
 
         // Move to Trainer In
-        nav.ok = false;
-        nav.down = true;
-        screens::setup::update_radio_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut trims,
-            &mut buzzer,
-        );
-        assert_eq!(ctrl.selected_item, crate::hw::PPM_OUT_SETUP_IDX + 1);
+        ctrl.selected_item = ppm_in_pos;
+        ctrl.scroll_offset = ppm_in_pos.saturating_sub(2);
 
-        // Press OK on Trainer In -> Toggle Trainer In ON
-        nav.down = false;
+        // Press OK on Trainer In -> Cycle to PPM In (ON)
         nav.ok = true;
-        screens::setup::update_radio_setup(
+        screens::setup::update_hardware_setup(
             &mut ctrl,
             &mut lcd,
             &nav,
             &mut storage,
-            &mut trims,
             &mut buzzer,
         );
         assert!(storage.radio.is_ppm_out_enabled());
         assert!(storage.radio.is_ppm_in_enabled());
+        assert!(!storage.radio.is_dsm_sat_in_enabled());
 
-        // Press OK again on Trainer In -> Toggle Trainer In OFF
-        screens::setup::update_radio_setup(
+        // Press OK again on Trainer In -> Cycle to DSMX SAT
+        screens::setup::update_hardware_setup(
             &mut ctrl,
             &mut lcd,
             &nav,
             &mut storage,
-            &mut trims,
             &mut buzzer,
         );
-        assert!(storage.radio.is_ppm_out_enabled());
         assert!(!storage.radio.is_ppm_in_enabled());
+        assert!(storage.radio.is_dsm_sat_in_enabled());
+
+        // Press OK again on Trainer In -> Cycle to OFF
+        screens::setup::update_hardware_setup(
+            &mut ctrl,
+            &mut lcd,
+            &nav,
+            &mut storage,
+            &mut buzzer,
+        );
+        assert!(!storage.radio.is_ppm_in_enabled());
+        assert!(!storage.radio.is_dsm_sat_in_enabled());
     }
 
     #[test]
@@ -1001,8 +1019,10 @@ mod tests {
         let mut trims = crate::trim::TrimController::new();
 
         ctrl.state = MenuState::RadioSetup;
-        ctrl.selected_item = if cfg!(feature = "board-i6s") { 14 } else { 12 }; // Gimbals row
-        ctrl.scroll_offset = 10;
+        let items = ActiveBoard::RADIO_SETUP_ITEMS;
+        let gimbal_pos = items.iter().position(|&it| it == crate::board::RadioSetupItem::GimbalType).unwrap();
+        ctrl.selected_item = gimbal_pos;
+        ctrl.scroll_offset = gimbal_pos.saturating_sub(2);
 
         assert_eq!(storage.radio.gimbal_type, 0);
         assert!(!storage.radio.is_hall_gimbals());

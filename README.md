@@ -1,22 +1,29 @@
 # ferrox
 
-A minimalist, high-performance, clean-slate RC transmitter firmware monorepo written in `no_std` Rust.
+**A universal, high-performance, bare-metal RC transmitter operating system written in `no_std` Rust.**
 
-Targeting both the **FlySky FS-i6S** and **FlySky FS-i6X**, powered by the unified **`ferrox-core`** flight-control engine with zero-cost compile-time `BoardProfile` const trait specialization. Built from the ground up as a universal foundation to bring bare-metal Rust firmware to other radios across the open-source RC ecosystem.
+`ferrox` is a multi-radio firmware monorepo built around **`ferrox-core`** — a hardware-agnostic flight control, mixing, telemetry, and UI engine parameterized by compile-time [`BoardProfile`](crates/ferrox-core/src/board.rs) specialization. Originally forged on the **FlySky FS-i6X** and **FlySky FS-i6S**, `ferrox` is architected to bring deterministic, memory-safe Rust firmware to a growing lineup of RC transmitters across the open-source ecosystem:
 
-Supports the built-in **A7105** 2.4 GHz RF transceiver (**AFHDS 2A** protocol), external **CRSF / ExpressLRS** modules, zero-dependency direct PAC **USB 2.0 Full-Speed** driver (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** (i6S), **Electronic Power Management** (i6S), **Optical Jog Wheel** (i6X), **TIM15 Trainer Subsystem (PPM Out & In)**, and **128×64 Monochrome LCD** interface.
+| Transmitter Target | MCU Architecture | Status | Primary RF / Module Support |
+| :--- | :--- | :--- | :--- |
+| **FlySky FS-i6X** (`boards/ferrox-i6x`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** |
+| **FlySky FS-i6S** (`boards/ferrox-i6s`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** |
+| **RadioMaster Pocket** (`PocketSpec`) | STM32F407VG (Cortex-M4F) | **In Progress (`BoardProfile` Ready)** | Internal **ExpressLRS (CRSF)** or **CC2500** + External Nano Bay (**DSM / Multi**) |
+| **Future STM32F4 / H7 Handsets** | Cortex-M4F / Cortex-M7 | **Planned** | Declarative `BoardProfile` + modular `rf-*` feature selection |
+
+Supports modular RF protocols (**AFHDS 2A**, **CRSF / ExpressLRS** with native on-radio device configurator, **CC2500**, and **Spektrum DSM2 / DSMX** with optional Forward Programming), a zero-dependency direct PAC **USB 2.0 Full-Speed** stack (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** & **Electronic Power Management** (i6S), **Matrix Keypad** (i6X), **TIM15 Trainer Subsystem** (CPPM Out/In & Spektrum Satellite wireless trainer), and a fast **128×64 Monochrome LCD** engine.
 
 ---
 
-## 1. Monorepo Architecture & Philosophy
+## 1. Monorepo Architecture & Multi-Radio Philosophy
 
-The `ferrox` workspace unifies the development, testing, and release process into a single monorepo designed not only for the FlySky FS-i6S and FS-i6X, but structured as an extensible multi-radio foundation:
+The `ferrox` workspace unifies development, host-side testing, and binary releases into a single Cargo workspace designed to scale cleanly across diverse transmitter hardware:
 
-- **Target-Agnostic Core (`crates/ferrox-core`):** Contains 100% of the shared flight pipeline, 18-channel matrix mixer, Catmull-Rom spline curves, external I2C EEPROM persistence engine, pre-flight safety interlocks, calibration wizard, AFHDS 2A & CRSF/ELRS engines, 128×64 display widgets, and direct PAC USB stack.
-- **Board Crates (`boards/ferrox-i6s`, `boards/ferrox-i6x`):** Thin board entrypoints implementing target-specific startup, vector tables, pin mappings, and memory layouts.
-- **`BoardProfile` Const Trait:** Hardware parameters (touch presence, power latch, ADC channel counts, SWD buttons, optical jog wheel, EEPROM CRC polynomials, and default flight modes) are encapsulated in a zero-cost compile-time trait evaluated with zero runtime overhead and zero dynamic dispatch.
-- **Extensible to Other Radios:** Porting Ferrox to additional transmitters (such as other FlySky handsets, EdgeTX/OpenTX-compatible transmitters, or future STM32/RP2040-based designs) only requires creating a new `boards/ferrox-<target>` crate that implements `BoardProfile`. The core flight algorithms, mixer, telemetry, curves, and protocol engines remain completely untouched and shared.
-- **Direct PAC USB Driver:** Zero third-party USB crates. Implements USB 2.0 Full-Speed directly against the STM32F072 dedicated 1 KB Packet Memory Area (PMA), saving ~4 KB Flash and eliminating all heap/generic overhead.
+- **Target-Agnostic Core (`crates/ferrox-core`):** Houses 100% of the shared flight pipeline, 32-line 18-channel matrix mixer, Catmull-Rom spline curves, Global Variables (`GV1..GV5`), acoustic variometer, external I2C EEPROM persistence engine, pre-flight safety interlocks, calibration wizard, modular RF protocol engines, 128×64 display widgets, and direct PAC USB stack.
+- **Board Crates (`boards/ferrox-i6s`, `boards/ferrox-i6x`, `boards/ferrox-<target>`):** Thin board crates providing target-specific startup, pin mappings, and peripheral initialization.
+- **Declarative `BoardProfile` Trait:** Hardware capabilities — supported RF protocols (`SUPPORTED_PROTOCOLS`), default protocol (`DEFAULT_PROTOCOL`), top-level and setup menu catalogs (`MAIN_MENU_ITEMS`, `RADIO_SETUP_ITEMS`, `HARDWARE_EXT_ITEMS`), ADC channel counts, touch/jog-wheel navigation, and EEPROM CRC polynomials — are declared per board at compile time with zero runtime overhead and zero dynamic dispatch.
+- **Rapid Porting to New Radios:** Bringing Ferrox to a new transmitter only requires defining a `BoardProfile` implementation and low-level GPIO/ADC/UART hooks in a new `boards/ferrox-<target>` crate. Menus, protocol setup screens, calibration wizards, and mixer bounds automatically adapt to the board's declared capabilities.
+- **Direct PAC USB Driver:** Zero third-party USB crates. Implements USB 2.0 Full-Speed directly against the hardware Packet Memory Area (PMA), saving ~4 KB Flash and eliminating all heap/generic overhead.
 - **Circular DMA CRSF UART:** 256-byte circular RX DMA with hardware half-duplex receiver gating (`RE` pin gating), eliminating UART self-echo without software skip counters.
 - **External I2C EEPROM Storage:** Wear-leveled A/B ping-pong storage for `RadioConfig` and 20 dedicated `ModelConfig` slots stored on external 16 KB I2C EEPROM (24C128), completely isolating user model data from firmware flashing and preserving flash endurance.
 - **Deterministic Concurrency:** Priority-driven interrupt scheduling paired with lock-free atomic `TripleBuffer` channel passing, protected critical sections during RF strobes and trainer reads, and a 2.0s hardware independent watchdog with sub-2ms warm reset recovery.

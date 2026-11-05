@@ -33,25 +33,25 @@ pub struct DeviceIdentity {
 }
 
 pub fn identity(mode: UsbMode) -> DeviceIdentity {
-    let is_i6s = cfg!(feature = "board-i6s");
+    use crate::board::{ActiveBoard, BoardProfile};
     match mode {
         UsbMode::Serial => DeviceIdentity {
             vid: 0x0483,
             pid: 0x5740,
-            product: if is_i6s { "FS-i6S Serial" } else { "FS-i6X Serial" },
-            serial: if is_i6s { "FS-I6S-VCP" } else { "FS-I6X-VCP" },
+            product: ActiveBoard::USB_PRODUCT_SERIAL,
+            serial: ActiveBoard::USB_SERIAL_SERIAL,
         },
         UsbMode::Composite => DeviceIdentity {
             vid: 0x1209,
             pid: 0x4968,
-            product: if is_i6s { "FS-i6S Radio" } else { "FS-i6X Radio" },
-            serial: if is_i6s { "FS-I6S-COMP" } else { "FS-I6X-COMP" },
+            product: ActiveBoard::USB_PRODUCT_COMPOSITE,
+            serial: ActiveBoard::USB_SERIAL_COMPOSITE,
         },
         UsbMode::Joystick | UsbMode::Off => DeviceIdentity {
             vid: 0x1209,
             pid: 0x4F54,
-            product: if is_i6s { "FS-i6S Joystick" } else { "FS-i6X Joystick" },
-            serial: if is_i6s { "FS-I6S-SIM" } else { "FS-I6X-SIM" },
+            product: ActiveBoard::USB_PRODUCT_JOYSTICK,
+            serial: ActiveBoard::USB_SERIAL_JOYSTICK,
         },
     }
 }

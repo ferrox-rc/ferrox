@@ -1,5 +1,6 @@
 //! Auxiliary channels assignment, Channel reversing, and Channel monitor screens.
 
+use crate::board::BoardProfile;
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::menu::format::{ascii_as_str, SOURCE_NAMES};
@@ -65,7 +66,7 @@ pub fn update_aux_channels(
             buzzer.click();
         }
     } else {
-        let aux_sources = crate::hw::AUX_SOURCES;
+        let aux_sources = crate::board::ActiveBoard::AUX_SOURCES;
         if let Some(pot) = keys.pot_change {
             storage.active_model.aux_channels[ctrl.selected_item] = pot;
             buzzer.play_tone(2400, 40);

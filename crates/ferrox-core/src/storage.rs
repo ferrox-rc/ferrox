@@ -134,7 +134,7 @@ impl AdcInputMode {
         // Default hardware mapping:
         match channel_idx {
             0 => Self::TwoPos,               // SA (2-pos stock)
-            1 => crate::hw::DEFAULT_SB_MODE, // SB (2-pos stock on i6X, 3-pos stock on i6S)
+            1 => crate::board::ActiveBoard::DEFAULT_SB_MODE, // SB (2-pos stock on i6X, 3-pos stock on i6S)
             2 => Self::ThreePos,             // SC (3-pos stock)
             3 => Self::TwoPos,               // SD (2-pos stock)
             _ => Self::Pot,                  // VRA..VRG (Pots stock)
@@ -342,9 +342,37 @@ impl RadioConfig {
     #[inline(always)]
     pub fn set_ppm_in_enabled(&mut self, enabled: bool) {
         if enabled {
-            self.trainer_config |= 0x02;
+            self.trainer_config = (self.trainer_config & !0x04) | 0x02;
         } else {
             self.trainer_config &= !0x02;
+        }
+    }
+
+    /// Check if Spektrum Satellite wireless trainer input on UART RX is enabled (bit 2 = 0x04).
+    #[inline(always)]
+    pub fn is_dsm_sat_in_enabled(&self) -> bool {
+        (self.trainer_config & 0x04) != 0
+    }
+
+    /// Set Spektrum Satellite wireless trainer input enabled state.
+    #[inline(always)]
+    pub fn set_dsm_sat_in_enabled(&mut self, enabled: bool) {
+        if enabled {
+            self.trainer_config = (self.trainer_config & !0x02) | 0x04;
+        } else {
+            self.trainer_config &= !0x04;
+        }
+    }
+
+    /// Cycle trainer input mode: OFF (0x00) -> PPM In (0x02) -> DSMX SAT (0x04) -> OFF.
+    #[inline(always)]
+    pub fn cycle_trainer_in_mode(&mut self) {
+        if self.is_ppm_in_enabled() {
+            self.trainer_config = (self.trainer_config & !0x06) | 0x04;
+        } else if self.is_dsm_sat_in_enabled() {
+            self.trainer_config &= !0x06;
+        } else {
+            self.trainer_config = (self.trainer_config & !0x06) | 0x02;
         }
     }
 
@@ -461,7 +489,8 @@ pub struct ModelConfig {
     pub crsf_arm_mode: u8, // 351: 0: CH5 (Standard 22B payload), 1: Switch (Extended 23B payload with arm flag)
     pub gvars: [i16; 5],   // 352..362: Global Variables GV1..GV5 (-1000..+1000)
     pub telem_slots: [u8; 4], // 362..366: Configurable telemetry dashboard sensor slots (1..4)
-    pub _pad_gvar: [u8; 2], // 366..368: Align to 4-byte word boundary
+    pub dsm_sub_proto: u8, // 366: Spektrum DSM sub-protocol (0: DSMX-11, 1: DSMX-22, 2: DSM2-11, 3: DSM2-22)
+    pub _pad_gvar: u8,     // 367..368: Align to 4-byte word boundary
 }
 
 impl ModelConfig {
@@ -513,7 +542,8 @@ impl ModelConfig {
             crsf_arm_mode: 0,
             gvars: [0; 5],
             telem_slots: [0, 1, 2, 3],
-            _pad_gvar: [0; 2],
+            dsm_sub_proto: 0,
+            _pad_gvar: 0,
         }
     }
 

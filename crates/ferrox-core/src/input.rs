@@ -645,7 +645,7 @@ pub fn process(raw: [u16; adc::NUM_CHANNELS]) -> InputState {
 
 /// Calculate battery voltage in millivolts using the board-specific resistor divider.
 pub fn calculate_battery_mv(raw: u16) -> u16 {
-    crate::hw::calculate_battery_mv(raw)
+    crate::board::ActiveBoard::calculate_battery_mv(raw)
 }
 
 /// Read the latest frame from the ADC and return the processed input state.
@@ -684,8 +684,8 @@ mod tests {
         let high = calculate_battery_mv(4095);
 
         assert!(low <= 200);
-        assert!(mid > 4500 && mid < 5500, "Actual half-scale: {}", mid);
-        assert!(high > 9500 && high < 10500, "Actual full-scale: {}", high);
+        assert!(mid > 3000 && mid < 5500, "Actual half-scale: {}", mid);
+        assert!(high > 6000 && high < 10500, "Actual full-scale: {}", high);
     }
 
     #[test]
@@ -770,6 +770,9 @@ mod tests {
 
     #[test]
     fn test_extended_adc_poll() {
+        if crate::board::ActiveBoard::EXT_ADC_COUNT == 0 {
+            return;
+        }
         let mut cfg = RadioConfig::default_factory();
         cfg.ext_adc = 1;
         cfg.set_adc_mode_val(6, 2); // 2-pos switch

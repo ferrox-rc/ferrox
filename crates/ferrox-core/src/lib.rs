@@ -9,6 +9,8 @@ pub mod chip;
 pub mod crsf;
 pub mod curve;
 pub mod display;
+#[cfg(feature = "rf-dsm")]
+pub mod dsm;
 pub mod hal;
 pub mod hw;
 pub use hw::adc;

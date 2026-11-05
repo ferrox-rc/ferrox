@@ -13,9 +13,7 @@ use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::input::{InputState, SwitchPos};
 use crate::storage::{AdcInputMode, RadioConfig, RadioStorage};
-use crate::trim::TrimController;
 use crate::ui::glyphs::draw_switch_arrow;
-use crate::ui::menu::{MenuController, MenuState};
 use crate::ui::widgets;
 
 pub const FIRMWARE_ID: &str = "ferrox-flysky-i6s";
@@ -61,10 +59,7 @@ pub const AUX_SOURCES: &[u8] = &[
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
 ];
 
-pub const SETUP_ITEMS: usize = 20;
-pub const INPUT_SETUP_RETURN: (usize, usize) = (16, 13);
-pub const TELEM_SETUP_RETURN: (usize, usize) = (7, 4);
-pub const PPM_OUT_SETUP_IDX: usize = 18;
+
 
 /// Early board initialization (power latch on FS-i6S).
 #[inline]
@@ -82,6 +77,11 @@ pub fn init_touch() {
 #[inline]
 pub fn init_board_keys(radio: &RadioConfig) {
     keys::init_j4_keys(radio.j4_sg_sh_en != 0);
+}
+
+#[inline]
+pub fn set_j4_mode_enabled(enabled: bool) {
+    keys::init_j4_keys(enabled);
 }
 
 /// Poll navigation keys (combines physical buttons and FT6236 touch gestures on FS-i6S).
@@ -215,212 +215,7 @@ pub fn decode_board_switches(
 }
 
 /// Number of visible items in Input Setup menu.
-#[inline]
-pub fn input_setup_items(storage: &RadioStorage) -> usize {
-    if storage.radio.ext_adc != 0 {
-        11
-    } else {
-        6
-    }
-}
 
-/// Handle OK key press for board-specific Radio Setup items (indices >= 8).
-pub fn handle_board_setup_ok(
-    idx: usize,
-    ctrl: &mut MenuController,
-    storage: &mut RadioStorage,
-    _trims: &mut TrimController,
-    buzzer: &mut Buzzer,
-) {
-    match idx {
-        8 => {
-            buzzer.click();
-            storage.radio.ext_module_pwr = if storage.radio.ext_module_pwr == 0 {
-                1
-            } else {
-                0
-            };
-            crate::crsf::set_power_polarity(storage.radio.ext_module_pwr == 0);
-            crate::storage::save_radio_config(storage);
-        }
-        9 => {
-            buzzer.click();
-            storage.radio.j4_sg_sh_en = if storage.radio.j4_sg_sh_en == 0 { 1 } else { 0 };
-            keys::init_j4_keys(storage.radio.j4_sg_sh_en != 0);
-            crate::storage::save_radio_config(storage);
-        }
-        10 => {
-            buzzer.click();
-            storage.radio.rear_left_func = (storage.radio.rear_left_func + 1) % 3;
-            crate::storage::save_radio_config(storage);
-        }
-        11 => {
-            buzzer.click();
-            storage.radio.rear_right_func = (storage.radio.rear_right_func + 1) % 3;
-            crate::storage::save_radio_config(storage);
-        }
-        12 => {
-            buzzer.click();
-            storage.radio.touch_disabled = if storage.radio.touch_disabled == 0 {
-                1
-            } else {
-                0
-            };
-            crate::storage::save_radio_config(storage);
-        }
-        13 => {
-            buzzer.click();
-            storage.radio.stick_mode = (storage.radio.stick_mode + 1) % 4;
-            crate::storage::save_radio_config(storage);
-        }
-        14 => {
-            buzzer.click();
-            storage.radio.gimbal_type = if storage.radio.gimbal_type == 0 { 1 } else { 0 };
-            crate::input::apply_calibration(&storage.radio);
-            crate::storage::save_radio_config(storage);
-        }
-        15 => {
-            buzzer.click();
-            storage.radio.switch_beep = if storage.radio.switch_beep == 0 { 1 } else { 0 };
-            crate::storage::save_radio_config(storage);
-        }
-        16 => {
-            buzzer.click();
-            ctrl.state = MenuState::InputSetup;
-            ctrl.selected_item = 0;
-            ctrl.scroll_offset = 0;
-        }
-        17 => {
-            buzzer.click();
-            storage.radio.ext_adc = if storage.radio.ext_adc == 0 { 1 } else { 0 };
-            adc::set_ext_adc_enabled(storage.radio.ext_adc != 0);
-            crate::input::set_ext_adc_enabled(storage.radio.ext_adc != 0);
-            crate::input::apply_calibration(&storage.radio);
-            crate::storage::save_radio_config(storage);
-        }
-        18 => {
-            buzzer.click();
-            let en = !storage.radio.is_ppm_out_enabled();
-            storage.radio.set_ppm_out_enabled(en);
-            crate::trainer::set_ppm_out(en);
-            crate::storage::save_radio_config(storage);
-        }
-        19 => {
-            buzzer.click();
-            let en = !storage.radio.is_ppm_in_enabled();
-            storage.radio.set_ppm_in_enabled(en);
-            crate::trainer::set_ppm_in(en);
-            crate::storage::save_radio_config(storage);
-        }
-        _ => {}
-    }
-}
-
-/// Render board-specific Radio Setup rows (indices >= 8).
-pub fn draw_board_setup_row(
-    lcd: &mut St7567,
-    slot: usize,
-    idx: usize,
-    is_sel: bool,
-    storage: &RadioStorage,
-) {
-    match idx {
-        8 => {
-            let pwr_str = if storage.radio.ext_module_pwr == 0 {
-                "HIGH (N)"
-            } else {
-                "LOW (P)"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "H1 PF6 Pwr:", Some(pwr_str));
-        }
-        9 => {
-            let j4_str = if storage.radio.j4_sg_sh_en != 0 {
-                "SG/SH BTN"
-            } else {
-                "SWD (DBG)"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "J4 Mode:", Some(j4_str));
-        }
-        10 => {
-            let left_str = match storage.radio.rear_left_func {
-                1 => "TIMER RESET",
-                2 => "TRIMS MOD",
-                _ => "RC SW (SWE)",
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Rear L:", Some(left_str));
-        }
-        11 => {
-            let right_str = match storage.radio.rear_right_func {
-                1 => "INSTANT TRIM",
-                2 => "TRIMS MOD",
-                _ => "RC SW (SWF)",
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Rear R:", Some(right_str));
-        }
-        12 => {
-            let touch_str = if storage.radio.touch_disabled == 0 {
-                "ENABLED"
-            } else {
-                "DISABLED"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Touch:", Some(touch_str));
-        }
-        13 => {
-            let mode_str = match storage.radio.stick_mode {
-                0 => "MODE 1",
-                1 => "MODE 2",
-                2 => "MODE 3",
-                3 => "MODE 4",
-                _ => "MODE 2",
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Stick Mode:", Some(mode_str));
-        }
-        14 => {
-            let gmb_str = if storage.radio.is_hall_gimbals() {
-                "HALL"
-            } else {
-                "POT"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Gimbals:", Some(gmb_str));
-        }
-        15 => {
-            let sw_snd_str = if storage.radio.switch_beep != 0 {
-                "ENABLED"
-            } else {
-                "MUTED"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Sw Sound:", Some(sw_snd_str));
-        }
-        16 => {
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Inputs:", Some("[SETUP]"));
-        }
-        17 => {
-            let ext_str = if storage.radio.ext_adc != 0 {
-                "ENABLED"
-            } else {
-                "DISABLED"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Ext ADC (PC):", Some(ext_str));
-        }
-        18 => {
-            let ppm_str = if storage.radio.is_ppm_out_enabled() {
-                "ENABLED"
-            } else {
-                "OFF"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "PPM Out:", Some(ppm_str));
-        }
-        19 => {
-            let in_str = if storage.radio.is_ppm_in_enabled() {
-                "ENABLED"
-            } else {
-                "OFF"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Trainer In:", Some(in_str));
-        }
-        _ => {}
-    }
-}
 
 /// Render the default switch and dual pot layout (y = 46..53) on FS-i6S.
 pub fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
@@ -493,111 +288,7 @@ pub fn append_extra_switches(
     }
 }
 
-/// Diagnostics page header title for page index 0..4.
-pub fn diag_page_title(page_idx: usize) -> &'static str {
-    match page_idx {
-        0 => "ANALOG (1-6)",
-        1 => "ANALOG (7-11)",
-        2 => "SWITCHES (E/F/G/H)",
-        3 => "EXT ANALOG (PC1-5)",
-        _ => "STORAGE (EEPROM)",
-    }
-}
 
-/// Render board-specific Diagnostics pages (pages 2, 3, and 4) on FS-i6S.
-pub fn draw_diag_ext_page(
-    lcd: &mut St7567,
-    page_idx: usize,
-    raw_adc: &[u16; adc::NUM_CHANNELS],
-    switches: &crate::input::Switches,
-) {
-    use crate::ui::format::{ascii_as_str, u16_to_dec_4};
-
-    if page_idx == 2 {
-        let items = [
-            ("SW:SE", switches.se),
-            ("SW:SF", switches.sf),
-            ("SW:SG", switches.sg),
-            ("SW:SH", switches.sh),
-        ];
-        for (i, &(label, pos)) in items.iter().enumerate() {
-            let y = 13 + (i as i32 * 9);
-            lcd.draw_str_4x6(2, y, label, false);
-            let state_str = if pos == SwitchPos::Down {
-                "DN (LOW)"
-            } else {
-                "UP (HIGH)"
-            };
-            let fill = if pos == SwitchPos::Down { 30 } else { 0 };
-            widgets::draw_bar_gauge(lcd, 32, y, 30, 6, fill);
-            lcd.draw_str_4x6(66, y, state_str, false);
-        }
-    } else if page_idx == 3 {
-        let ext_active = crate::input::is_ext_adc_enabled();
-        let cfg_label = if ext_active {
-            "PC ADC: ENABLED (16-CH)"
-        } else {
-            "PC ADC: DISABLED (OFF)"
-        };
-        lcd.draw_str_4x6(2, 13, cfg_label, false);
-
-        let names: [&str; 5] = ["VRC:PC1 ", "VRD:PC2 ", "VRE:PC3 ", "VRF:PC4 ", "VRG:PC5 "];
-        for (i, &name) in names.iter().enumerate() {
-            let adc_idx = 11 + i;
-            let y = 23 + (i as i32 * 8);
-            lcd.draw_str_4x6(2, y, name, false);
-
-            let is_off = crate::input::get_adc_mode(6 + i).is_off();
-            let raw = raw_adc[adc_idx].min(4095);
-            let fill_w = if ext_active && !is_off {
-                ((raw as u32 * 38) / 4095).min(38)
-            } else {
-                0
-            };
-            widgets::draw_bar_gauge(lcd, 44, y + 1, 40, 5, fill_w);
-
-            let mut val_buf = [0u8; 4];
-            if ext_active && !is_off {
-                u16_to_dec_4(raw, &mut val_buf);
-            } else {
-                val_buf = *b" OFF";
-            }
-            let val_str = ascii_as_str(&val_buf);
-            lcd.draw_str_4x6(90, y, val_str, false);
-        }
-    } else {
-        let status = crate::storage::get_eeprom_status();
-        if status.detected {
-            let bus_str = match status.bus {
-                2 => "BUS: I2C2 (PB10/PB11 Fm+)",
-                1 => "BUS: I2C1 (PB8/PB9)",
-                _ => "BUS: Unknown",
-            };
-            lcd.draw_str_4x6(2, 13, bus_str, false);
-
-            let mut addr_buf = *b"ADDR: 0x50 (FT24C128A 16KB)";
-            addr_buf[8] = b"0123456789ABCDEF"[(status.addr >> 4) as usize];
-            addr_buf[9] = b"0123456789ABCDEF"[(status.addr & 0x0F) as usize];
-            lcd.draw_str_4x6(2, 23, ascii_as_str(&addr_buf), false);
-
-            let state_str = if status.write_err {
-                "STATUS: WRITE ERR (FAIL)"
-            } else if status.read_ok {
-                "STATUS: READY (HEALTHY)"
-            } else {
-                "STATUS: READ ERR (FAIL)"
-            };
-            lcd.draw_str_4x6(2, 33, state_str, false);
-
-            lcd.draw_str_4x6(2, 43, "SLOTS: 2xRadio  20xModels", false);
-        } else {
-            lcd.draw_str_4x6(2, 13, "BUS: I2C2 (PB10/PB11)", false);
-            lcd.draw_str_4x6(2, 23, "STATUS: NOT DETECTED", false);
-            lcd.draw_str_4x6(2, 33, "CHECK: Pull-ups / Wiring", false);
-            lcd.draw_str_4x6(2, 43, "FALLBACK: Factory Defaults", false);
-        }
-    }
-}
 
 /// Board-specific background idle state for FS-i6S (PowerManager, rear button edges, touch hold, LEDs).
 pub struct BoardIdleState {

@@ -5,6 +5,7 @@
 
 #![allow(dead_code)]
 
+use crate::board::BoardProfile;
 use crate::rf::afhds2a::TelemetryData;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -119,7 +120,7 @@ impl SerialHandler {
                 self.stream_enabled = false;
                 self.cmd_len = 0;
                 self.last_was_cr = false;
-                self.write_bytes(crate::hw::CLI_PAUSE_PROMPT);
+                self.write_bytes(crate::board::ActiveBoard::CLI_PAUSE_PROMPT);
                 continue;
             }
 
@@ -133,7 +134,7 @@ impl SerialHandler {
                         self.cmd_len = 0;
                     }
                     if !self.stream_enabled {
-                        self.write_bytes(crate::hw::CLI_PROMPT);
+                        self.write_bytes(crate::board::ActiveBoard::CLI_PROMPT);
                     }
                 }
             } else if b == 0x08 || b == 0x7F {
@@ -203,9 +204,9 @@ impl SerialHandler {
                 self.write_bytes(b"  Detected: NO (No external I2C EEPROM found)\r\n");
             }
         } else if cmd.eq_ignore_ascii_case("status") {
-            self.write_bytes(crate::hw::STATUS_BANNER);
+            self.write_bytes(crate::board::ActiveBoard::STATUS_BANNER);
             if crate::crsf::is_enabled() {
-                self.write_bytes(crate::hw::CRSF_UART_STATUS);
+                self.write_bytes(crate::board::ActiveBoard::CRSF_UART_STATUS);
             } else {
                 self.write_bytes(b"Protocol: AFHDS 2A (A7105 SPI active)\r\n");
             }
