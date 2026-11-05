@@ -1539,14 +1539,16 @@ unsafe fn probe_device(i2c: &pac::i2c1::RegisterBlock, bus_num: u8, addr_7bit: u
     // Clear flags
     clear_i2c_flags(i2c);
 
-    // Try a 1-byte read transaction: SADD = (addr << 1), NBYTES = 1, RD_WRN = 1 (read), START = 1, AUTOEND = 1
+    // Standard I2C probe transaction: 0-byte write with AUTOEND (START -> ADDR+W -> ACK/NACK -> STOP)
+    // Matches universal I2C discovery standard (Linux i2cdetect, Arduino Wire.endTransmission, poll_ack)
+    // Avoids driving unaddressed EEPROM read data onto the bus before a word address is loaded.
     i2c.cr2.write(|w| {
         w.sadd()
             .bits((addr_7bit as u16) << 1)
             .nbytes()
-            .bits(1)
+            .bits(0)
             .rd_wrn()
-            .read()
+            .write()
             .autoend()
             .automatic()
             .start()
@@ -1554,41 +1556,32 @@ unsafe fn probe_device(i2c: &pac::i2c1::RegisterBlock, bus_num: u8, addr_7bit: u
     });
 
     let mut timeout = 20_000u32;
-    while timeout > 0 {
+    let mut got_nack = false;
+    while i2c.isr.read().stopf().bit_is_clear() && timeout > 0 {
         let isr = i2c.isr.read();
-        if isr.nackf().bit_is_set()
-            || isr.berr().bit_is_set()
-            || isr.arlo().bit_is_set()
-            || isr.ovr().bit_is_set()
-        {
+        if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set() {
             clear_i2c_flags(i2c);
-            if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set() {
-                recover_i2c(bus_num);
-            }
+            recover_i2c(bus_num);
             return false;
         }
-        if isr.rxne().bit_is_set() || isr.stopf().bit_is_set() {
-            let _dummy = i2c.rxdr.read().rxdata().bits();
-            let mut stop_wait = 10_000u32;
-            while i2c.isr.read().stopf().bit_is_clear() && stop_wait > 0 {
-                let isr_stop = i2c.isr.read();
-                if isr_stop.berr().bit_is_set()
-                    || isr_stop.arlo().bit_is_set()
-                    || isr_stop.ovr().bit_is_set()
-                {
-                    recover_i2c(bus_num);
-                    return false;
-                }
-                stop_wait -= 1;
-            }
-            clear_i2c_flags(i2c);
-            return true;
+        if isr.nackf().bit_is_set() {
+            got_nack = true;
+            i2c.icr.write(|w| w.nackcf().clear());
         }
         timeout -= 1;
     }
 
-    recover_i2c(bus_num);
-    false
+    if timeout == 0 {
+        clear_i2c_flags(i2c);
+        recover_i2c(bus_num);
+        return false;
+    }
+
+    // Clear STOPF flag
+    i2c.icr.write(|w| w.stopcf().clear());
+
+    // Device responded with ACK (no NACK detected before STOP)
+    !got_nack
 }
 
 #[cfg(not(test))]
@@ -1605,10 +1598,29 @@ impl EepromI2c {
         rcc.apb2enr.modify(|_, w| w.syscfgen().enabled());
         rcc.apb1enr.modify(|_, w| w.i2c2en().enabled());
 
-        // 2. Enable Fast Mode Plus (Fm+ 20 mA high-drive sink) on I2C2 pins in SYSCFG
+        // 2. Hardware Bus Recovery: Clock 9 SCL pulses on PB10 with PB11 open-drain pull-up
+        // If an EEPROM warm-reset occurred mid-read while outputting a '0' data bit,
+        // it may clamp SDA low indefinitely until 9 SCL clock edges release the slave shift register.
+        gpiob.moder.modify(|_, w| w.moder10().output().moder11().input());
+        gpiob.otyper.modify(|_, w| w.ot10().open_drain().ot11().open_drain());
+        gpiob.pupdr.modify(|_, w| w.pupdr10().pull_up().pupdr11().pull_up());
+        gpiob.ospeedr.modify(|_, w| w.ospeedr10().high_speed().ospeedr11().high_speed());
+
+        for _ in 0..9 {
+            gpiob.bsrr.write(|w| w.br10().reset()); // SCL low
+            for _ in 0..120 {
+                cortex_m::asm::nop(); // ~2.5 us low pulse (400 kHz)
+            }
+            gpiob.bsrr.write(|w| w.bs10().set()); // SCL high
+            for _ in 0..120 {
+                cortex_m::asm::nop(); // ~2.5 us high pulse
+            }
+        }
+
+        // 3. Enable Fast Mode Plus (Fm+ 20 mA high-drive sink) on I2C2 pins in SYSCFG
         syscfg.cfgr1.modify(|_, w| w.i2c2_fmp().fmp());
 
-        // 3. Configure PB10 and PB11 as Alternate Function 1 (I2C2), Open-Drain, High-Speed, Pull-up
+        // 4. Configure PB10 and PB11 as Alternate Function 1 (I2C2), Open-Drain, High-Speed, Pull-up
         gpiob.afrh.modify(|_, w| w.afrh10().af1().afrh11().af1());
         gpiob
             .moder
@@ -1623,7 +1635,7 @@ impl EepromI2c {
             .pupdr
             .modify(|_, w| w.pupdr10().pull_up().pupdr11().pull_up());
 
-        // 4. Reset I2C2 peripheral via APB1 peripheral reset
+        // 5. Reset I2C2 peripheral via APB1 peripheral reset
         i2c2.cr1.modify(|_, w| w.pe().disabled());
         rcc.apb1rstr
             .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 22)) });
@@ -1646,11 +1658,11 @@ impl EepromI2c {
                 .bits(25)
         });
 
-        // 5. Clear flags and enable I2C2 peripheral
+        // 6. Clear flags and enable I2C2 peripheral
         clear_i2c_flags(unsafe { &*pac::I2C2::ptr() });
         i2c2.cr1.modify(|_, w| w.pe().enabled());
 
-        // 6. Adaptive Probe:
+        // 7. Adaptive Probe:
         // First check I2C2 (PB10/PB11) across addresses 0x50..=0x57
         unsafe {
             EEPROM_STATUS.bus = 0;
@@ -1665,8 +1677,8 @@ impl EepromI2c {
                 }
             }
 
-            // Fallback: If not found on I2C2, check I2C1 (PB8/PB9) across addresses 0x50..=0x57
-            if !EEPROM_STATUS.detected {
+            // Fallback: If not found on I2C2 and I2C1 clock is enabled, check I2C1 (PB8/PB9)
+            if !EEPROM_STATUS.detected && rcc.apb1enr.read().i2c1en().bit_is_set() {
                 for addr in 0x50..=0x57 {
                     if probe_device(&*pac::I2C1::ptr(), 1, addr) {
                         EEPROM_STATUS.bus = 1; // I2C1

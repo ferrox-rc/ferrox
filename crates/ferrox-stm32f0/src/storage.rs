@@ -81,13 +81,15 @@ fn recover_i2c(bus_num: u8) {
 
 unsafe fn probe_device(i2c: &pac::i2c1::RegisterBlock, bus_num: u8, addr_7bit: u8) -> bool {
     clear_i2c_flags(i2c);
+
+    // Standard I2C probe transaction: 0-byte write with AUTOEND
     i2c.cr2.write(|w| {
         w.sadd()
             .bits((addr_7bit as u16) << 1)
             .nbytes()
-            .bits(1)
+            .bits(0)
             .rd_wrn()
-            .read()
+            .write()
             .autoend()
             .automatic()
             .start()
@@ -95,41 +97,29 @@ unsafe fn probe_device(i2c: &pac::i2c1::RegisterBlock, bus_num: u8, addr_7bit: u
     });
 
     let mut timeout = 20_000u32;
-    while timeout > 0 {
+    let mut got_nack = false;
+    while i2c.isr.read().stopf().bit_is_clear() && timeout > 0 {
         let isr = i2c.isr.read();
-        if isr.nackf().bit_is_set()
-            || isr.berr().bit_is_set()
-            || isr.arlo().bit_is_set()
-            || isr.ovr().bit_is_set()
-        {
+        if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set() {
             clear_i2c_flags(i2c);
-            if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set() {
-                recover_i2c(bus_num);
-            }
+            recover_i2c(bus_num);
             return false;
         }
-        if isr.rxne().bit_is_set() || isr.stopf().bit_is_set() {
-            let _dummy = i2c.rxdr.read().rxdata().bits();
-            let mut stop_wait = 10_000u32;
-            while i2c.isr.read().stopf().bit_is_clear() && stop_wait > 0 {
-                let isr_stop = i2c.isr.read();
-                if isr_stop.berr().bit_is_set()
-                    || isr_stop.arlo().bit_is_set()
-                    || isr_stop.ovr().bit_is_set()
-                {
-                    recover_i2c(bus_num);
-                    return false;
-                }
-                stop_wait -= 1;
-            }
-            clear_i2c_flags(i2c);
-            return true;
+        if isr.nackf().bit_is_set() {
+            got_nack = true;
+            i2c.icr.write(|w| w.nackcf().clear());
         }
         timeout -= 1;
     }
 
-    recover_i2c(bus_num);
-    false
+    if timeout == 0 {
+        clear_i2c_flags(i2c);
+        recover_i2c(bus_num);
+        return false;
+    }
+
+    i2c.icr.write(|w| w.stopcf().clear());
+    !got_nack
 }
 
 impl StorageBus for EepromI2cBus {
@@ -142,6 +132,23 @@ impl StorageBus for EepromI2cBus {
         rcc.ahbenr.modify(|_, w| w.iopben().enabled());
         rcc.apb2enr.modify(|_, w| w.syscfgen().enabled());
         rcc.apb1enr.modify(|_, w| w.i2c2en().enabled());
+
+        // Hardware Bus Recovery: Clock 9 SCL pulses on PB10 with PB11 open-drain pull-up
+        gpiob.moder.modify(|_, w| w.moder10().output().moder11().input());
+        gpiob.otyper.modify(|_, w| w.ot10().open_drain().ot11().open_drain());
+        gpiob.pupdr.modify(|_, w| w.pupdr10().pull_up().pupdr11().pull_up());
+        gpiob.ospeedr.modify(|_, w| w.ospeedr10().high_speed().ospeedr11().high_speed());
+
+        for _ in 0..9 {
+            gpiob.bsrr.write(|w| w.br10().reset());
+            for _ in 0..120 {
+                cortex_m::asm::nop();
+            }
+            gpiob.bsrr.write(|w| w.bs10().set());
+            for _ in 0..120 {
+                cortex_m::asm::nop();
+            }
+        }
 
         syscfg.cfgr1.modify(|_, w| w.i2c2_fmp().fmp());
 
@@ -195,7 +202,7 @@ impl StorageBus for EepromI2cBus {
                 }
             }
 
-            if !EEPROM_STATUS.detected {
+            if !EEPROM_STATUS.detected && rcc.apb1enr.read().i2c1en().bit_is_set() {
                 for addr in 0x50..=0x57 {
                     if probe_device(&*pac::I2C1::ptr(), 1, addr) {
                         EEPROM_STATUS.bus = 1;
