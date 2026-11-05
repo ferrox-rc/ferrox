@@ -84,11 +84,6 @@ pub fn update(
                 ctrl.selected_item = 0;
                 ctrl.scroll_offset = 0;
             }
-            MainMenuItem::HardwareSetup => {
-                ctrl.state = MenuState::HardwareSetup;
-                ctrl.selected_item = 0;
-                ctrl.scroll_offset = 0;
-            }
             MainMenuItem::ChannelMonitor => {
                 ctrl.state = MenuState::ChannelMonitor;
                 ctrl.page_idx = 0;
