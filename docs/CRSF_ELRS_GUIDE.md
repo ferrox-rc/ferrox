@@ -21,7 +21,7 @@ The FlySky FS-i6S motherboard provides dedicated connectors and headers routed t
 | `PF9` | **PPM_IN** | `TIM15_CH1` (AF0) | 0.5 µs input capture for buddy-box student connection (`src/trainer/ppm_in.rs`) |
 | `PA13` / `PA14` | **SG / SH** | GPIO In | Momentary tactile push-buttons on header `J4` (when `j4_sg_sh_en` is enabled) |
 
-Implemented in [`src/hw/uart.rs`](../src/hw/uart.rs) and [`src/crsf/`](../src/crsf/mod.rs). The dedicated `USART1` interrupt handler (IRQ 27, priority `0x40`) clears hardware overrun (`USART_ISR_ORE`) and buffers incoming high-speed bytes with zero dropped packets during LCD flushes. Inter-byte silence timeout (>= 3 ms) guarantees deterministic frame resynchronization.
+Implemented in [`crates/ferrox-core/src/hw/i6s/uart.rs`](../crates/ferrox-core/src/hw/i6s/uart.rs) and [`crates/ferrox-core/src/crsf/`](../crates/ferrox-core/src/crsf/mod.rs). The dedicated `USART1` interrupt handler (IRQ 27, priority `0x40`) clears hardware overrun (`USART_ISR_ORE`) and buffers incoming high-speed bytes with zero dropped packets during LCD flushes. Inter-byte silence timeout (>= 3 ms) guarantees deterministic frame resynchronization.
 
 ### FS-i6S PCB Connection Points (Connector J15 & Header H1)
 - **`J15` Connector:** Exposes `PB6` (`USART1_TX`), `PB7` (`USART1_RX`), and `PF10` (`PPM_OUT`).
@@ -46,11 +46,11 @@ The polarity can be toggled in `Radio Setup` -> `H1 PF6 Pwr` and is persisted in
 
 ### Supported Baud Rates (Ascending Order)
 Baud rates are configured per-model in `9. Protocol Setup` -> `Baud:`:
-- **`0` — `115.2k (Low)`**: `115,200 baud` (`BRR = 417`, legacy / low-speed debug)
-- **`1` — `416.6k (TBS)`**: `416,666 baud` (`BRR = 115`, standard Team BlackSheep Crossfire)
-- **`2` — `420k (ELRS)`**: `420,000 baud` (`BRR = 114`, **Default** for ExpressLRS)
-- **`3` — `921.6k (Fast)`**: `921,600 baud` (`BRR = 52`, high-speed ExpressLRS)
-- **`4` — `1.875M (Max)`**: `1,875,000 baud` (`BRR = 26`, ultra-low latency mode for high-rate ELRS modules)
+- **`0`: `115.2k (Low)`**: `115,200 baud` (`BRR = 417`, legacy / low-speed debug)
+- **`1`: `416.6k (TBS)`**: `416,666 baud` (`BRR = 115`, standard Team BlackSheep Crossfire)
+- **`2`: `420k (ELRS)`**: `420,000 baud` (`BRR = 114`, **Default** for ExpressLRS)
+- **`3`: `921.6k (Fast)`**: `921,600 baud` (`BRR = 52`, high-speed ExpressLRS)
+- **`4`: `1.875M (Max)`**: `1,875,000 baud` (`BRR = 26`, ultra-low latency mode for high-rate ELRS modules)
 
 ### Arming Mode (CH5 vs. Switch-Based Arming)
 Configured per-model in `9. Protocol Setup` -> `Arm Mode:`:
@@ -88,11 +88,11 @@ When `rf_protocol` is set to `1` (`CRSF`), Page 5/5 of the flight dashboard disp
 
 ---
 
-## 3. Native Module Configurator (`src/ui/menu/screens/crsf.rs`)
+## 3. Native Module Configurator (`crates/ferrox-core/src/ui/menu/screens/crsf.rs`)
 
 On standard EdgeTX and OpenTX radios, ExpressLRS module configuration is typically handled via a Lua script. Because the FS-i6S's STM32F072 microcontroller has 16 KB of SRAM, running a full Lua virtual machine is impractical on this platform.
 
-To enable full on-radio module configuration, `flysky-i6s-rs` implements the **bidirectional CRSF parameter protocol** natively in bare-metal Rust with **zero dynamic heap allocation**:
+To enable full on-radio module configuration, `ferrox` implements the **bidirectional CRSF parameter protocol** natively in bare-metal Rust with **zero dynamic heap allocation**:
 
 ### Parameter Exchange Protocol
 ```text

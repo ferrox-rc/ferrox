@@ -1,6 +1,6 @@
 # FS-i6S Open-Source Ecosystem & Architectural Context
 
-The FlySky FS-i6S is an advanced, touch-enabled RC transmitter powered by an ARM Cortex-M0 microcontroller (STM32F072VB). This document provides context on the open-source firmware evolution for this platform and the technical design philosophies behind `flysky-i6s-rs`.
+The FlySky FS-i6S is an advanced, touch-enabled RC transmitter powered by an ARM Cortex-M0 microcontroller (STM32F072VB). This document provides context on the open-source firmware evolution for this platform and the technical design philosophies behind `ferrox`.
 
 ---
 
@@ -11,13 +11,13 @@ The open-source firmware journey on the FlySky platform was pioneered by **Kuba 
 - Amiccom A7105 SPI transceiver control registers and RF hopping algorithms.
 - Hardware timer and ADC peripheral routing on STM32F072.
 
-`flysky-i6s-rs` builds directly on this heritage, bringing a standalone, clean-slate `no_std` Rust architecture to the **FlySky FS-i6S**.
+`ferrox` builds directly on this heritage, bringing a standalone, clean-slate `no_std` Rust architecture to the **FlySky FS-i6S** and **FlySky FS-i6X**.
 
 ---
 
 ## 2. FS-i6S Hardware Evolution: Touchscreen & Electronic Power
 
-While sharing the STM32F072VB core and A7105 RF transceiver with the older FS-i6X, the **FlySky FS-i6S** introduces fundamental hardware changes:
+While sharing the STM32F072VB core and A7105 RF transceiver with the FS-i6X, the **FlySky FS-i6S** introduces fundamental hardware changes:
 
 1. **FocalTech FT6236 Capacitive Touchscreen:**
    - Replaces the mechanical 3×4 key matrix with a hardware I2C1 capacitive multi-touch panel (`PB8` SCL, `PB9` SDA @ 400 kHz, `PA15` RST, `PC12` INT).
@@ -38,13 +38,13 @@ While sharing the STM32F072VB core and A7105 RF transceiver with the older FS-i6
 
 ---
 
-## 3. Design Philosophy of `flysky-i6s-rs` & Unified `ferrox` Core
+## 3. Design Philosophy of Unified `ferrox` Architecture
 
-- **Unified `ferrox` Core + Zero Dead-Code HAL (`src/hw/`):** `flysky-i6s-rs` and [`flysky-i6x-rs`](https://github.com/bryansouza/flysky-i6x-rs) share a 100% byte-for-byte identical hardware-agnostic core (`ferrox`), while all board-specific peripherals (`src/hw/power.rs`, `src/hw/touch/`, `src/hw/adc.rs`, `src/hw/keys.rs`, `src/hw/uart.rs`) live cleanly in `src/hw/` with zero dead-code stubs.
+- **Unified Core + Compile-Time `BoardProfile` Specialization:** All supported transmitters share a 100% byte-for-byte identical hardware-agnostic core (`crates/ferrox-core`), parameterized by compile-time trait implementations (`BoardProfile`) without dynamic dispatch or dead-code stubs.
 - **Clean-Slate Bare-Metal `no_std` Rust:** Zero dynamic heap allocation (`alloc` free), in-tree 1bpp bitmap fonts, zero allocator stalls, and guaranteed memory safety on Cortex-M0.
 - **Deterministic RF Timing:** Dedicated hardware timer (`TIM16`) for frame synchronization, autonomous DMA ADC scanning, `TIM15` hardware CPPM trainer I/O, and a decoupled execution loop.
-- **Embedded CRSF & ExpressLRS Engine:** Native bidirectional CRSF parameter parsing directly in Rust to configure external modules on the touch interface without a Lua engine.
-- **Safety First & Instant Recovery:** Watchdog reset recovery in < 2 ms bypassing interlocks, and safe hold-to-shutdown Flash flushing.
+- **Embedded CRSF & ExpressLRS Engine:** Native bidirectional CRSF parameter parsing directly in Rust to configure external modules on the touch or key interface without a Lua engine.
+- **Safety First & Instant Recovery:** Watchdog reset recovery in < 2 ms bypassing interlocks, and safe hold-to-shutdown storage flushing.
 
 ---
 
@@ -54,19 +54,23 @@ Because the STM32F072 features a permanent factory DFU bootloader in System ROM,
 
 1. **Enter Bootloader Mode:**
    - **Cold-Boot Combo:** Hold both rear/front push-buttons (**`PA9` + `PA10`**) while powering ON.
-   - **Software Menu:** Navigate to `Settings -> 13. System Info -> [OK] Reboot DFU`.
+   - **Software Menu:** Navigate to `Settings -> 12. System Info -> [OK] Reboot DFU`.
    - **USB Serial CLI:** Send `dfu` over the virtual serial port.
 2. **Back Up Current Firmware (Recommended):**
    ```bash
    dfu-util -a 0 -s 0x08000000:131072 -U backup_full.bin
    ```
-3. **Flash flysky-i6s-rs:**
+3. **Flash ferrox:**
    ```bash
-   dfu-util -a 0 -s 0x08000000:leave -D flysky-i6s.bin
+   # Flash FS-i6S
+   dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
+
+   # Flash FS-i6X
+   dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
    ```
 4. **Restore Anytime:**
    ```bash
    dfu-util -a 0 -s 0x08000000:leave -D backup_full.bin
    ```
 
-For detailed technical documentation on the internal architecture of `flysky-i6s-rs`, please see [ARCHITECTURE.md](ARCHITECTURE.md).
+For detailed technical documentation on the internal architecture of `ferrox`, please see [ARCHITECTURE.md](ARCHITECTURE.md).

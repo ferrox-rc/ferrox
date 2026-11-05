@@ -236,9 +236,9 @@ If a large USB transfer or host polling stall occurs, the hardware NVIC preempts
 
 ## 7. Storage Compatibility & Configuration
 
-All USB and protocol settings are persisted in the 4-page append-only sequential storage log (`src/storage.rs`):
+All USB and protocol settings are persisted in non-volatile I2C EEPROM (`crates/ferrox-core/src/storage.rs`) across double-buffered Radio Config slots (`0x0000` Slot A / `0x0100` Slot B):
 
-### `RadioConfig` Binary Layout (140 Bytes, 4-Byte Aligned)
+### `RadioConfig` Binary Layout (148 Bytes, 4-Byte Aligned)
 ```
 Offset   0..4   : Magic (0x46534B59 "FSKY")
 Offset   4..8   : Version (CONFIG_VERSION = 5)

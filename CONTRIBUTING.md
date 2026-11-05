@@ -1,6 +1,6 @@
-# Contributing to flysky-i6s-rs
+# Contributing to ferrox
 
-Thank you for your interest in contributing to `flysky-i6s-rs`! This document details our Git workflow, branching conventions, and development standards.
+Thank you for your interest in contributing to `ferrox`! This document details our Git workflow, branching conventions, and development standards.
 
 ---
 
@@ -54,6 +54,7 @@ We adhere to [Conventional Commits](https://www.conventionalcommits.org/):
 - **`no_std` Bare-Metal:** No heap allocations, no dynamic sizing at runtime.
 - **Deterministic Latency:** RF packet transmission (`TIM16`) and critical interrupts must not be blocked by non-essential tasks.
 - **Resource Footprint:** Maintain awareness of Flash (<128 KB) and SRAM (<16 KB) utilization.
+- **Board Isolation:** `ferrox` is a multi-board monorepo. Never run a raw `cargo build --workspace --release` on bare-metal targets because Cargo will unify all optional features across crates, compiling conflicting board definitions simultaneously. Always build each board target crate individually.
 
 ---
 
@@ -62,16 +63,24 @@ We adhere to [Conventional Commits](https://www.conventionalcommits.org/):
 To guarantee mathematical precision and prevent regressions across protocol state machines, all pull requests and contributions must satisfy the **Dual Verification Requirement**:
 
 ### 1. Run Host Unit Tests
-Execute the automated test suite locally on your host development environment:
+Execute automated unit tests locally on your host development environment for both target board profiles:
 ```bash
-cargo test-host
+# Test FS-i6S board profile
+cargo test-host-i6s
+
+# Test FS-i6X board profile
+cargo test-host-i6x
 ```
 All unit tests must pass with 0 failures before opening a pull request. When introducing new mathematical formulas, mixing modes, or communication protocols, include corresponding unit tests in the appropriate module.
 
-### 2. Verify Bare-Metal Build
-Verify that the firmware compiles cleanly for the physical Cortex-M0 target without errors or compiler warnings:
+### 2. Verify Bare-Metal Builds
+Verify that the firmware compiles cleanly for each physical Cortex-M0 target without errors or compiler warnings:
 ```bash
-cargo build --release --target thumbv6m-none-eabi
+# Build FS-i6S release binary
+cargo build-i6s
+
+# Build FS-i6X release binary
+cargo build-i6x
 ```
 
 For comprehensive details on our dual-target harness architecture, peripheral mocking, and adversarial verification methodology, refer to the **[Testing Methodology & Verification Guide](docs/TESTING.md)**.

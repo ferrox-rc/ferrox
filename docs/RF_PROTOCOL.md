@@ -20,7 +20,7 @@ The A7105 transceiver is connected to the STM32F072VB via SPI1 and auxiliary con
 | `PE10` | **RF_RF0** | TR Diversity Antenna Switch 0 |
 | `PE11` | **RF_RF1** | TR Diversity Antenna Switch 1 |
 
-Implemented in [`src/rf/spi.rs`](../src/rf/spi.rs) and [`src/rf/a7105.rs`](../src/rf/a7105.rs).
+Implemented in [`crates/ferrox-core/src/rf/spi.rs`](../crates/ferrox-core/src/rf/spi.rs) and [`crates/ferrox-core/src/rf/a7105.rs`](../crates/ferrox-core/src/rf/a7105.rs).
 
 ### Antenna Diversity & TR Switching
 - **TX Mode**: `PE10 = 0`, `PE11 = 1`

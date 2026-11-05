@@ -1,6 +1,6 @@
-# FLYSKY FS-I6S USER GUIDE & OPERATIONS MANUAL
+# FERROX USER GUIDE & OPERATIONS MANUAL
 
-A comprehensive guide to operating the `flysky-i6s-rs` firmware on the FlySky FS-i6S transmitter.
+A comprehensive guide to operating the `ferrox` firmware on supported transmitters (FlySky FS-i6S and FlySky FS-i6X).
 
 ---
 
@@ -25,7 +25,7 @@ A comprehensive guide to operating the `flysky-i6s-rs` firmware on the FlySky FS
   - **In Menus & Editors**: Functions as **`[TAB]` / Cursor Advance** (advances name characters or curve points) without triggering RF binding.
 
 ### Power-On Startup & Splash Screen
-- **Ferrox-RC Splash Screen**: When the transmitter powers on, the LCD immediately displays the 28x27 Ferrox-RC kinetic delta emblem, firmware identifier (`flysky-i6s-rs`), and build version for 1200 ms while ADC, DMA, and RF peripherals initialize in the background.
+- **Ferrox-RC Splash Screen**: When the transmitter powers on, the LCD immediately displays the 28x27 Ferrox-RC kinetic delta emblem, firmware identifier (`ferrox`), and build version for 1200 ms while ADC, DMA, and RF peripherals initialize in the background.
 - **Synchronized Welcome Fanfare**: Concurrently with the splash screen, the buzzer plays a 4-note ascending fanfare (C6 -> E6 -> G6 -> C7, 660 ms) under the `Rich` tone style (or a single tactile click under `Simple`). The cadence is driven by monotonic SysTick elapsed time for consistent musical timing.
 - **Watchdog Recovery Bypass (<2 ms)**: In the event of an in-flight watchdog reset, splash delays and melodic chimes are completely bypassed. An urgent 3-beep warning pattern sounds, and active RF control is restored in under 2 ms.
 
@@ -221,7 +221,7 @@ Hold **`[OK]` for 1.2 seconds** from any flight screen to open the Settings Menu
 |     [Icon] 2. Model Setup        | | <- 12x12 MDI icon glyphs
 |     [Icon] 3. Dual Rate/Expo     | | <- Proportional scrollbar track
 |------------------------------------|
-| [OK] Select   [ESC] Exit      1/13 | <- Position indicator
+| [OK] Select   [ESC] Exit      1/12 | <- Position indicator
 +------------------------------------+
 ```
 - **3-Slot Icon Menu**: 3 visible items per screen with custom 12x12 Material Design glyphs.
@@ -253,8 +253,8 @@ Hold **`[OK]` for 1.2 seconds** from any flight screen to open the Settings Menu
 - **Field 4: Timer Trigger (`T-Trig:`)**:
   - Select the event that starts and runs the timer:
     - **`OFF`**: Timer disabled.
-    - **`THs (RUN)`**: Throttle Switch mode—runs only while throttle stick > 5% (> -900), pauses when brought back to idle.
-    - **`THt (LTCH)`**: Throttle Trigger / Latched mode—starts counting when throttle stick first exceeds 5%, and continues running non-stop throughout zero-throttle glides or multirotor descents.
+    - **`THs (RUN)`**: Throttle Switch mode: runs only while throttle stick > 5% (> -900), pauses when brought back to idle.
+    - **`THt (LTCH)`**: Throttle Trigger / Latched mode: starts counting when throttle stick first exceeds 5%, and continues running non-stop throughout zero-throttle glides or multirotor descents.
     - **`ALWAYS ON`**: Continuous timer whenever the radio is powered on.
     - **Switch Conditions (`SA^` through `SDv`, plus `SE^..SFv`)**: Runs while the specified switch condition is active.
   - **Switch Auto-Detection**: Flipping any physical switch while editing `T-Trig` automatically sets that switch as the trigger.
@@ -345,7 +345,7 @@ The Radio Setup menu features a scrollable 4-item viewport with 9px row heights 
   - **`COMPOSITE`**: Simultaneous HID Gamepad + CDC-ACM Virtual COM Port.
 - **`PC13 Pwr:`**: Configures external module power polarity on `PC13`: `HIGH (N)` (default active-HIGH for N-channel MOSFET switches) or `LOW (P)` (active-LOW for P-channel MOSFET switches).
 - **`Ext ADC (PC):`**: Toggles autonomous 16-channel ADC scanning for auxiliary inputs on pins `PC1` through `PC5` (`ADC_IN11`..`ADC_IN15`) (`DISABLED` or `ENABLED`).
-- **`Stick Mode:`**: Selects gimbal stick mode configuration: **`MODE 1`** (Throttle/Roll right, Pitch/Yaw left), **`MODE 2`** (Throttle/Yaw left, Pitch/Roll right—default), **`MODE 3`** (Pitch/Roll left, Throttle/Yaw right), or **`MODE 4`** (Pitch/Yaw right, Throttle/Roll left). Directly controls channel mapping for preflight throttle safety checks and flight controls.
+- **`Stick Mode:`**: Selects gimbal stick mode configuration: **`MODE 1`** (Throttle/Roll right, Pitch/Yaw left), **`MODE 2`** (Throttle/Yaw left, Pitch/Roll right: default), **`MODE 3`** (Pitch/Roll left, Throttle/Yaw right), or **`MODE 4`** (Pitch/Yaw right, Throttle/Roll left). Directly controls channel mapping for preflight throttle safety checks and flight controls.
 - **`Gimbals:`**: Selects gimbal hardware sensor type: **`POT`** (default factory resistive carbon potentiometers) or **`HALL`** (aftermarket Hall effect gimbals such as RadioMaster AG01 Mini, Pocket, or FlySky Hall sensors). In `HALL` mode, an adaptive 3-count deadband is applied to eliminate magnetic field ripple around center, and calibration span checks are adapted for compact magnet throws. It is also safe to use `HALL` mode on stock potentiometers if you want a tiny built-in center deadband to eliminate resting stick jitter. See [`docs/HALL_GIMBALS.md`](HALL_GIMBALS.md) for wiring and setup.
 - **`Inputs:`**: Opens the **Input Setup** (`INPUT MODES`) sub-screen to configure the input decoding modes for all 11 auxiliary analog channels individually:
   - Channels: `SA (PA4)`, `SB (PA5)`, `SC (PB0)`, `SD (PB1)`, `VRA (PA6)`, `VRB (PA7)`, and Expansion inputs `VRC (PC1)`, `VRD (PC2)`, `VRE (PC3)`, `VRF (PC4)`, `VRG (PC5)`.
@@ -359,8 +359,8 @@ The Radio Setup menu features a scrollable 4-item viewport with 9px row heights 
   - Pressing **`[OK]`** cycles through the 13 available sensors: `RX BAT`, `LQ/RSSI`, `TX BAT`, `CURRENT`, `CAP mAh`, `TX PWR`, `SNR`, `PKT RATE`, `ANTENNA`, `PKTS TX`, `PKTS RX`, `TIMER`, `OFF`.
   - Configurations persist automatically to non-volatile storage and dynamically activate the 4-tile `CUSTOM TELEM` dashboard.
 
-### Submenu 9: Protocol Setup (`PROTOCOL SETUP`)
-Universal RF protocol and receiver configuration, saved per-model:
+### Protocol Setup (`PROTOCOL SETUP`)
+Universal RF protocol and receiver configuration (accessible via `Model Setup` -> `Protocol:`):
 - **`Proto: AFHDS 2A`**: Uses the built-in A7105 transceiver. Configures model-specific receiver settings transmitted over the air:
   - `[Bind: XXXXXXXX]`: Displays active bound receiver ID (e.g. `[Bind: 1A2B3C4D]`). Pressing **`[OK]`** initiates over-the-air pairing.
   - `Power:`: Transmitter RF output power: cycle through **`100mW (HI)`**, **`10mW (MID)`**, **`1mW (LOW)`**, and **`100uW (TST)`** (microwatt range test mode). Persisted per-model in storage.
@@ -368,28 +368,28 @@ Universal RF protocol and receiver configuration, saved per-model:
     > **Servo Safety Warning**: Standard analog servos (e.g. SG90, MG90S) **MUST** be driven at 50 Hz. Feeding higher frequencies to analog servos can cause severe jitter, excessive heating, and motor burnout. Only select rates above 50 Hz when all connected servos are high-speed digital servos rated for higher frame rates.
   - `RX Out:`: Receiver output signal format: **`PWM`** (individual servo pin outputs) or **`PPM`** (composite Pulse Position Modulation stream on CH1).
   - `Serial:`: Receiver serial bus protocol: **`i-BUS`** (`0xDE`, FlySky proprietary bidirectional serial protocol) or **`S.BUS`** (`0xDD`, Futaba/FrSky inverted serial stream for flight controllers). Transmitted immediately over the air to reconfigure the receiver hardware dynamically.
-- **`Proto: CRSF`**: Drives external Crossfire, ExpressLRS, or compatible CRSF transmitter modules connected to the internal expansion header `J15` (`PB6` TX, `PB7` RX) with hardware power control on header `H1` (`PF6`).
+- **`Proto: CRSF`**: Drives external Crossfire, ExpressLRS, or compatible CRSF transmitter modules connected to the expansion header (`PB6` TX / `PB7` RX on FS-i6S; `USART2` `PD5` TX / `PA15` RX on FS-i6X) with hardware module power control.
   - **A7105 Deep Sleep**: When CRSF protocol is selected, the internal A7105 2.4 GHz RF transceiver is automatically placed into deep sleep mode (`0x0F`), completely eliminating internal RF transmission, reducing battery consumption, and preventing thermal buildup.
   - Pressing **`[OK]`** cycles selection through Protocol, Baud Rate, Duplex mode, Arm Mode, and Configure Module:
     - `Baud:` Selectable baud rate: `115.2k (Low)`, `416.6k (TBS)`, `420k (ELRS)` (default), `921.6k (Fast)`, and `1.875M (Max)`.
-    - `Duplex:` Serial wiring topology: `Full (2W)` (standard 2-wire `PB6` TX / `PB7` RX) or `Half (1W)` (bidirectional single-wire half-duplex over `PB6` with hardware self-echo suppression).
+    - `Duplex:` Serial wiring topology: `Full (2W)` (standard 2-wire TX/RX) or `Half (1W)` (bidirectional single-wire half-duplex with hardware self-echo suppression).
     - `Arm Mode:` Arming transport architecture:
       - **`CH5 (Std)`**: Traditional ExpressLRS/CRSF arming via Channel 5 (`AUX1`). Sends the standard 26-byte frame (`0x16` with 22-byte payload). Compatible with all TBS Crossfire, Betaflight, and ExpressLRS versions.
       - **`Switch`**: Modern ExpressLRS 4.0+ switch-based arming. Sends the extended 27-byte frame (`0x16` with 23-byte payload containing the `CRSF_CHANNELS_STATUS_ARMED` flag byte). Frees up `CH5` (`AUX1`) to function as a full proportional or multi-switch channel.
     - `[Configure Module]`: Opens the native TBS-Agent style configurator screen to discover devices, navigate subfolders, and configure settings.
     - *For complete wiring pinouts, power polarity settings, live telemetry dashboard metrics, and the configurator guide, see the dedicated [CRSF Subsystem Guide](CRSF_ELRS_GUIDE.md).*
 
-### Submenu 10: Channel Monitor (`CHANNEL MONITOR`)
+### Submenu 9: Channel Monitor (`CHANNEL MONITOR`)
 - Displays live pulse widths (1000..2000 µs) across all 18 channels with 40-pixel horizontal graphic bar indicators and exact microsecond numbers.
 - **Dynamic Channel Naming**: Labels dynamically reflect active model configuration:
   - Channels 1..4 dynamically reflect the active model's wing/tail mixer (`1:AIL`, `2:ELE`, `3:THR`, `4:RUD` in Normal; `1:L.ELV`, `2:R.ELV` in Elevon; `2:L.VTL`, `4:R.VTL` in V-Tail; `1:L.AIL`, `6:R.AIL` in Flaperon).
   - Channels 5..18 dynamically display their assigned auxiliary source short names (e.g. `5:SA`, `6:SB`, `7:VR1`, `10:SD`, `11:VRC`, `18:None`).
 - Press **`[UP]`** / **`[DOWN]`** to toggle between Page 1 (CH1..CH6), Page 2 (CH7..CH12), and Page 3 (CH13..CH18).
 
-### Submenu 11: Stick & Pot Calibration (`STICK CALIB`)
+### Submenu 10: Stick & Pot Calibration (`STICK CALIB`)
 Launches the interactive 2-step calibration wizard (see Section 6 below), automatically adapted to all flight sticks and configured continuous rotary potentiometers.
 
-### Submenu 12: Analog Diagnostics (`DIAG ANAS`)
+### Submenu 11: Analog Diagnostics (`DIAG ANAS`)
 - Multi-page graphic diagnostics screen matching the `CHANNEL MONITOR` layout with 40-pixel graphic fill bars and exact 4-digit raw decimal ADC counts (0..4095):
   - **Page 1 (`ANALOG (1-6)`)**: Stick gimbals & switches: `RH:AIL`, `RV:ELE`, `LV:THR`, `LH:RUD`, `SW:SA`, `SW:SB`.
   - **Page 2 (`ANALOG (7-11)`)**: Rotary pots, switches, & battery: `POT:V1`, `POT:V2`, `SW:SC`, `SW:SD`, `VBAT`.
@@ -398,14 +398,14 @@ Launches the interactive 2-step calibration wizard (see Section 6 below), automa
 - Press **`[UP]`** / **`[DOWN]`** to cycle through the diagnostic pages.
 - Press **`[CANCEL]` (`[ESC]`)** to return to the Main Menu.
 
-### Submenu 13: System Information (`SYSTEM INFO`)
+### Submenu 12: System Information (`SYSTEM INFO`)
 - Displays MCU type (`STM32F072VB` or `APM32F072VB`), 96-bit silicon UID, firmware version, Flash memory map, and storage statistics.
 
 ---
 
 ## 5. Flight Timer Subsystem & Pilot Audio Ergonomics
 
-The `flysky-i6x-rs` firmware features an EdgeTX/OpenTX-parity flight timer engine designed to prevent unexpected battery depletion, track flight pack duration, and support diverse aircraft categories (fixed-wing, sailplane, and multirotor).
+The `ferrox` firmware features an EdgeTX/OpenTX-parity flight timer engine designed to prevent unexpected battery depletion, track flight pack duration, and support diverse aircraft categories (fixed-wing, sailplane, and multirotor).
 
 ### 1. Timer Modes & Triggers (`T-Trig:`)
 Configurable per-model in **`MODEL SETUP`** -> **`T-Trig:`**:
@@ -423,7 +423,7 @@ Configurable per-model in **`MODEL SETUP`** -> **`T-Trig:`**:
 ### 2. Arm Switch Integration (Auto-Reset on Arm / Pause on Disarm)
 When an **Arm Switch** (`Arm Sw:`) is configured in `MODEL SETUP`:
 - **Disarm (Landing)**: Unlatches `THt` and pauses the timer immediately. The timer display freezes on screen so the pilot can inspect total airtime and remaining pack duration post-landing.
-- **Re-Arm (Next Battery)**: Automatically resets the timer back to its initial countdown value (or 00:00 for count-up) and clears all elapsed accumulator seconds—ready for the next flight pack without touching any buttons.
+- **Re-Arm (Next Battery)**: Automatically resets the timer back to its initial countdown value (or 00:00 for count-up) and clears all elapsed accumulator seconds: ready for the next flight pack without touching any buttons.
 
 ### 3. Visual Hold-to-Reset HUD Progress Modal
 To manually reset the timer on the flight dashboard at any time:
@@ -513,7 +513,7 @@ The stock FlySky factory firmware does not include the software key-check logic 
 5. Bridging `R60` pulls the MCU's `BOOT0` pin to 3.3V, causing the chip to boot directly into its factory ROM DFU bootloader (`0483:df11` for STM32, `314b:0106` for APM32). The transmitter screen remains blank, and the PC detects the device as `STM32 BOOTLOADER`.
 6. Once powered on, you can remove the bridge across `R60`. You do not need to keep it bridged while flashing.
 
-#### B. Upgrading from OpenI6X or flysky-i6s-rs (No Disassembly Needed)
+#### B. Upgrading from OpenI6X or ferrox (No Disassembly Needed)
 Once custom firmware has been flashed to the radio, hardware pad bridging is never needed again:
 - With the transmitter powered off, hold **Roll Left + Yaw Right** inward towards the power switch while switching on the radio.
 - The LCD screen remains blank, and the transmitter enumerates over USB as `0483:df11` (STM32 BOOTLOADER).
@@ -525,14 +525,17 @@ Before flashing any custom firmware, pull your entire 128 KB on-chip Flash memor
 dfu-util -a 0 -s 0x08000000:131072 -U stock_backup.bin
 ```
 
-### 3. Flash flysky-i6s-rs Firmware
+### 3. Flash ferrox Firmware
 Flash the compiled binary via `dfu-util`:
 ```bash
-# For STM32F072:
-dfu-util -a 0 -s 0x08000000:leave -D flysky-i6s.bin
+# For FlySky FS-i6S:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
 
-# For APM32F072:
-dfu-util -a 0 -d 314b:0106 -s 0x08000000:leave -D flysky-i6s.bin
+# For FlySky FS-i6X (STM32F072):
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
+
+# For FlySky FS-i6X (APM32F072):
+dfu-util -a 0 -d 314b:0106 -s 0x08000000:leave -D ferrox-i6x.bin
 ```
 The radio will immediately reboot into the new firmware upon completion.
 
@@ -555,7 +558,7 @@ The radio will immediately reboot into the new firmware upon completion.
 > - **How to Prevent It**: Always append `:leave` to the target address (`-s 0x08000000:leave`). This instructs the bootloader to execute a soft reset and branch into user firmware instead of lingering in the DFU engine.
 > - **Consequences of Ignoring**: If you ignore or leave the state machine in `dfuERROR`, subsequent read (`-U`) or flash (`-D`) operations will fail on invocation until `dfu-util` issues a clear-status cycle or the USB interface is reset.
 >
-> *(Note: The message `Warning: Invalid DFU suffix signature` is also completely harmless—raw `.bin` files created by compilers omit the optional 16-byte PC DFU CRC trailer).*
+> *(Note: The message `Warning: Invalid DFU suffix signature` is also completely harmless: raw `.bin` files created by compilers omit the optional 16-byte PC DFU CRC trailer).*
 
 ### 4. Restore / Revert Anytime
 You can restore your original stock or OpenI6X backup file at any time:
@@ -602,7 +605,7 @@ The firmware includes five levels of proactive safety protection inspired by Ope
 ### 5. In-Flight Watchdog Recovery & Fast Return-to-Control
 - **Hardware Protection**: An Independent Hardware Watchdog (`pac::IWDG`) runs autonomously off an isolated 40 kHz LSI oscillator with a 2.0-second timeout.
 - **Warm Reboot Detection**: If an unexpected MCU reset occurs (e.g. from ESD, power rail fluctuation, or timing transient), the radio detects the watchdog reset signature in `RCC_CSR`.
-- **Interlock Bypass**: Unlike traditional firmware that traps the pilot on a startup warning screen because the throttle is up mid-flight, `flysky-i6s-rs` automatically bypasses power-on throttle/switch interlocks and the DFU delay during watchdog recovery.
+- **Interlock Bypass**: Unlike traditional firmware that traps the pilot on a startup warning screen because the throttle is up mid-flight, `ferrox` automatically bypasses power-on throttle/switch interlocks and the DFU delay during watchdog recovery.
 - **Instant Flight Recovery (< 2 ms)**: Active over-the-air channel transmission resumes in under **2 milliseconds**, well before receiver failsafe triggers.
 - **Pilot Acoustic Warning**: An urgent 3-beep alarm pattern (`2600 Hz`) sounds immediately on reboot to notify the pilot of the event while maintaining uninterrupted flight control.
 
@@ -610,7 +613,7 @@ The firmware includes five levels of proactive safety protection inspired by Ope
 
 ## 10. USB Subsystem & Flight Simulator Operations
 
-The FlySky FS-i6S features a hardware USB Full-Speed port wired directly to the microcontroller (`PA11` / `PA12`). The `flysky-i6s-rs` firmware supports native plug-and-play USB Joystick control, Virtual COM Port telemetry, and silent RF running.
+The FlySky FS-i6S features a hardware USB Full-Speed port wired directly to the microcontroller (`PA11` / `PA12`). The `ferrox` firmware supports native plug-and-play USB Joystick control, Virtual COM Port telemetry, and silent RF running.
 
 ### 1. Flight Simulator Setup (Liftoff, Velocidrone, RealFlight)
 1. In **`RADIO SETUP`**, ensure **`USB Mode`** is set to **`JOYSTICK`** (or `COMPOSITE`).

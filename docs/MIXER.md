@@ -1,12 +1,12 @@
 # FLIGHT CONTROL & 18-CHANNEL MIXING ARCHITECTURE
 
-Comprehensive reference for input conditioning (Dual Rates & Exponential), auxiliary channel assignment, built-in wing and tail templates, and the EdgeTX/OpenTX-inspired 18-channel freeform matrix mixer on the FlySky FS-i6X.
+Comprehensive reference for input conditioning (Dual Rates & Exponential), auxiliary channel assignment, built-in wing and tail templates, and the EdgeTX/OpenTX-inspired 18-channel freeform matrix mixer in `ferrox` across supported transmitters.
 
 ---
 
 ## 1. Overview & Control Pipeline
 
-The mixing system in `flysky-i6x-rs` implements an interrupt-safe, deterministic, zero-heap 4-stage pipeline that runs every main execution cycle (~500 Hz):
+The mixing system in `ferrox` implements an interrupt-safe, deterministic, zero-heap 4-stage pipeline that runs every main execution cycle (~500 Hz):
 
 ```mermaid
 flowchart TD
@@ -71,7 +71,7 @@ x_cubic = (x_scaled^3) / 1,000,000   (in range [-1000, +1000])
    Output = x_scaled + ((x_scaled - x_cubic) * |Expo|) / 100
    ```
 
-Implemented in [`src/mixer.rs`](../src/mixer.rs#L44-L64).
+Implemented in [`crates/ferrox-core/src/mixer.rs`](../crates/ferrox-core/src/mixer.rs#L44-L64).
 
 ### D/R Switch Assignment
 In the **Dual Rate / Expo** menu, the pilot selects an assigned hardware switch:
@@ -281,7 +281,7 @@ Here are proven mixer setups used by RC pilots:
 
 ## 7. Model Profile Storage Layout
 
-Flight mixer parameters are stored directly inside each 348-byte [`ModelConfig`](../src/storage.rs) structure in the on-chip Flash non-volatile log (`sequential-storage` on Pages 60..63 at `0x0801_E000`..`0x0802_0000`):
+Flight mixer parameters are stored directly inside each 368-byte [`ModelConfig`](../crates/ferrox-core/src/storage.rs) structure in non-volatile I2C EEPROM (FT24C128A 16 KB, across 20 model slots at `0x0200`..`0x3E00`):
 
 | Parameter | Type | Bytes | Description |
 | :--- | :--- | :--- | :--- |

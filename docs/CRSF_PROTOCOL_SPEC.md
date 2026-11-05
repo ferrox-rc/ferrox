@@ -2,13 +2,13 @@
 
 Technical reference and step-by-step verification walkthrough for the native Crossfire (CRSF) and ExpressLRS (ELRS) subsystem in the FlySky FS-i6S Rust firmware.
 
-This guide provides the exact byte-level framing, timing intervals, CRC calculations, and state machine transitions implemented in [`src/crsf/`](../src/crsf/) to allow cross-referencing against the **TBS Crossfire Protocol Rev 08** and the **ExpressLRS parameter synchronization specification** by hand.
+This guide provides the exact byte-level framing, timing intervals, CRC calculations, and state machine transitions implemented in [`crates/ferrox-core/src/crsf/`](../crates/ferrox-core/src/crsf/) to allow cross-referencing against the **TBS Crossfire Protocol Rev 08** and the **ExpressLRS parameter synchronization specification** by hand.
 
 ---
 
 ## 1. Framing & Wire Rules
 
-All serial communication over `USART1` (`PB6` TX / `PB7` RX on connector `J15`, implemented in [`src/hw/uart.rs`](../src/hw/uart.rs)) adheres strictly to the CRSF wire protocol:
+All serial communication over `USART1` (on FS-i6S: `PB6` TX / `PB7` RX on connector `J15`, implemented in [`crates/ferrox-core/src/hw/i6s/uart.rs`](../crates/ferrox-core/src/hw/i6s/uart.rs); on FS-i6X: `USART2` `PD5` TX / `PA15` RX) adheres strictly to the CRSF wire protocol:
 
 ```text
 +----------------+----------------+----------------+--------------------------+----------+
@@ -50,7 +50,7 @@ All serial communication over `USART1` (`PB6` TX / `PB7` RX on connector `J15`, 
 - **Data Coverage**: Calculated strictly over `[Frame Type]` through the end of `[Payload]`.
 - **Exclusions**: The first two bytes (`Dest Addr` and `Frame Len`) are **excluded** from the CRC.
 
-Implemented in [`src/crsf/protocol.rs`](../src/crsf/protocol.rs#L90-L117).
+Implemented in [`crates/ferrox-core/src/crsf/protocol.rs`](../crates/ferrox-core/src/crsf/protocol.rs#L90-L117).
 
 ### 11-Bit RC Channel Scaling Formula (`0x16`)
 CRSF encodes 16 RC channels into 11-bit integers (0..2047) packed into 22 payload bytes. The channel conversion maps standard microsecond pulse widths (988..2012 µs) to standard CRSF endpoints:
@@ -58,7 +58,7 @@ CRSF encodes 16 RC channels into 11-bit integers (0..2047) packed into 22 payloa
 - **Neutral / Center (1500 µs)**: `992` counts
 - **Maximum (~2012 µs)**: `1811` counts
 
-Formula implemented in [`src/crsf/protocol.rs`](../src/crsf/protocol.rs#L122-L128):
+Formula implemented in [`crates/ferrox-core/src/crsf/protocol.rs`](../crates/ferrox-core/src/crsf/protocol.rs#L122-L128):
 ```text
 CRSF_Value = floor(((clamped_us - 988) * 1639 + 512) / 1024) + 172
 ```
@@ -328,10 +328,10 @@ Handset (FS-i6S)                                   ELRS Module
 
 ## 5. Source Code Cross-Reference
 
-- **Wire Serialization & CRC**: [`src/crsf/protocol.rs`](../src/crsf/protocol.rs)
-- **Engine State Machine & Handshake**: [`src/crsf/mod.rs`](../src/crsf/mod.rs)
-- **Hardware UART1 Driver & Power (`J15` / `H1`)**: [`src/hw/uart.rs`](../src/hw/uart.rs)
-- **LCD Menu & Modal Interface**: [`src/ui/menu/screens/crsf.rs`](../src/ui/menu/screens/crsf.rs)
+- **Wire Serialization & CRC**: [`crates/ferrox-core/src/crsf/protocol.rs`](../crates/ferrox-core/src/crsf/protocol.rs)
+- **Engine State Machine & Handshake**: [`crates/ferrox-core/src/crsf/mod.rs`](../crates/ferrox-core/src/crsf/mod.rs)
+- **Hardware UART Driver & Power**: [`crates/ferrox-core/src/hw/i6s/uart.rs`](../crates/ferrox-core/src/hw/i6s/uart.rs) (FS-i6S `J15`/`H1`) / [`crates/ferrox-core/src/hw/i6x/uart.rs`](../crates/ferrox-core/src/hw/i6x/uart.rs) (FS-i6X `USART2`)
+- **LCD Menu & Modal Interface**: [`crates/ferrox-core/src/ui/menu/screens/crsf.rs`](../crates/ferrox-core/src/ui/menu/screens/crsf.rs)
 
 ---
 
@@ -339,7 +339,8 @@ Handset (FS-i6S)                                   ELRS Module
 
 The repository includes a comprehensive dual-target host testing suite executable via:
 ```bash
-cargo test-host
+cargo test-host-i6s
+cargo test-host-i6x
 ```
 
 ### Coverage Highlights:

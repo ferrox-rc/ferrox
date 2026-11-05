@@ -2,7 +2,7 @@
 
 **A universal, high-performance, bare-metal RC transmitter operating system written in `no_std` Rust.**
 
-`ferrox` is a multi-radio firmware monorepo built around **`ferrox-core`** — a hardware-agnostic flight control, mixing, telemetry, and UI engine parameterized by compile-time [`BoardProfile`](crates/ferrox-core/src/board.rs) specialization. Originally forged on the **FlySky FS-i6X** and **FlySky FS-i6S**, `ferrox` is architected to bring deterministic, memory-safe Rust firmware to a growing lineup of RC transmitters across the open-source ecosystem:
+`ferrox` is a multi-radio firmware monorepo built around **`ferrox-core`**, a hardware-agnostic flight control, mixing, telemetry, and UI engine parameterized by compile-time [`BoardProfile`](crates/ferrox-core/src/board.rs) specialization. Originally forged on the **FlySky FS-i6X** and **FlySky FS-i6S**, `ferrox` is architected to bring deterministic, memory-safe Rust firmware to a growing lineup of RC transmitters across the open-source ecosystem:
 
 | Transmitter Target | MCU Architecture | Status | Primary RF / Module Support |
 | :--- | :--- | :--- | :--- |
@@ -21,7 +21,7 @@ The `ferrox` workspace unifies development, host-side testing, and binary releas
 
 - **Target-Agnostic Core (`crates/ferrox-core`):** Houses 100% of the shared flight pipeline, 32-line 18-channel matrix mixer, Catmull-Rom spline curves, Global Variables (`GV1..GV5`), acoustic variometer, external I2C EEPROM persistence engine, pre-flight safety interlocks, calibration wizard, modular RF protocol engines, 128×64 display widgets, and direct PAC USB stack.
 - **Board Crates (`boards/ferrox-i6s`, `boards/ferrox-i6x`, `boards/ferrox-<target>`):** Thin board crates providing target-specific startup, pin mappings, and peripheral initialization.
-- **Declarative `BoardProfile` Trait:** Hardware capabilities — supported RF protocols (`SUPPORTED_PROTOCOLS`), default protocol (`DEFAULT_PROTOCOL`), top-level and setup menu catalogs (`MAIN_MENU_ITEMS`, `RADIO_SETUP_ITEMS`, `HARDWARE_EXT_ITEMS`), ADC channel counts, touch/jog-wheel navigation, and EEPROM CRC polynomials — are declared per board at compile time with zero runtime overhead and zero dynamic dispatch.
+- **Declarative `BoardProfile` Trait:** Hardware capabilities (supported RF protocols `SUPPORTED_PROTOCOLS`, default protocol `DEFAULT_PROTOCOL`, top-level and setup menu catalogs `MAIN_MENU_ITEMS`, `RADIO_SETUP_ITEMS`, `HARDWARE_EXT_ITEMS`, ADC channel counts, touch/jog-wheel navigation, and EEPROM CRC polynomials) are declared per board at compile time with zero runtime overhead and zero dynamic dispatch.
 - **Rapid Porting to New Radios:** Bringing Ferrox to a new transmitter only requires defining a `BoardProfile` implementation and low-level GPIO/ADC/UART hooks in a new `boards/ferrox-<target>` crate. Menus, protocol setup screens, calibration wizards, and mixer bounds automatically adapt to the board's declared capabilities.
 - **Direct PAC USB Driver:** Zero third-party USB crates. Implements USB 2.0 Full-Speed directly against the hardware Packet Memory Area (PMA), saving ~4 KB Flash and eliminating all heap/generic overhead.
 - **Circular DMA CRSF UART:** 256-byte circular RX DMA with hardware half-duplex receiver gating (`RE` pin gating), eliminating UART self-echo without software skip counters.
@@ -42,8 +42,8 @@ The `ferrox` workspace unifies development, host-side testing, and binary releas
 | **Primary Controls**| Touch / Keypad / Jog Wheel | **FT6236** Capacitive Touch (`PB8`/`PB9` I2C1) + `PA9`/`PA10` | 4×4 Matrix Keypad + Optical Jog Wheel (`PB8`/`PB9`) | i6S uses gesture navigation & virtual trims; i6X uses jog wheel & tactile keys |
 | **DFU Bootloader** | Factory ROM DFU Bootloader | Hold `PA9` + `PA10` at power-on | Hold horizontal trims inward at power-on | Both: `System Info -> [OK] Reboot DFU` or USB CDC CLI command `dfu` |
 | **RF Transceiver** | Amiccom **A7105** 2.4 GHz | **SPI1** (`PE12` CSN, `PE13..15`) | **SPI1** (`PE12` CSN, `PE13..15`) | AFHDS 2A 260 Hz FHSS; auto deep-sleep (`0x0F`) in CRSF mode |
-| **External Module**| CRSF / ExpressLRS Bay | `USART1` (`PB6` TX / `PB7` RX), `PF6` Pwr | `USART2` (`PA2` TX / `PA3` RX) | Circular DMA UART with hardware `RE` half-duplex gating; baud rates up to 1.875M |
-| **Non-Volatile Storage**| External I2C EEPROM (24C128) | **I2C2** (`PB10` SCL / `PB11` SDA) | **I2C1** (`PB6` SCL / `PB7` SDA) | 16 KB external EEPROM: A/B ping-pong `RadioConfig` + 20 dedicated `ModelConfig` slots |
+| **External Module**| CRSF / ExpressLRS Bay | `USART1` (`PB6` TX / `PB7` RX), `PF6` Pwr | `USART2` (`PD5` TX / `PA15` RX) | Circular DMA UART with hardware `RE` half-duplex gating; baud rates up to 1.875M |
+| **Non-Volatile Storage**| External I2C EEPROM (24C128) | **I2C2** (`PB10` SCL / `PB11` SDA) | **I2C2** (`PB10` SCL / `PB11` SDA) | 16 KB external EEPROM: A/B ping-pong `RadioConfig` + 20 dedicated `ModelConfig` slots |
 | **Display** | **ST7567** (128×64 Monochrome LCD) | 8-bit Parallel (`PE0..7`, `PB3..5`, `PD2/7`)| 8-bit Parallel (`PE0..7`, `PB3..5`, `PD2/7`)| 1024-byte framebuffer in RAM; 30 Hz refresh; Electronic Volume contrast |
 | **Backlight** | Factory LED / PWM Dimming | `PF3` On/Off / `PC9` `TIM3_CH4` PWM | `PF3` On/Off / `PC9` `TIM3_CH4` PWM | Backlight brightness 0..100% in Settings |
 | **Analog Inputs** | 12-bit ADC1 via DMA | 11 stock (or 15 with `Ext ADC`) | 10 stock (or 14 with `Ext ADC`) | Continuous DMA1 circular scanner; mapped dynamically via Stick Mode 1..4 |
@@ -101,7 +101,8 @@ flowchart TD
 ```
 ferrox/
 ├── crates/
-│   └── ferrox-core/            # Universal flight engine, mixer, math, drivers, UI & BoardProfile trait
+│   ├── ferrox-core/            # Universal flight engine, mixer, math, UI & BoardProfile trait
+│   └── ferrox-stm32f0/         # Shared STM32F0 hardware drivers (Buzzer, ST7567, I2C, Time, Watchdog)
 └── boards/
     ├── ferrox-i6s/             # FlySky FS-i6S target (capacitive touch, power latch, 11/15 ADC)
     ├── ferrox-i6x/             # FlySky FS-i6X target (matrix keypad, optical jog wheel, 10/14 ADC)
@@ -109,6 +110,7 @@ ferrox/
 ```
 
 - **`crates/ferrox-core`**: 100% portable, target-agnostic firmware engine containing the 18-channel matrix mixer, Catmull-Rom spline curves, external I2C EEPROM storage abstraction, pre-flight safety checks, dual-target unit tests, direct PAC USB driver, CRSF/ELRS configurator, and ST7567 display subsystem.
+- **`crates/ferrox-stm32f0`**: Reusable hardware driver implementation of `ToneOutput`, `DisplayBus`, and `StorageBus` traits for the STM32F0/APM32F0 series.
 - **`boards/ferrox-i6s` & `boards/ferrox-i6x`**: Zero-overhead target crates providing the reset vectors, pin configurations, hardware drivers, and `BoardProfile` trait implementation.
 - **Extending to Other Radios**: To bring Ferrox to a new radio, simply implement the `BoardProfile` const trait in a new crate under `boards/`. The new target immediately inherits the complete flight pipeline, mixer, telemetry, USB simulator, and configurator with zero duplicate code.
 
@@ -134,7 +136,7 @@ ferrox/
 
 ## 5. Display & User Interface (128×64)
 
-The ST7567 parallel LCD driver maintains a **1024-byte framebuffer** in SRAM (`128 * 64 / 8`) rendered via in-tree 1bpp glyph bitmap tables (`FONT_4X6_DATA` and `FONT_6X10_DATA` in [`src/display/fonts.rs`](src/display/fonts.rs)).
+The ST7567 parallel LCD driver maintains a **1024-byte framebuffer** in SRAM (`128 * 64 / 8`) rendered via in-tree 1bpp glyph bitmap tables (`FONT_4X6_DATA` and `FONT_6X10_DATA` in [`crates/ferrox-core/src/display/fonts.rs`](crates/ferrox-core/src/display/fonts.rs)).
 - **Throttled Refresh Rate (30 Hz):** Decouples graphical drawing from the multi-kHz flight control loop.
 - **Multi-Page Flight Dashboard:** 5 switchable screens cycled by swiping UP/DOWN or tapping `[UP]`/`[DOWN]`:
   1. **Page 1/5 (Gimbals, Switches & Pots):** Live stick sliders (adapted to Stick Mode 1..4), trim ticks, adaptive non-overlapping switch/pot bar (`SA..SH`, `SWI..SWL`, and `VRA..VRF` pots), and live flight timer.
@@ -149,17 +151,17 @@ The ST7567 parallel LCD driver maintains a **1024-byte framebuffer** in SRAM (`1
 
 Comprehensive technical documentation is maintained in the [`docs/`](docs/) directory:
 
-- **[User Guide & Operations Manual](docs/USER_GUIDE.md)**: Complete operator guide covering touch/button controls, 5-page flight dashboard, all 13 settings submenus, flight timers, trainer port, calibration, and DFU flashing.
-- **[System Architecture & Timing Model](docs/ARCHITECTURE.md)**: Unified `ferrox` core + `src/hw/` HAL design, 48 MHz clock tree, real-time concurrency model, watchdog recovery, and memory footprint.
+- **[User Guide & Operations Manual](docs/USER_GUIDE.md)**: Complete operator guide covering touch/button controls, 5-page flight dashboard, all 12 settings submenus, flight timers, trainer port, calibration, and DFU flashing.
+- **[System Architecture & Timing Model](docs/ARCHITECTURE.md)**: Unified `ferrox` core + `crates/ferrox-stm32f0` HAL design, 48 MHz clock tree, real-time concurrency model, watchdog recovery, and memory footprint.
 - **[Implementation Roadmap & Phase Status](docs/ROADMAP.md)**: Phased development history from board bring-up through codebase unification.
 - **[AFHDS 2A Protocol & A7105 RF Driver](docs/RF_PROTOCOL.md)**: SPI1 hardware driver, 16-channel FHSS hopping table, 18-channel interleaved i-BUS packet structure, Model Match, and receiver binding.
 - **[Flight Inputs & Digital Trims](docs/INPUT_SUBSYSTEM.md)**: 11/15-channel ADC DMA scanner, universal `AdcInputMode` decoding, MMA jitter filtering, touch/modifier digital trims, and TIM1 PWM buzzer driver.
 - **[Flight Control & 18-Channel Mixing](docs/MIXER.md)**: 4-stage pipeline, integer cubic expo, Elevon/V-Tail/Flaperon templates, auxiliary channel mapping (`CH5..CH18`), and EdgeTX freeform matrix mixing.
-- **[Stick Calibration & EEPROM Persistence](docs/CALIBRATION_AND_STORAGE.md)**: Adaptive 2-step calibration wizard, tolerance margins, 256-byte `RadioConfig` A/B ping-pong / 384-byte `ModelConfig` layout in external 16 KB I2C EEPROM.
+- **[Stick Calibration & EEPROM Persistence](docs/CALIBRATION_AND_STORAGE.md)**: Adaptive 2-step calibration wizard, tolerance margins, 256-byte `RadioConfig` A/B ping-pong / 368-byte `ModelConfig` layout in external 16 KB I2C EEPROM.
 - **[USB Subsystem & Simulator Manual](docs/USB_SUBSYSTEM.md)**: Hardware Full-Speed USB driver, 100 Hz HID Gamepad descriptor (8 axes, 16 buttons), CDC-ACM telemetry/CLI, and silent RF standby.
 - **[CRSF / ExpressLRS Subsystem Guide](docs/CRSF_ELRS_GUIDE.md)**: Native CRSF/ELRS driver on `USART1` (`PB6`/`PB7` on `J15`), `PF6` (`H1`) power control, 5 baud rates up to 1.875M, and on-radio configurator.
 - **[CRSF Protocol Specification & Verification](docs/CRSF_PROTOCOL_SPEC.md)**: Byte-level wire format, CRC8-DVB calculation, parameter discovery handshake, state machine lifecycle, and manual verification guide.
-- **[Testing Methodology & Verification Guide](docs/TESTING.md)**: Dual-target host test harness (`151` unit tests), peripheral mocking, deterministic virtual time, and adversarial state machine verification.
+- **[Testing Methodology & Verification Guide](docs/TESTING.md)**: Dual-target host test harness (163/182 unit tests), peripheral mocking, deterministic virtual time, and adversarial state machine verification.
 - **[Ecosystem Context & Background](docs/FIRMWARE_COMPARISON.md)**: Background on open-source FlySky firmware development, OpenI6X heritage, FS-i6S hardware evolution, and the unified `ferrox` Rust architecture.
 - **[Hardware Reference & Pinout](docs/HARDWARE_REFERENCE.md)**: Detailed schematics, pin mappings, power latch, FT6236 touch protocol, ST7567 LCD timings, `J15`/`H1`/`J4`/`PC1..PC4` headers, and dual-MCU profiles.
 
@@ -168,11 +170,11 @@ Comprehensive technical documentation is maintained in the [`docs/`](docs/) dire
 ## 7. Current Firmware Footprint
 
 - **Application Flash ROM**:
-  - **FS-i6X**: **~99.8 KB Flash** (`.text` ~87.5 KB + `.rodata` ~11.5 KB + `.data` 772B) out of 128 KB partition (**~28.2 KB / 22.0% free headroom**).
-  - **FS-i6S**: **~104.1 KB Flash** (`.text` ~91.7 KB + `.rodata` ~11.6 KB + `.data` 764B) out of 128 KB partition (**~23.9 KB / 18.7% free headroom**).
+  - **FS-i6X**: **~102.5 KB Flash** (`.text` ~89.1 KB + `.rodata` ~12.6 KB + `.data` 772B) out of 128 KB partition (**~25.5 KB / 19.9% free headroom**).
+  - **FS-i6S**: **~106.3 KB Flash** (`.text` ~92.9 KB + `.rodata` ~12.6 KB + `.data` 764B) out of 128 KB partition (**~21.7 KB / 16.9% free headroom**).
 - **Static RAM**: **~6.3 KB** (`.data` ~770B + `.bss` ~5.5 KB, which includes the 1024B LCD framebuffer, circular DMA queues, and triple buffers) out of **16 KB** available (**>9.7 KB guaranteed stack safety margin**).
-- **Non-Volatile Storage**: **16,384 bytes** external I2C EEPROM (24C128) storing `RadioConfig` with A/B ping-pong wear leveling + 20 dedicated `ModelConfig` slots with board-specific CRC-16 (CCITT-False on i6X, ARC on i6S for 100% backward compatibility).
-- **Automated Host Test Suite**: **180 passing unit tests** across the workspace (`cargo test-all`).
+- **Non-Volatile Storage**: **16,384 bytes** external I2C EEPROM (24C128) storing `RadioConfig` with A/B ping-pong wear leveling + 20 dedicated `ModelConfig` slots with board-specific CRC-16 (CCITT-False on i6S, ARC on i6X for 100% backward compatibility).
+- **Automated Host Test Suite**: **182 passing unit tests** for i6S (`cargo test-host-i6s`) and **163 passing unit tests** for i6X (`cargo test-host-i6x`).
 
 For the complete phase-by-phase feature checklist, see **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 

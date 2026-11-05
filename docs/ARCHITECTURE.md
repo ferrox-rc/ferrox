@@ -65,7 +65,7 @@ flowchart TD
 
 ### Interrupt Priorities & Safety Systems
 - **Hardware Watchdog (`pac::IWDG`)**: Independent 2.0-second hardware watchdog running off the autonomous 40 kHz internal low-speed oscillator (LSI) with prescaler `/64` (625 Hz tick rate, 1.6 ms/tick) and reload count `1250`. Prior to watchdog key registration, LSI clock stabilization is confirmed via `pac::RCC.csr.lsirdy`. To support non-intrusive SWD debugging via ST-Link or probe-rs, `DBGMCU_APB1_FZ.DBG_IWDG_STOP` is configured (with DBGMCU clock gated via `RCC_APB2ENR`) so the watchdog timer freezes when the core is halted. The watchdog is refreshed (`watchdog::feed()`) at the start of the main execution loop, during flash compaction routines, and across soft reset vectors.
-- **Highest Peripheral Priority (`USART1` CRSF / ELRS RX)**: IRQ 27 assigned priority `0x40` in [`src/hw/uart.rs`](../src/hw/uart.rs). At 420,000–1,875,000 baud, bytes arrive every 5.3–23.8 µs. With no hardware FIFO on the STM32F072 USART1, this priority ensures the ISR preempts main thread execution (e.g. LCD flushing) to buffer incoming bytes into a 128-byte atomic ring buffer (`RX_RING`) with zero overrun errors (`USART_ISR_ORE`).
+- **Highest Peripheral Priority (`USART1` CRSF / ELRS RX on i6S, `USART2` on i6X)**: IRQ 27 assigned priority `0x40` in [`crates/ferrox-core/src/hw/i6s/uart.rs`](../crates/ferrox-core/src/hw/i6s/uart.rs). At 420,000–1,875,000 baud, bytes arrive every 5.3–23.8 µs. With no hardware FIFO on the STM32F072 USART, this priority ensures the ISR preempts main thread execution (e.g. LCD flushing) to buffer incoming bytes into a 128-byte atomic ring buffer (`RX_RING`) with zero overrun errors (`USART_ISR_ORE`).
 - **High Priority (RF Transmission)**: `TIM16` fires strictly every **3.850 ms** (259.74 Hz). It pulls the latest pre-computed channel microsecond pulses from the lock-free SPSC triple buffer (`CHANNEL_BUFFER`) with zero critical sections, zero interrupt latency, and zero data races, initiating A7105 SPI transmission. Priority = `0x80`.
 - **Medium Priority (Radio Event)**: `EXTI2_3` fires on A7105 GIO2 line transitions (packet transmission complete or downlink telemetry packet received). Priority = `0x80`.
 - **Autonomous DMA**: `DMA1_CH1` transfers all 11 (or 15 when `Ext ADC (PC)` is enabled) ADC channels directly into circular SRAM buffers with zero CPU intervention.
@@ -77,7 +77,7 @@ flowchart TD
 
 ### 2.1 Hardware Watchdog & Safety-Critical Recovery Architecture
 
-In flight-critical avionics and remote control systems, a hardware watchdog must do more than simply reset a hung processor—it must guarantee safe, predictable, and instantaneous return-to-service without entrapping the pilot in power-on interlocks.
+In flight-critical avionics and remote control systems, a hardware watchdog must do more than simply reset a hung processor: it must guarantee safe, predictable, and instantaneous return-to-service without entrapping the pilot in power-on interlocks.
 
 ```mermaid
 flowchart TD
@@ -153,13 +153,13 @@ A catastrophic hazard in conventional open-source and commercial RC firmware is 
 6. The aircraft crashes before the pilot can diagnose or clear the screen.
 
 #### Solution & DO-178C Deterministic Recovery:
-In `flysky-i6s-rs`, reset recovery is treated as a safety-critical state machine:
+In `ferrox`, reset recovery is treated as a safety-critical state machine:
 - **RCC_CSR Reset Cause Latching**: At the absolute top of `main()`, `chip::check_and_clear_reset_flags()` reads `RCC_CSR`. It detects if the reset was initiated by `IWDGRSTF` (Independent Watchdog) or `WWDGRSTF` (Window Watchdog) and immediately clears all reset flags via `RMVF`.
 - **DFU Settling Delay Elimination**: On cold boots, `hw::keys::check_dfu_entry` inserts a ~6.25 ms settling delay to debounce buttons. On watchdog recovery, this check is completely bypassed, calling `hw::keys::init_keys()` directly. This removes unnecessary latency and eliminates any possibility of accidentally entering the DFU bootloader mid-flight.
 - **Inhibition of Modal Wizards**: Bind-on-boot and direct calibration wizard entry (`initial_keys & (1 << 10)`) are inhibited during watchdog recovery, ensuring active model binding and calibration states are untouched.
 - **Non-Blocking Acoustic Pilot Alert**: The standard multi-note startup melodic chime is replaced with an urgent, non-blocking 3-beep alarm pattern (`buzzer.play_tone_pattern(2600, 60, 40, 3)`). This alerts the pilot through acoustic feedback that a reset occurred while consuming zero CPU wait cycles.
 - **Pre-Flight Safety Check Bypass**: When `was_watchdog_reset` is true, the pre-flight safety check loop is bypassed entirely. The runtime immediately instantiates the `FlightPipeline` and enters the real-time flight loop.
-- **Sub-2 Millisecond Recovery**: Total elapsed time from reset vector execution to the first active, calibrated over-the-air RF packet is measured at **< 2.0 ms**—well within the typical 50–100 ms receiver failsafe timeout window, preventing any loss of aircraft altitude or attitude control.
+- **Sub-2 Millisecond Recovery**: Total elapsed time from reset vector execution to the first active, calibrated over-the-air RF packet is measured at **< 2.0 ms**: well within the typical 50–100 ms receiver failsafe timeout window, preventing any loss of aircraft altitude or attitude control.
 
 ---
 

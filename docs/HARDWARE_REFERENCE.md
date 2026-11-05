@@ -233,7 +233,7 @@ The FlySky FS-i6S uses a precision 10 kΩ (upper) and 5.1 kΩ (lower) resistive 
   ```text
   V_bat = (raw * 3300 * 2.960784) / 4095 = (raw * 977064) / 409500
   ```
-- Implemented with integer arithmetic in [`src/hw/mod.rs`](../src/hw/mod.rs):
+- Implemented with integer arithmetic in [`crates/ferrox-core/src/hw/mod.rs`](../crates/ferrox-core/src/hw/mod.rs):
   ```rust
   ((raw as u32 * 977064) / 409500) as u16
   ```
