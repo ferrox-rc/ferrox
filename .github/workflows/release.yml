@@ -27,20 +27,24 @@ jobs:
         run: cargo install cargo-binutils || true
 
       - name: Build firmware (release)
-        run: cargo build --release --target thumbv6m-none-eabi
+        run: |
+          cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi
+          cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi
 
       - name: Generate Binary and Hex Artifacts
         run: |
-          BIN_NAME=$(cargo read-manifest | jq -r '.name')
-          ELF_PATH="target/thumbv6m-none-eabi/release/${BIN_NAME}"
-          OUT_BIN="${BIN_NAME}.bin"
-          OUT_HEX="${BIN_NAME}.hex"
-          OUT_ELF="${BIN_NAME}.elf"
+          # FlySky FS-i6S
+          cargo objcopy --bin ferrox-i6s --release -- -O binary ferrox-i6s.bin
+          cargo objcopy --bin ferrox-i6s --release -- -O ihex ferrox-i6s.hex
+          cp target/thumbv6m-none-eabi/release/ferrox-i6s ferrox-i6s.elf
 
-          cargo objcopy --release -- -O binary "${OUT_BIN}"
-          cargo objcopy --release -- -O ihex "${OUT_HEX}"
-          cp "${ELF_PATH}" "${OUT_ELF}"
-          sha256sum "${OUT_BIN}" "${OUT_HEX}" "${OUT_ELF}" > sha256sums.txt
+          # FlySky FS-i6X
+          cargo objcopy --bin ferrox-i6x --release -- -O binary ferrox-i6x.bin
+          cargo objcopy --bin ferrox-i6x --release -- -O ihex ferrox-i6x.hex
+          cp target/thumbv6m-none-eabi/release/ferrox-i6x ferrox-i6x.elf
+
+          sha256sum ferrox-i6s.bin ferrox-i6s.hex ferrox-i6s.elf \
+                    ferrox-i6x.bin ferrox-i6x.hex ferrox-i6x.elf > sha256sums.txt
           cat sha256sums.txt
 
       - name: Create GitHub Release
