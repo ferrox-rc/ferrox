@@ -32,7 +32,14 @@ impl SystemDriver for Stm32f0SystemDriver {
 
     fn read_uid(&mut self) -> [u8; 12] {
         let profile = ferrox_core::chip::get_mcu_profile();
-        ferrox_core::chip::read_uid(&profile)
+        let mut uid = [0u8; 12];
+        unsafe {
+            let src = profile.uid_addr as *const u8;
+            for (i, byte) in uid.iter_mut().enumerate() {
+                *byte = core::ptr::read_volatile(src.add(i));
+            }
+        }
+        uid
     }
 
     fn init_time(&mut self) {
