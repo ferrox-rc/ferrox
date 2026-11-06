@@ -50,8 +50,8 @@ pub use uart::{I6sSerialPort, I6xSerialPort};
 pub use usb::Stm32f0UsbDriver;
 pub use watchdog::{feed as watchdog_feed, start as watchdog_start, WatchdogManager};
 
-/// Initialize and register all STM32F0 hardware drivers for FlySky FS-i6X.
-pub fn init_i6x_drivers() {
+/// Create PlatformContext for FlySky FS-i6X.
+pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext<'static> {
     static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
     static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
     static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;
@@ -64,22 +64,27 @@ pub fn init_i6x_drivers() {
     static mut UART: I6xSerialPort = I6xSerialPort::new();
 
     unsafe {
-        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER);
-        ferrox_core::buzzer::register_tone_output(&mut BUZZER);
-        ferrox_core::display::register_display_bus(&mut DISPLAY);
-        ferrox_core::storage::register_storage_bus(&mut STORAGE);
-        ferrox_core::trainer::register_trainer_driver(&mut TRAINER);
-        ferrox_core::rf::spi::register_rf_bus(&mut RF_BUS);
-        ferrox_core::usb::register_usb_driver(&mut USB);
-        ferrox_core::adc::register_adc_driver(&mut ADC);
-        ferrox_core::boot::register_key_driver(&mut KEYS);
-        ferrox_core::uart::register_serial_port(&mut UART);
         ferrox_core::watchdog::register_watchdog(watchdog_start, watchdog_feed);
+        ferrox_core::hal::PlatformContext {
+            system: &mut SYSTEM_DRIVER,
+            tone: &mut BUZZER,
+            display: &mut DISPLAY,
+            storage: &mut STORAGE,
+            trainer: &mut TRAINER,
+            rf_bus: &mut RF_BUS,
+            usb: &mut USB,
+            adc: &mut ADC,
+            keys: &mut KEYS,
+            serial: &mut UART,
+            power: None,
+            touch: None,
+            watchdog: None,
+        }
     }
 }
 
-/// Initialize and register all STM32F0 hardware drivers for FlySky FS-i6S.
-pub fn init_i6s_drivers() {
+/// Create PlatformContext for FlySky FS-i6S.
+pub fn create_i6s_context() -> ferrox_core::hal::PlatformContext<'static> {
     static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
     static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
     static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;
@@ -94,18 +99,21 @@ pub fn init_i6s_drivers() {
     static mut TOUCH: Stm32f0TouchDriver = Stm32f0TouchDriver;
 
     unsafe {
-        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER);
-        ferrox_core::buzzer::register_tone_output(&mut BUZZER);
-        ferrox_core::display::register_display_bus(&mut DISPLAY);
-        ferrox_core::storage::register_storage_bus(&mut STORAGE);
-        ferrox_core::trainer::register_trainer_driver(&mut TRAINER);
-        ferrox_core::rf::spi::register_rf_bus(&mut RF_BUS);
-        ferrox_core::usb::register_usb_driver(&mut USB);
-        ferrox_core::adc::register_adc_driver(&mut ADC);
-        ferrox_core::boot::register_key_driver(&mut KEYS);
-        ferrox_core::uart::register_serial_port(&mut UART);
-        ferrox_core::hal::register_power_driver(&mut POWER);
-        ferrox_core::hal::register_touch_driver(&mut TOUCH);
         ferrox_core::watchdog::register_watchdog(watchdog_start, watchdog_feed);
+        ferrox_core::hal::PlatformContext {
+            system: &mut SYSTEM_DRIVER,
+            tone: &mut BUZZER,
+            display: &mut DISPLAY,
+            storage: &mut STORAGE,
+            trainer: &mut TRAINER,
+            rf_bus: &mut RF_BUS,
+            usb: &mut USB,
+            adc: &mut ADC,
+            keys: &mut KEYS,
+            serial: &mut UART,
+            power: Some(&mut POWER),
+            touch: Some(&mut TOUCH),
+            watchdog: None,
+        }
     }
 }

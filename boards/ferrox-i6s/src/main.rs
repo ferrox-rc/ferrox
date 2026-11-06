@@ -44,6 +44,6 @@ use cortex_m_rt::entry;
 
 #[entry]
 fn main() -> ! {
-    ferrox_stm32f0::init_i6s_drivers();
-    ferrox_core::runtime::run(core::ptr::addr_of_mut!(PANIC_COUNT))
+    let ctx = ferrox_stm32f0::create_i6s_context();
+    ferrox_core::runtime::run(ctx, core::ptr::addr_of_mut!(PANIC_COUNT))
 }

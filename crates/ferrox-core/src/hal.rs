@@ -475,3 +475,77 @@ impl UsbDriver for NullUsbDriver {
     }
 }
 
+/// Unified platform services and peripheral drivers bundle.
+pub struct PlatformContext<'a> {
+    pub system: &'a mut dyn SystemDriver,
+    pub tone: &'a mut dyn ToneOutput,
+    pub display: &'a mut dyn DisplayBus,
+    pub storage: &'a mut dyn StorageBus,
+    pub trainer: &'a mut dyn TrainerDriver,
+    pub rf_bus: &'a mut dyn RfBus,
+    pub usb: &'a mut dyn UsbDriver,
+    pub adc: &'a mut dyn AdcDriver,
+    pub keys: &'a mut dyn KeyDriver,
+    pub serial: &'a mut dyn SerialPort,
+    pub power: Option<&'a mut dyn PowerDriver>,
+    pub touch: Option<&'a mut dyn TouchDriver>,
+    pub watchdog: Option<&'a mut dyn WatchdogDriver>,
+}
+
+impl<'a> PlatformContext<'a> {
+    /// Register all drivers in this context with the runtime subsystems.
+    pub fn register(self) {
+        crate::chip::register_system_driver(unsafe { core::mem::transmute(self.system) });
+        crate::buzzer::register_tone_output(unsafe { core::mem::transmute(self.tone) });
+        crate::display::register_display_bus(unsafe { core::mem::transmute(self.display) });
+        crate::storage::register_storage_bus(unsafe { core::mem::transmute(self.storage) });
+        crate::trainer::register_trainer_driver(unsafe { core::mem::transmute(self.trainer) });
+        crate::rf::spi::register_rf_bus(unsafe { core::mem::transmute(self.rf_bus) });
+        crate::usb::register_usb_driver(unsafe { core::mem::transmute(self.usb) });
+        crate::adc::register_adc_driver(unsafe { core::mem::transmute(self.adc) });
+        crate::boot::register_key_driver(unsafe { core::mem::transmute(self.keys) });
+        crate::uart::register_serial_port(unsafe { core::mem::transmute(self.serial) });
+        if let Some(p) = self.power {
+            register_power_driver(unsafe { core::mem::transmute(p) });
+        }
+        if let Some(t) = self.touch {
+            register_touch_driver(unsafe { core::mem::transmute(t) });
+        }
+    }
+
+    /// Construct a dummy PlatformContext backed by static Null drivers (for unit testing).
+    pub fn null_context() -> Self {
+        static mut NULL_SYS: NullSystemDriver = NullSystemDriver;
+        static mut NULL_TONE: NullToneOutput = NullToneOutput;
+        static mut NULL_DISP: NullDisplayBus = NullDisplayBus;
+        static mut NULL_STORE: NullStorageBus = NullStorageBus;
+        static mut NULL_TRAIN: NullTrainerDriver = NullTrainerDriver;
+        static mut NULL_RF: NullRfBus = NullRfBus;
+        static mut NULL_USB: NullUsbDriver = NullUsbDriver;
+        static mut NULL_ADC: NullAdcDriver = NullAdcDriver;
+        static mut NULL_KEYS: NullKeyDriver = NullKeyDriver;
+        static mut NULL_SERIAL: NullSerialPort = NullSerialPort;
+        static mut NULL_POWER: NullPowerDriver = NullPowerDriver;
+        static mut NULL_TOUCH: NullTouchDriver = NullTouchDriver;
+        static mut NULL_WDG: NullWatchdog = NullWatchdog;
+
+        unsafe {
+            Self {
+                system: &mut NULL_SYS,
+                tone: &mut NULL_TONE,
+                display: &mut NULL_DISP,
+                storage: &mut NULL_STORE,
+                trainer: &mut NULL_TRAIN,
+                rf_bus: &mut NULL_RF,
+                usb: &mut NULL_USB,
+                adc: &mut NULL_ADC,
+                keys: &mut NULL_KEYS,
+                serial: &mut NULL_SERIAL,
+                power: Some(&mut NULL_POWER),
+                touch: Some(&mut NULL_TOUCH),
+                watchdog: Some(&mut NULL_WDG),
+            }
+        }
+    }
+}
+
