@@ -6,13 +6,12 @@
 //!   pot center haptic/audio clicks, bind gestures, debounced flash saves, and display frame dispatch.
 //! - Startup Pre-flight Safety Interlock: throttle at idle and switch safety verification.
 
-use crate::board::{ActiveBoard, BoardProfile};
+use crate::board::{ActiveBoard, BoardIdleHook, BoardProfile};
 use crate::buzzer::Buzzer;
 use crate::calib::CalibWizard;
 use crate::crsf;
 use crate::curve;
 use crate::display::St7567;
-use crate::hw;
 use crate::input::{self, InputState, SwitchPos};
 use crate::mixer::{self, SAFE_IDLE_CHANNELS};
 use crate::rf::{self, afhds2a::TelemetryData};
@@ -76,7 +75,7 @@ impl FlightPipeline {
     ) -> FlightSnapshot {
         // 1. Poll continuous DMA analog and digital inputs (sub-microsecond)
         let mut state = input::read();
-        hw::update_flight_switches(&mut state, storage, menu_active);
+        ActiveBoard::update_flight_switches(&mut state, storage, menu_active);
 
         let active_model = storage.active_model();
 
@@ -289,7 +288,7 @@ pub struct BackgroundIdleManager {
     pub trim_dirty: bool,
     pub trim_save_cooldown_ms: u16,
     pub prev_instant_trim_active: bool,
-    pub board_idle: hw::BoardIdleState,
+    pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
 }
 
 impl BackgroundIdleManager {
@@ -341,7 +340,7 @@ impl BackgroundIdleManager {
             trim_dirty: false,
             trim_save_cooldown_ms: 0,
             prev_instant_trim_active: false,
-            board_idle: hw::BoardIdleState::new(),
+            board_idle: ActiveBoard::create_idle_state(),
         }
     }
 
@@ -886,7 +885,7 @@ pub fn run_preflight_check(
 
         let now = time::millis();
         let state = input::read();
-        let keys = hw::keys::scan_keys();
+        let keys = crate::boot::scan_keys();
 
         let raw_adc = [state.raw[0], state.raw[1], state.raw[2], state.raw[3]];
         let model_type = storage.active_model().model_type();
@@ -1031,7 +1030,7 @@ pub fn draw_timer_reset_modal(lcd: &mut St7567, progress_pct: u8, completed: boo
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn run(panic_count_ptr: *mut u32) -> ! {
     // 0. Early board initialization (e.g. electronic power latch on FS-i6S)
-    hw::pre_init();
+    ActiveBoard::pre_init();
 
     // Standalone feed immediately refreshes any watchdog running across soft reboot
     watchdog::feed();
@@ -1041,12 +1040,11 @@ pub fn run(panic_count_ptr: *mut u32) -> ! {
     // the throttle-at-idle and switch interlocks to restore flight control in <10ms.
     let was_watchdog_reset = crate::chip::check_and_clear_reset_flags();
 
-    // 1. MCU Profile & Fast DFU Bootloader Check
-    let mcu_profile = crate::chip::get_mcu_profile();
-    crate::boot::check_sram_dfu_entry(&mcu_profile);
+    // 1. Fast DFU Bootloader Check
+    crate::boot::check_sram_dfu_entry();
 
     if !was_watchdog_reset {
-        crate::boot::check_dfu_entry(&mcu_profile);
+        crate::boot::check_dfu_entry();
     } else {
         crate::boot::init_keys();
     }
@@ -1059,7 +1057,7 @@ pub fn run(panic_count_ptr: *mut u32) -> ! {
     time::init();
 
     // Initialize board-specific touch controller (if present)
-    hw::init_touch();
+    ActiveBoard::init_touch();
 
     // 3. Load persistent radio storage and 20-model configuration
     let storage = storage::get_storage();
@@ -1106,7 +1104,7 @@ pub fn run(panic_count_ptr: *mut u32) -> ! {
     // 8. Initialize input calibration and capture resting stick centers
     input::init();
     input::apply_calibration(&storage.radio);
-    hw::init_board_keys(&storage.radio);
+    ActiveBoard::init_board_keys(&storage.radio);
     watchdog::feed();
     {
         let now = time::millis();
@@ -1118,7 +1116,7 @@ pub fn run(panic_count_ptr: *mut u32) -> ! {
     }
 
     // 9. Initialize A7105 RF transceiver & AFHDS 2A stack
-    let uid = crate::chip::read_uid(&mcu_profile);
+    let uid = crate::chip::read_uid();
     let w0 = u32::from_le_bytes([uid[0], uid[1], uid[2], uid[3]]);
     let w1 = u32::from_le_bytes([uid[4], uid[5], uid[6], uid[7]]);
     let w2 = u32::from_le_bytes([uid[8], uid[9], uid[10], uid[11]]);
@@ -1223,7 +1221,7 @@ pub fn run(panic_count_ptr: *mut u32) -> ! {
         let dt_ms = (now.wrapping_sub(last_tick_ms)).min(100) as u16;
 
         let menu_active = menu_controller.is_active() || calib_wizard.is_active();
-        let keys = hw::poll_keys(storage, menu_active);
+        let keys = ActiveBoard::poll_keys(storage, menu_active);
 
         if dt_ms > 0 {
             last_tick_ms = now;

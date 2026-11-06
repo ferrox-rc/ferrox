@@ -1,6 +1,9 @@
 //! Compile-time board profile and zero-cost HAL dispatch for Ferrox targets.
 
-use crate::storage::AdcInputMode;
+use crate::buzzer::Buzzer;
+use crate::display::St7567;
+use crate::input::{InputState, SwitchPos};
+use crate::storage::{AdcInputMode, RadioConfig, RadioStorage};
 use crate::ui::glyphs;
 
 /// Modular RF protocols supported by `ferrox-core`.
@@ -334,6 +337,79 @@ pub trait BoardProfile: Copy + Clone + 'static {
 
     /// Hardware dispatch hook: configure J4 pins as GPIO inputs or SWD debug.
     fn set_j4_mode_enabled(enabled: bool);
+
+    /// Early board initialization (e.g. power latch on FS-i6S).
+    fn pre_init();
+
+    /// Initialize capacitive touchscreen controller (if supported).
+    fn init_touch();
+
+    /// Initialize board-specific switch/button pins after loading config.
+    fn init_board_keys(radio: &RadioConfig);
+
+    /// Poll navigation keys from physical buttons and touch gestures.
+    fn poll_keys(storage: &RadioStorage, menu_active: bool) -> u16;
+
+    /// Update dynamic flight switches (e.g. rear buttons or J4 buttons).
+    fn update_flight_switches(state: &mut InputState, storage: &RadioStorage, menu_active: bool);
+
+    /// Decode board-specific switches (SE..SWM) from raw ADC and GPIO states.
+    fn decode_board_switches(
+        raw: &[u16; crate::adc::NUM_CHANNELS],
+        ext_switches: bool,
+        ext_adc: bool,
+        adc_modes: &[u8],
+    ) -> (
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+    );
+
+    /// Render default switch and dual pot layout on flight dashboard.
+    fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage);
+
+    /// Append board-specific extra switches to adaptive dashboard switch list.
+    fn append_extra_switches(
+        state: &InputState,
+        storage: &RadioStorage,
+        sw_list: &mut [(&'static str, SwitchPos, bool, u8); 16],
+        sw_count: &mut usize,
+    );
+
+    /// Board-specific background idle state hook type.
+    type IdleState: BoardIdleHook;
+
+    /// Create new instance of board-specific idle state.
+    fn create_idle_state() -> Self::IdleState;
+}
+
+/// Board-specific background idle hook interface.
+pub trait BoardIdleHook: Default + 'static {
+    /// Update board-specific background tasks and return `(ok_held_for_menu, timer_reset_clicked, instant_trim_clicked)`.
+    fn update(
+        &mut self,
+        now: u32,
+        dt_ms: u16,
+        keys: u16,
+        menu_active: bool,
+        storage: &mut RadioStorage,
+        buzzer: &mut Buzzer,
+    ) -> (bool, bool, bool);
+
+    /// Clear menu-open hold state when menu is opened or released.
+    fn clear_menu_open_state(&mut self);
+
+    /// Take frame keys for display frame dispatch, resetting latched state.
+    fn take_frame_keys(&mut self, current_keys: u16, menu_or_calib_active: bool) -> u16;
+
+    /// Render board-specific overlay (e.g. shutdown progress modal).
+    fn render_overlay(&self, lcd: &mut St7567);
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -488,10 +564,330 @@ impl BoardProfile for I6sSpec {
 
     #[inline]
     fn set_j4_mode_enabled(enabled: bool) {
-        #[cfg(feature = "board-i6s")]
-        crate::hw::i6s::set_j4_mode_enabled(enabled);
-        #[cfg(not(feature = "board-i6s"))]
-        let _ = enabled;
+        crate::boot::init_j4_keys(enabled);
+    }
+
+    #[inline]
+    fn pre_init() {
+        crate::power::init();
+    }
+
+    #[inline]
+    fn init_touch() {
+        crate::touch::ft6236::init();
+    }
+
+    #[inline]
+    fn init_board_keys(radio: &RadioConfig) {
+        crate::boot::init_j4_keys(radio.j4_sg_sh_en != 0);
+    }
+
+    #[inline]
+    fn poll_keys(storage: &RadioStorage, menu_active: bool) -> u16 {
+        let touch_sample =
+            if storage.radio.touch_disabled == 0 && crate::touch::ft6236::is_touch_int_asserted() {
+                crate::touch::ft6236::read_touch()
+            } else {
+                None
+            };
+        let current_sticks = crate::input::read().gimbals;
+        crate::touch::nav::update_inputs(
+            touch_sample.as_ref(),
+            &current_sticks,
+            menu_active,
+            storage.radio.rear_left_func,
+            storage.radio.rear_right_func,
+            storage.radio.throttle_trim != 0,
+        )
+    }
+
+    #[inline]
+    fn update_flight_switches(state: &mut InputState, storage: &RadioStorage, menu_active: bool) {
+        let (left_btn, right_btn) = crate::boot::read_front_buttons();
+        if !menu_active && storage.radio.rear_left_func == 0 && left_btn {
+            state.switches.se = SwitchPos::Down;
+        } else {
+            state.switches.se = SwitchPos::Up;
+        }
+        if !menu_active && storage.radio.rear_right_func == 0 && right_btn {
+            state.switches.sf = SwitchPos::Down;
+        } else {
+            state.switches.sf = SwitchPos::Up;
+        }
+
+        if storage.radio.j4_sg_sh_en != 0 {
+            let (sg_pressed, sh_pressed) = crate::boot::read_j4_buttons();
+            state.switches.sg = if sg_pressed {
+                SwitchPos::Down
+            } else {
+                SwitchPos::Up
+            };
+            state.switches.sh = if sh_pressed {
+                SwitchPos::Down
+            } else {
+                SwitchPos::Up
+            };
+        } else {
+            state.switches.sg = SwitchPos::Up;
+            state.switches.sh = SwitchPos::Up;
+        }
+    }
+
+    #[inline]
+    fn decode_board_switches(
+        raw: &[u16; crate::adc::NUM_CHANNELS],
+        _ext_switches: bool,
+        ext_adc: bool,
+        adc_modes: &[u8],
+    ) -> (
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+    ) {
+        let (swi, swj, swk, swl, swm) = if ext_adc {
+            let swi = match AdcInputMode::resolve(6, adc_modes[6]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[11]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[11]),
+                _ => SwitchPos::Up,
+            };
+            let swj = match AdcInputMode::resolve(7, adc_modes[7]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[12]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[12]),
+                _ => SwitchPos::Up,
+            };
+            let swk = match AdcInputMode::resolve(8, adc_modes[8]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[13]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[13]),
+                _ => SwitchPos::Up,
+            };
+            let swl = match AdcInputMode::resolve(9, adc_modes[9]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[14]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[14]),
+                _ => SwitchPos::Up,
+            };
+            let swm = match AdcInputMode::resolve(10, adc_modes[10]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[15]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[15]),
+                _ => SwitchPos::Up,
+            };
+            (swi, swj, swk, swl, swm)
+        } else {
+            (
+                SwitchPos::Up,
+                SwitchPos::Up,
+                SwitchPos::Up,
+                SwitchPos::Up,
+                SwitchPos::Up,
+            )
+        };
+
+        (
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            swi,
+            swj,
+            swk,
+            swl,
+            swm,
+        )
+    }
+
+    fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
+        let sg_sh_active = storage.radio.j4_sg_sh_en != 0;
+
+        if sg_sh_active {
+            let sw_list = [
+                ("A", state.switches.sa),
+                ("B", state.switches.sb),
+                ("C", state.switches.sc),
+                ("D", state.switches.sd),
+                ("E", state.switches.se),
+                ("F", state.switches.sf),
+                ("G", state.switches.sg),
+                ("H", state.switches.sh),
+            ];
+            let mut x = 2;
+            for (lbl, pos) in sw_list.iter() {
+                lcd.draw_str_4x6(x, 47, lbl, false);
+                crate::ui::glyphs::draw_switch_arrow(lcd, x + 5, 46, *pos);
+                x += 12;
+            }
+
+            crate::ui::widgets::draw_split_pot_bar(lcd, 100, 46, 26, state.pots.vr1, state.pots.vr2);
+        } else {
+            let sw_list = [
+                ("A", state.switches.sa),
+                ("B", state.switches.sb),
+                ("C", state.switches.sc),
+                ("D", state.switches.sd),
+                ("E", state.switches.se),
+                ("F", state.switches.sf),
+            ];
+            let mut x = 2;
+            for (lbl, pos) in sw_list.iter() {
+                lcd.draw_str_4x6(x, 47, lbl, false);
+                crate::ui::glyphs::draw_switch_arrow(lcd, x + 6, 46, *pos);
+                x += 14;
+            }
+
+            lcd.draw_str_4x6(86, 47, "VR", false);
+            crate::ui::widgets::draw_split_pot_bar(lcd, 96, 46, 30, state.pots.vr1, state.pots.vr2);
+        }
+    }
+
+    fn append_extra_switches(
+        state: &InputState,
+        storage: &RadioStorage,
+        sw_list: &mut [(&'static str, SwitchPos, bool, u8); 16],
+        sw_count: &mut usize,
+    ) {
+        if *sw_count < sw_list.len() {
+            sw_list[*sw_count] = ("E", state.switches.se, false, 0);
+            *sw_count += 1;
+        }
+        if *sw_count < sw_list.len() {
+            sw_list[*sw_count] = ("F", state.switches.sf, false, 0);
+            *sw_count += 1;
+        }
+        if storage.radio.j4_sg_sh_en != 0 {
+            if *sw_count < sw_list.len() {
+                sw_list[*sw_count] = ("G", state.switches.sg, false, 0);
+                *sw_count += 1;
+            }
+            if *sw_count < sw_list.len() {
+                sw_list[*sw_count] = ("H", state.switches.sh, false, 0);
+                *sw_count += 1;
+            }
+        }
+    }
+
+    type IdleState = I6sIdleState;
+
+    #[inline]
+    fn create_idle_state() -> Self::IdleState {
+        I6sIdleState::new()
+    }
+}
+
+/// Board-specific background idle state for FS-i6S.
+pub struct I6sIdleState {
+    pub power_manager: crate::power::PowerManager,
+    prev_left_btn: bool,
+    prev_right_btn: bool,
+    latched_keys: u16,
+    last_center_touch_ms: u32,
+    menu_led_phase: bool,
+    menu_led_timer_ms: u16,
+}
+
+impl Default for I6sIdleState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl I6sIdleState {
+    pub const fn new() -> Self {
+        Self {
+            power_manager: crate::power::PowerManager::new(),
+            prev_left_btn: false,
+            prev_right_btn: false,
+            latched_keys: 0,
+            last_center_touch_ms: 0,
+            menu_led_phase: true,
+            menu_led_timer_ms: 0,
+        }
+    }
+}
+
+impl BoardIdleHook for I6sIdleState {
+    fn update(
+        &mut self,
+        now: u32,
+        dt_ms: u16,
+        keys: u16,
+        menu_active: bool,
+        storage: &mut RadioStorage,
+        buzzer: &mut Buzzer,
+    ) -> (bool, bool, bool) {
+        self.power_manager.update(dt_ms, storage, buzzer);
+        self.latched_keys |= keys;
+
+        // Front Button LED Backlight Handling
+        if menu_active {
+            self.menu_led_timer_ms = self.menu_led_timer_ms.saturating_add(dt_ms);
+            if self.menu_led_timer_ms >= 250 {
+                self.menu_led_timer_ms = 0;
+                self.menu_led_phase = !self.menu_led_phase;
+                crate::power::set_leds(self.menu_led_phase);
+            }
+        } else if !self.menu_led_phase {
+            self.menu_led_phase = true;
+            self.menu_led_timer_ms = 0;
+            crate::power::set_leds(true);
+        }
+
+        let (left_btn, right_btn) = crate::boot::read_front_buttons();
+        let left_clicked = left_btn && !self.prev_left_btn;
+        let right_clicked = right_btn && !self.prev_right_btn;
+        self.prev_left_btn = left_btn;
+        self.prev_right_btn = right_btn;
+
+        let ok_held = if !menu_active {
+            let center_touch = (keys & crate::touch::nav::KEY_MENU_OPEN) != 0;
+            if center_touch {
+                self.last_center_touch_ms = now;
+            }
+            let touch_active =
+                self.last_center_touch_ms != 0 && now.wrapping_sub(self.last_center_touch_ms) < 150;
+            touch_active || right_btn
+        } else {
+            self.last_center_touch_ms = 0;
+            false
+        };
+
+        let timer_reset_clicked = !menu_active && left_clicked && storage.radio.rear_left_func == 1;
+        let instant_trim_clicked =
+            !menu_active && right_clicked && storage.radio.rear_right_func == 1;
+
+        (ok_held, timer_reset_clicked, instant_trim_clicked)
+    }
+
+    #[inline]
+    fn clear_menu_open_state(&mut self) {
+        self.last_center_touch_ms = 0;
+    }
+
+    #[inline]
+    fn take_frame_keys(&mut self, _current_keys: u16, menu_or_calib_active: bool) -> u16 {
+        let mut frame_keys = self.latched_keys;
+        self.latched_keys = 0;
+        if menu_or_calib_active && (frame_keys & ((1 << 8) | (1 << 9))) != 0 {
+            frame_keys &= !(1 << 10);
+        }
+        frame_keys
+    }
+
+    fn render_overlay(&self, lcd: &mut St7567) {
+        let progress_pct = self.power_manager.shutdown_progress_pct();
+        if progress_pct > 0 {
+            lcd.fill_rect(18, 19, 92, 26, false);
+            lcd.draw_rect(18, 19, 92, 26, true);
+            lcd.draw_str_6x10(28, 21, "SHUTDOWN...", false);
+            lcd.draw_rect(27, 33, 74, 6, true);
+            let fill_w = ((progress_pct as u32 * 70) / 100).min(70);
+            if fill_w > 0 {
+                lcd.fill_rect(29, 35, fill_w, 2, true);
+            }
+        }
     }
 }
 
@@ -640,6 +1036,163 @@ impl BoardProfile for I6xSpec {
 
     #[inline]
     fn set_j4_mode_enabled(_enabled: bool) {}
+
+    #[inline]
+    fn pre_init() {}
+
+    #[inline]
+    fn init_touch() {}
+
+    #[inline]
+    fn init_board_keys(_radio: &RadioConfig) {}
+
+    #[inline]
+    fn poll_keys(_storage: &RadioStorage, _menu_active: bool) -> u16 {
+        crate::boot::scan_keys()
+    }
+
+    #[inline]
+    fn update_flight_switches(
+        _state: &mut InputState,
+        _storage: &RadioStorage,
+        _menu_active: bool,
+    ) {
+    }
+
+    #[inline]
+    fn decode_board_switches(
+        raw: &[u16; crate::adc::NUM_CHANNELS],
+        ext_switches: bool,
+        ext_adc: bool,
+        adc_modes: &[u8],
+    ) -> (
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+    ) {
+        let (se, sf) = if ext_switches {
+            crate::boot::read_ext_switches()
+        } else {
+            (SwitchPos::Up, SwitchPos::Up)
+        };
+
+        let (swi, swj, swk, swl) = if ext_adc {
+            let swi = match AdcInputMode::resolve(6, adc_modes[6]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[11]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[11]),
+                _ => SwitchPos::Up,
+            };
+            let swj = match AdcInputMode::resolve(7, adc_modes[7]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[12]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[12]),
+                _ => SwitchPos::Up,
+            };
+            let swk = match AdcInputMode::resolve(8, adc_modes[8]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[13]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[13]),
+                _ => SwitchPos::Up,
+            };
+            let swl = match AdcInputMode::resolve(9, adc_modes[9]) {
+                AdcInputMode::ThreePos => crate::input::decode_switch_3pos(raw[14]),
+                AdcInputMode::TwoPos => crate::input::decode_switch_2pos(raw[14]),
+                _ => SwitchPos::Up,
+            };
+            (swi, swj, swk, swl)
+        } else {
+            (SwitchPos::Up, SwitchPos::Up, SwitchPos::Up, SwitchPos::Up)
+        };
+
+        (se, sf, SwitchPos::Up, SwitchPos::Up, swi, swj, swk, swl, SwitchPos::Up)
+    }
+
+    fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
+        let ext_sw = storage.radio.ext_switches != 0;
+
+        if ext_sw {
+            draw_switch_slot_i6x(lcd, 2, 7, "A", state.switches.sa);
+            draw_switch_slot_i6x(lcd, 13, 18, "B", state.switches.sb);
+            draw_switch_slot_i6x(lcd, 24, 29, "C", state.switches.sc);
+            draw_switch_slot_i6x(lcd, 35, 40, "D", state.switches.sd);
+            draw_switch_slot_i6x(lcd, 46, 51, "E", state.switches.se);
+            draw_switch_slot_i6x(lcd, 57, 62, "F", state.switches.sf);
+        } else {
+            draw_switch_slot_i6x(lcd, 2, 9, "A", state.switches.sa);
+            draw_switch_slot_i6x(lcd, 20, 27, "B", state.switches.sb);
+            draw_switch_slot_i6x(lcd, 38, 45, "C", state.switches.sc);
+            draw_switch_slot_i6x(lcd, 56, 63, "D", state.switches.sd);
+        }
+
+        lcd.draw_str_4x6(74, 47, "VR", false);
+        crate::ui::widgets::draw_split_pot_bar(lcd, 84, 46, 42, state.pots.vr1, state.pots.vr2);
+    }
+
+    fn append_extra_switches(
+        state: &InputState,
+        storage: &RadioStorage,
+        sw_list: &mut [(&'static str, SwitchPos, bool, u8); 16],
+        sw_count: &mut usize,
+    ) {
+        if storage.radio.ext_switches != 0 {
+            if *sw_count < sw_list.len() {
+                sw_list[*sw_count] = ("E", state.switches.se, false, 0);
+                *sw_count += 1;
+            }
+            if *sw_count < sw_list.len() {
+                sw_list[*sw_count] = ("F", state.switches.sf, false, 0);
+                *sw_count += 1;
+            }
+        }
+    }
+
+    type IdleState = DefaultIdleState;
+
+    #[inline]
+    fn create_idle_state() -> Self::IdleState {
+        DefaultIdleState
+    }
+}
+
+#[inline]
+fn draw_switch_slot_i6x(lcd: &mut St7567, label_x: i32, val_x: i32, label: &str, pos: SwitchPos) {
+    lcd.draw_str_4x6(label_x, 47, label, false);
+    crate::ui::glyphs::draw_switch_arrow(lcd, val_x, 46, pos);
+}
+
+/// Default/standard background idle state (FS-i6X and RM-Pocket).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct DefaultIdleState;
+
+impl BoardIdleHook for DefaultIdleState {
+    #[inline]
+    fn update(
+        &mut self,
+        _now: u32,
+        _dt_ms: u16,
+        keys: u16,
+        menu_active: bool,
+        _storage: &mut RadioStorage,
+        _buzzer: &mut Buzzer,
+    ) -> (bool, bool, bool) {
+        let ok_held = !menu_active && (keys & (1 << 10)) != 0;
+        (ok_held, false, false)
+    }
+
+    #[inline]
+    fn clear_menu_open_state(&mut self) {}
+
+    #[inline]
+    fn take_frame_keys(&mut self, current_keys: u16, _menu_or_calib_active: bool) -> u16 {
+        current_keys
+    }
+
+    #[inline]
+    fn render_overlay(&self, _lcd: &mut St7567) {}
 }
 
 /// RadioMaster Pocket specification: STM32F407, ST7567 128x64 mono, rotary encoder, native ELRS.
@@ -770,6 +1323,82 @@ impl BoardProfile for PocketSpec {
 
     #[inline]
     fn set_j4_mode_enabled(_enabled: bool) {}
+
+    #[inline]
+    fn pre_init() {}
+
+    #[inline]
+    fn init_touch() {}
+
+    #[inline]
+    fn init_board_keys(_radio: &RadioConfig) {}
+
+    #[inline]
+    fn poll_keys(_storage: &RadioStorage, _menu_active: bool) -> u16 {
+        crate::boot::scan_keys()
+    }
+
+    #[inline]
+    fn update_flight_switches(
+        _state: &mut InputState,
+        _storage: &RadioStorage,
+        _menu_active: bool,
+    ) {
+    }
+
+    #[inline]
+    fn decode_board_switches(
+        _raw: &[u16; crate::adc::NUM_CHANNELS],
+        _ext_switches: bool,
+        _ext_adc: bool,
+        _adc_modes: &[u8],
+    ) -> (
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+        SwitchPos,
+    ) {
+        (
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            SwitchPos::Up,
+        )
+    }
+
+    fn render_default_layout(lcd: &mut St7567, state: &InputState, _storage: &RadioStorage) {
+        draw_switch_slot_i6x(lcd, 2, 9, "A", state.switches.sa);
+        draw_switch_slot_i6x(lcd, 20, 27, "B", state.switches.sb);
+        draw_switch_slot_i6x(lcd, 38, 45, "C", state.switches.sc);
+        draw_switch_slot_i6x(lcd, 56, 63, "D", state.switches.sd);
+        lcd.draw_str_4x6(74, 47, "VR", false);
+        crate::ui::widgets::draw_split_pot_bar(lcd, 84, 46, 42, state.pots.vr1, state.pots.vr2);
+    }
+
+    fn append_extra_switches(
+        _state: &InputState,
+        _storage: &RadioStorage,
+        _sw_list: &mut [(&'static str, SwitchPos, bool, u8); 16],
+        _sw_count: &mut usize,
+    ) {
+    }
+
+    type IdleState = DefaultIdleState;
+
+    #[inline]
+    fn create_idle_state() -> Self::IdleState {
+        DefaultIdleState
+    }
 }
 
 #[cfg(feature = "board-i6s")]

@@ -201,12 +201,10 @@ pub fn update_system_info(
         return;
     }
 
-    let profile = chip::get_mcu_profile();
-
     widgets::draw_header(lcd, "SYSTEM INFORMATION");
 
     lcd.draw_str_4x6(4, 14, "MCU:      ", false);
-    lcd.draw_str_4x6(48, 14, profile.name, false);
+    lcd.draw_str_4x6(48, 14, chip::mcu_name(), false);
 
     lcd.draw_str_4x6(4, 21, "Firmware: ", false);
     lcd.draw_str_4x6(

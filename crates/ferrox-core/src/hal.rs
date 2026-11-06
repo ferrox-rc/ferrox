@@ -302,11 +302,34 @@ pub trait SystemDriver {
     /// Configure PLL system clock to target frequency (e.g. 48 MHz).
     fn init_system_clock(&mut self);
 
+    /// Name of the MCU silicon (e.g. "STM32F072VB", "APM32F072VB", "STM32F407VG").
+    fn mcu_name(&self) -> &'static str {
+        "ARM Cortex-M"
+    }
+
     /// Read 96-bit (12-byte) silicon Unique Device ID.
     fn read_uid(&mut self) -> [u8; 12];
 
     /// Initialize SysTick monotonic 1.000 ms timekeeper.
     fn init_time(&mut self);
+
+    /// Spin-delay for a given number of processor cycles / microsecond loops.
+    fn delay_cycles(&mut self, n: u32);
+
+    /// Check if high SRAM retained memory contains a pending DFU boot request.
+    fn has_retained_dfu_flag(&mut self) -> bool;
+
+    /// Set retained flag in high SRAM to request DFU on next reset.
+    fn set_retained_dfu_flag(&mut self);
+
+    /// Set retained flag and perform rapid system reset into DFU bootloader.
+    fn reboot_to_dfu(&mut self) -> !;
+
+    /// Clear retained flag.
+    fn clear_retained_dfu_flag(&mut self);
+
+    /// Jump directly into ROM DFU bootloader.
+    fn enter_dfu_bootloader(&mut self) -> !;
 }
 
 /// Dummy system driver for tests.
@@ -323,6 +346,20 @@ impl SystemDriver for NullSystemDriver {
         [0u8; 12]
     }
     fn init_time(&mut self) {}
+    fn delay_cycles(&mut self, _n: u32) {}
+    fn has_retained_dfu_flag(&mut self) -> bool {
+        false
+    }
+    fn set_retained_dfu_flag(&mut self) {}
+    #[allow(clippy::empty_loop)]
+    fn reboot_to_dfu(&mut self) -> ! {
+        loop {}
+    }
+    fn clear_retained_dfu_flag(&mut self) {}
+    #[allow(clippy::empty_loop)]
+    fn enter_dfu_bootloader(&mut self) -> ! {
+        loop {}
+    }
 }
 
 /// Trainer and PPM input/output hardware driver.

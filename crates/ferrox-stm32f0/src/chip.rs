@@ -1,7 +1,4 @@
-//! STM32F072 system clock initialization, reset flags query, and ROM DFU bootloader jump.
-
 use core::ptr;
-use ferrox_core::chip::McuProfile;
 use ferrox_core::hal::SystemDriver;
 use stm32f0xx_hal::pac;
 
@@ -19,6 +16,20 @@ impl Default for Stm32f0SystemDriver {
     }
 }
 
+pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
+pub const DFU_FLAG_ADDR: *mut u32 = 0x2000_3FF0 as *mut u32;
+
+/// Memory addresses for supported STM32F0 / APM32F0 chips.
+#[cfg(feature = "apm32")]
+const UID_BASE_ADDR: usize = 0x1FFF_F7E8;
+#[cfg(not(feature = "apm32"))]
+const UID_BASE_ADDR: usize = 0x1FFF_F7AC;
+
+#[cfg(feature = "apm32")]
+const DFU_BOOTLOADER_ADDR: usize = 0x1FFF_F000;
+#[cfg(not(feature = "apm32"))]
+const DFU_BOOTLOADER_ADDR: usize = 0x1FFF_C800;
+
 impl SystemDriver for Stm32f0SystemDriver {
     fn pre_init(&mut self) {}
 
@@ -30,11 +41,21 @@ impl SystemDriver for Stm32f0SystemDriver {
         init_system_clock();
     }
 
+    fn mcu_name(&self) -> &'static str {
+        #[cfg(feature = "apm32")]
+        {
+            "APM32F072VB"
+        }
+        #[cfg(not(feature = "apm32"))]
+        {
+            "STM32F072VB"
+        }
+    }
+
     fn read_uid(&mut self) -> [u8; 12] {
-        let profile = ferrox_core::chip::get_mcu_profile();
         let mut uid = [0u8; 12];
         unsafe {
-            let src = profile.uid_addr as *const u8;
+            let src = UID_BASE_ADDR as *const u8;
             for (i, byte) in uid.iter_mut().enumerate() {
                 *byte = core::ptr::read_volatile(src.add(i));
             }
@@ -44,6 +65,40 @@ impl SystemDriver for Stm32f0SystemDriver {
 
     fn init_time(&mut self) {
         crate::time::init();
+    }
+
+    fn delay_cycles(&mut self, n: u32) {
+        cortex_m::asm::delay(n);
+    }
+
+    fn has_retained_dfu_flag(&mut self) -> bool {
+        unsafe {
+            let flag = core::ptr::read_volatile(DFU_FLAG_ADDR);
+            flag == DFU_MAGIC_FLAG
+        }
+    }
+
+    fn set_retained_dfu_flag(&mut self) {
+        unsafe {
+            core::ptr::write_volatile(DFU_FLAG_ADDR, DFU_MAGIC_FLAG);
+        }
+    }
+
+    fn clear_retained_dfu_flag(&mut self) {
+        unsafe {
+            core::ptr::write_volatile(DFU_FLAG_ADDR, 0);
+        }
+    }
+
+    fn reboot_to_dfu(&mut self) -> ! {
+        unsafe {
+            core::ptr::write_volatile(DFU_FLAG_ADDR, DFU_MAGIC_FLAG);
+            cortex_m::peripheral::SCB::sys_reset();
+        }
+    }
+
+    fn enter_dfu_bootloader(&mut self) -> ! {
+        enter_dfu_bootloader()
     }
 }
 
@@ -155,7 +210,7 @@ unsafe fn rcc_deinit() {
 }
 
 /// Perform a clean software jump to the MCU's built-in factory DFU bootloader.
-pub fn enter_dfu_bootloader(profile: &McuProfile) -> ! {
+pub fn enter_dfu_bootloader() -> ! {
     unsafe {
         // 1. Reset RCC to default HSI 8MHz state
         rcc_deinit();
@@ -183,7 +238,7 @@ pub fn enter_dfu_bootloader(profile: &McuProfile) -> ! {
         cortex_m::asm::isb();
 
         // 5. Read initial MSP and reset handler from the bootloader base address
-        let bootloader_addr = profile.dfu_bootloader_addr;
+        let bootloader_addr = DFU_BOOTLOADER_ADDR;
         let initial_msp = ptr::read_volatile(bootloader_addr as *const u32);
         let reset_handler_addr = ptr::read_volatile((bootloader_addr + 4) as *const u32);
 

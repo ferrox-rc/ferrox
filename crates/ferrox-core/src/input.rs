@@ -604,7 +604,7 @@ pub fn process(raw: [u16; adc::NUM_CHANNELS]) -> InputState {
     };
 
     let (se, sf, sg, sh, swi, swj, swk, swl, swm) =
-        crate::hw::decode_board_switches(&raw, calib.ext_switches, calib.ext_adc, &calib.adc_modes);
+        crate::board::ActiveBoard::decode_board_switches(&raw, calib.ext_switches, calib.ext_adc, &calib.adc_modes);
 
     let switches = Switches {
         sa,

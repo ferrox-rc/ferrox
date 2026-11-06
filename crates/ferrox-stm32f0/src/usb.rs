@@ -328,8 +328,7 @@ impl UsbDriver for Stm32f0UsbDriver {
                 }
                 ResetAction::Dfu(at) => {
                     if now_ms >= at {
-                        let profile = ferrox_core::chip::get_mcu_profile();
-                        ferrox_core::chip::enter_dfu_bootloader(&profile);
+                        ferrox_core::chip::enter_dfu_bootloader();
                     }
                 }
                 ResetAction::None => {}

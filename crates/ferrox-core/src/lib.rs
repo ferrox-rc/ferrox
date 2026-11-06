@@ -1,6 +1,18 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(static_mut_refs)]
 
+#[cfg(all(feature = "board-i6x", feature = "board-i6s"))]
+compile_error!("Multiple board features cannot be enabled simultaneously (board-i6x and board-i6s).");
+
+#[cfg(all(feature = "board-i6x", feature = "board-pocket"))]
+compile_error!("Multiple board features cannot be enabled simultaneously (board-i6x and board-pocket).");
+
+#[cfg(all(feature = "board-i6s", feature = "board-pocket"))]
+compile_error!("Multiple board features cannot be enabled simultaneously (board-i6s and board-pocket).");
+
+#[cfg(not(any(feature = "board-i6x", feature = "board-i6s", feature = "board-pocket", test)))]
+compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, or board-pocket).");
+
 pub mod board;
 pub use board::{ActiveBoard, BoardProfile};
 
@@ -15,7 +27,8 @@ pub mod dsm;
 pub mod hal;
 pub mod adc;
 pub mod boot;
-pub mod hw;
+pub mod power;
+pub mod touch;
 pub mod input;
 pub mod mixer;
 pub mod rf;

@@ -64,7 +64,7 @@ pub fn init_i6x_drivers() {
     static mut UART: I6xSerialPort = I6xSerialPort::new();
 
     unsafe {
-        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER, Some(enter_dfu_bootloader));
+        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER);
         ferrox_core::buzzer::register_tone_output(&mut BUZZER);
         ferrox_core::display::register_display_bus(&mut DISPLAY);
         ferrox_core::storage::register_storage_bus(&mut STORAGE);
@@ -94,7 +94,7 @@ pub fn init_i6s_drivers() {
     static mut TOUCH: Stm32f0TouchDriver = Stm32f0TouchDriver;
 
     unsafe {
-        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER, Some(enter_dfu_bootloader));
+        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER);
         ferrox_core::buzzer::register_tone_output(&mut BUZZER);
         ferrox_core::display::register_display_bus(&mut DISPLAY);
         ferrox_core::storage::register_storage_bus(&mut STORAGE);

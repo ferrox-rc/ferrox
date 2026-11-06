@@ -1,86 +1,32 @@
 //! Chip identification, Silicon Unique ID (UID) extraction, and DFU bootloader jump.
 
-use core::ptr;
 use crate::hal::SystemDriver;
 
-/// Supported MCU types.
-#[allow(dead_code)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum McuType {
-    Stm32f072,
-    Apm32f072,
-    Stm32f407,
-}
-
-/// MCU-specific memory map profile.
-#[allow(dead_code)]
-pub struct McuProfile {
-    pub mcu_type: McuType,
-    pub name: &'static str,
-    pub uid_addr: usize,
-    pub dfu_bootloader_addr: usize,
-}
-
-/// STM32F072 memory layout definitions.
-pub const STM32_PROFILE: McuProfile = McuProfile {
-    mcu_type: McuType::Stm32f072,
-    name: "STM32F072VB",
-    uid_addr: 0x1FFF_F7AC,
-    dfu_bootloader_addr: 0x1FFF_C800,
-};
-
-/// APM32F072 (Geehy) memory layout definitions.
-#[allow(dead_code)]
-pub const APM32_PROFILE: McuProfile = McuProfile {
-    mcu_type: McuType::Apm32f072,
-    name: "APM32F072VB",
-    uid_addr: 0x1FFF_F7E8,
-    dfu_bootloader_addr: 0x1FFF_F000,
-};
-
-/// Detect the active MCU profile.
-pub fn get_mcu_profile() -> McuProfile {
-    #[cfg(feature = "apm32")]
-    {
-        APM32_PROFILE
-    }
-    #[cfg(not(feature = "apm32"))]
-    {
-        STM32_PROFILE
-    }
-}
-
 static mut SYSTEM_DRIVER: Option<&'static mut dyn SystemDriver> = None;
-static mut DFU_JUMP_FN: Option<fn(&McuProfile) -> !> = None;
 
-/// Register platform-specific system driver and DFU bootloader jump function.
-pub fn register_system_driver(
-    driver: &'static mut dyn SystemDriver,
-    dfu_jump: Option<fn(&McuProfile) -> !>,
-) {
+/// Register platform-specific system driver.
+pub fn register_system_driver(driver: &'static mut dyn SystemDriver) {
     unsafe {
         SYSTEM_DRIVER = Some(driver);
-        DFU_JUMP_FN = dfu_jump;
     }
 }
 
 /// Read the 96-bit (12-byte) Unique Device ID from MCU silicon.
-#[allow(dead_code)]
-pub fn read_uid(profile: &McuProfile) -> [u8; 12] {
+pub fn read_uid() -> [u8; 12] {
     if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
-        let uid = driver.read_uid();
-        if uid != [0u8; 12] {
-            return uid;
-        }
+        driver.read_uid()
+    } else {
+        [0u8; 12]
     }
-    let mut uid = [0u8; 12];
-    unsafe {
-        let src = profile.uid_addr as *const u8;
-        for (i, byte) in uid.iter_mut().enumerate() {
-            *byte = ptr::read_volatile(src.add(i));
-        }
+}
+
+/// Retrieve the active MCU silicon model name.
+pub fn mcu_name() -> &'static str {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.mcu_name()
+    } else {
+        "Unknown MCU"
     }
-    uid
 }
 
 /// Initialize system clock using registered SystemDriver.
@@ -97,6 +43,13 @@ pub fn init_time() {
     }
 }
 
+/// Spin-delay for a given number of processor cycles.
+pub fn delay_cycles(n: u32) {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.delay_cycles(n);
+    }
+}
+
 /// Check if the MCU was rebooted warm by the hardware watchdog or software reset,
 /// and clear the reset status flags.
 pub fn check_and_clear_reset_flags() -> bool {
@@ -107,10 +60,37 @@ pub fn check_and_clear_reset_flags() -> bool {
     }
 }
 
+/// Check if retained memory contains a pending DFU boot request.
+pub fn has_retained_dfu_flag() -> bool {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.has_retained_dfu_flag()
+    } else {
+        false
+    }
+}
+
+/// Clear retained DFU boot request.
+pub fn clear_retained_dfu_flag() {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.clear_retained_dfu_flag();
+    }
+}
+
+/// Reboot into DFU bootloader via platform driver.
+pub fn reboot_to_dfu() -> ! {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.reboot_to_dfu();
+    } else {
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+}
+
 /// Perform a software jump to the MCU's built-in factory DFU bootloader.
-pub fn enter_dfu_bootloader(profile: &McuProfile) -> ! {
-    if let Some(dfu_fn) = unsafe { DFU_JUMP_FN } {
-        dfu_fn(profile);
+pub fn enter_dfu_bootloader() -> ! {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.enter_dfu_bootloader();
     } else {
         loop {
             core::hint::spin_loop();

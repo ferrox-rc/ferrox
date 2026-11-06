@@ -16,7 +16,7 @@ test = false
 bench = false
 
 [dependencies]
-ferrox-core = { path = "../../crates/ferrox-core", features = ["board-i6x"] }
+ferrox-core = { path = "../../crates/ferrox-core", default-features = false, features = ["board-i6x"] }
 ferrox-stm32f0 = { path = "../../crates/ferrox-stm32f0" }
 cortex-m = "0.7"
 cortex-m-rt = "0.7"

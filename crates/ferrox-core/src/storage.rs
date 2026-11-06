@@ -927,7 +927,7 @@ impl RadioStorage {
         cur
     }
 
-    /// Check if an AUX channel input source (from `crate::hw::AUX_SOURCES`) is hardware-available.
+    /// Check if an AUX channel input source (from `crate::board::BoardProfile::AUX_SOURCES`) is hardware-available.
     pub fn is_aux_source_available(&self, src: u8) -> bool {
         match src {
             0..=4 => true,                            // None, Roll, Pitch, Thr, Yaw

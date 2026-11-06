@@ -1,13 +1,7 @@
 //! Boot manager, key scanning hook, and DFU bootloader detection.
 
-use crate::chip::{self, McuProfile};
+use crate::chip;
 use crate::hal::KeyDriver;
-
-/// Magic token in high SRAM used to signal a warm reboot directly into the DFU bootloader.
-pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
-
-/// Address in top 16 bytes of STM32F072 16KB SRAM (0x2000_0000 .. 0x2000_4000).
-pub const DFU_FLAG_ADDR: *mut u32 = 0x2000_3FF0 as *mut u32;
 
 static mut KEY_DRIVER: Option<&'static mut dyn KeyDriver> = None;
 static TOUCH_KEYS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
@@ -117,13 +111,7 @@ pub fn test_set_j4_buttons(sg: bool, sh: bool) {
     TEST_J4_BUTTONS.store(val, core::sync::atomic::Ordering::Relaxed);
 }
 
-#[inline(always)]
-fn delay_cycles(n: u32) {
-    #[cfg(not(test))]
-    cortex_m::asm::delay(n);
-    #[cfg(test)]
-    let _ = n;
-}
+
 
 /// Check if the DFU bootloader key combination is held.
 pub fn is_dfu_requested(keys: u16) -> bool {
@@ -142,22 +130,19 @@ pub fn is_dfu_requested(keys: u16) -> bool {
 }
 
 /// Check if high SRAM flag requests a DFU jump across soft reboot.
-pub fn check_sram_dfu_entry(profile: &McuProfile) {
-    unsafe {
-        let flag = core::ptr::read_volatile(DFU_FLAG_ADDR);
-        if flag == DFU_MAGIC_FLAG {
-            core::ptr::write_volatile(DFU_FLAG_ADDR, 0);
-            chip::enter_dfu_bootloader(profile);
-        }
+pub fn check_sram_dfu_entry() {
+    if chip::has_retained_dfu_flag() {
+        chip::clear_retained_dfu_flag();
+        chip::enter_dfu_bootloader();
     }
 }
 
 /// Check if DFU boot keys are pressed and jump to bootloader if requested.
-pub fn check_dfu_entry(profile: &McuProfile) {
+pub fn check_dfu_entry() {
     init_keys();
 
     // Wait ~20ms for power rails and switch contacts to settle at power-on
-    delay_cycles(40_000);
+    chip::delay_cycles(40_000);
 
     let mut match_count = 0;
     for _ in 0..5 {
@@ -165,18 +150,15 @@ pub fn check_dfu_entry(profile: &McuProfile) {
         if is_dfu_requested(keys) {
             match_count += 1;
         }
-        delay_cycles(2_000);
+        chip::delay_cycles(2_000);
     }
 
     if match_count >= 3 {
-        chip::enter_dfu_bootloader(profile);
+        chip::enter_dfu_bootloader();
     }
 }
 
 /// Trigger an immediate reboot into DFU bootloader mode.
 pub fn reboot_to_dfu() -> ! {
-    unsafe {
-        core::ptr::write_volatile(DFU_FLAG_ADDR, DFU_MAGIC_FLAG);
-        cortex_m::peripheral::SCB::sys_reset();
-    }
+    chip::reboot_to_dfu();
 }

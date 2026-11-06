@@ -141,7 +141,7 @@ pub fn render_primary_sticks(
 
 /// Render the default switch and dual pot layout (y = 46..53) for standard stock models.
 pub fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
-    crate::hw::render_default_layout(lcd, state, storage);
+    crate::board::ActiveBoard::render_default_layout(lcd, state, storage);
 }
 
 /// Render the adaptive switch and pot layout (y = 46..53) based on dynamic channel mappings.
@@ -208,7 +208,7 @@ pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &Ra
         }
     }
 
-    crate::hw::append_extra_switches(state, storage, &mut sw_list, &mut sw_count);
+    crate::board::ActiveBoard::append_extra_switches(state, storage, &mut sw_list, &mut sw_count);
 
     let (sw_spacing, compact, pot_start_x, pot_w) = if pot_count == 0 {
         let spacing = if sw_count <= 1 {
