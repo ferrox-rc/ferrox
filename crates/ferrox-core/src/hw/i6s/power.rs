@@ -1,21 +1,7 @@
 //! Electronic power management subsystem for FlySky FS-i6S.
-//!
-//! Controls the hardware power latch (`PB15`), dual power button sense line (`PB14`),
-//! and power button blue illumination LEDs (`PD10`, `PD11`).
-//!
-//! Power Lifecycle:
-//! 1. User presses both front power buttons, physically completing the power circuit to the MCU.
-//! 2. Firmware boots and calls `power::init()` as its very first instruction, asserting `PB15` HIGH
-//!    to electronically latch the power rail before the user releases the buttons.
-//! 3. `PD10` and `PD11` are driven HIGH to turn on the blue power LEDs.
-//! 4. `PB14` is continuously monitored: if held for >= 1.5 seconds, `PowerManager` performs a safe
-//!    graceful shutdown (plays shutdown chime, flushes flash storage, turns off LEDs, and drives `PB15` LOW).
 
 use crate::buzzer::Buzzer;
 use crate::storage::{self, RadioStorage};
-
-#[cfg(not(test))]
-use stm32f0xx_hal::pac;
 
 #[cfg(test)]
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -29,146 +15,66 @@ static TEST_PB14_PRESSED: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
 static TEST_POWERED_OFF: AtomicBool = AtomicBool::new(false);
 
+pub use crate::hal::register_power_driver;
+
 /// Required hold duration (in milliseconds) on PB14 to trigger graceful shutdown.
 pub const SHUTDOWN_HOLD_MS: u16 = 1500;
 
 /// Initialize GPIO clocks and immediately latch system power ON.
-///
-/// MUST be called as the very first instruction in `main()` to prevent the radio
-/// from powering off when the user releases the front power buttons.
 pub fn init() {
-    #[cfg(not(test))]
-    {
-        let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        let gpiod = unsafe { &*pac::GPIOD::ptr() };
-
-        unsafe {
-            // Enable GPIOB (bit 18) and GPIOD (bit 20) in RCC_AHBENR
-            rcc.ahbenr
-                .modify(|r, w| w.bits(r.bits() | (1 << 18) | (1 << 20)));
-
-            // Configure PB15 as push-pull output (MODER bits 31:30 = 01)
-            gpiob.moder.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(3 << 30)) | (1 << 30))
-            });
-
-            // Latch power ON immediately by driving PB15 HIGH (BS15 = bit 15)
-            gpiob.bsrr.write(|w| w.bits(1 << 15));
-
-            // Configure PB14 as input (MODER bits 29:28 = 00) with pull-up (PUPDR bits 29:28 = 01)
-            gpiob.moder.modify(|r, w| w.bits(r.bits() & !(3 << 28)));
-            gpiob.pupdr.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(3 << 28)) | (1 << 28))
-            });
-
-            // Configure PD10 and PD11 as push-pull outputs (MODER bits 21:20 = 01, 23:22 = 01)
-            gpiod.moder.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(0x0F << 20)) | (0x05 << 20))
-            });
-
-            // Turn on power button blue LEDs (BS10 = bit 10, BS11 = bit 11)
-            gpiod.bsrr.write(|w| w.bits((1 << 10) | (1 << 11)));
-        }
-    }
-
     #[cfg(test)]
     {
         TEST_PB15_LATCH.store(true, Ordering::SeqCst);
         TEST_LEDS_ON.store(true, Ordering::SeqCst);
         TEST_POWERED_OFF.store(false, Ordering::SeqCst);
     }
+    #[cfg(not(test))]
+    if let Some(ref mut d) = crate::hal::get_power_driver() {
+        d.init();
+    }
 }
 
 /// Ensure PB15 is actively driven HIGH.
-///
-/// Called before jumping to the STM32 factory ROM DFU bootloader so the radio
-/// does not lose power when operating unattached to a USB host.
 pub fn latch_on() {
-    #[cfg(not(test))]
-    {
-        let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-
-        unsafe {
-            // Guarantee GPIOB clock is active
-            rcc.ahbenr.modify(|r, w| w.bits(r.bits() | (1 << 18)));
-
-            // Guarantee PB15 is push-pull output
-            gpiob.moder.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(3 << 30)) | (1 << 30))
-            });
-
-            // Assert PB15 HIGH
-            gpiob.bsrr.write(|w| w.bits(1 << 15));
-        }
-    }
-
     #[cfg(test)]
     {
         TEST_PB15_LATCH.store(true, Ordering::SeqCst);
+    }
+    #[cfg(not(test))]
+    if let Some(ref mut d) = crate::hal::get_power_driver() {
+        d.latch_on();
     }
 }
 
 /// Control power button blue LEDs on PD10 and PD11.
 pub fn set_leds(on: bool) {
-    #[cfg(not(test))]
-    {
-        let gpiod = unsafe { &*pac::GPIOD::ptr() };
-        unsafe {
-            if on {
-                gpiod.bsrr.write(|w| w.bits((1 << 10) | (1 << 11)));
-            } else {
-                gpiod.bsrr.write(|w| w.bits(((1 << 10) | (1 << 11)) << 16));
-            }
-        }
-    }
-
     #[cfg(test)]
     {
         TEST_LEDS_ON.store(on, Ordering::SeqCst);
+    }
+    #[cfg(not(test))]
+    if let Some(ref mut d) = crate::hal::get_power_driver() {
+        d.set_leds(on);
     }
 }
 
 /// Check if the dual front power buttons are currently pressed (PB14 Active LOW).
 pub fn is_power_button_pressed() -> bool {
-    #[cfg(not(test))]
-    {
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        let idr = gpiob.idr.read().bits();
-        // Bit 14 is 0 when grounded / pressed
-        (idr & (1 << 14)) == 0
-    }
-
     #[cfg(test)]
     {
         TEST_PB14_PRESSED.load(Ordering::SeqCst)
     }
+    #[cfg(not(test))]
+    if let Some(ref mut d) = crate::hal::get_power_driver() {
+        d.is_power_key_pressed()
+    } else {
+        false
+    }
 }
 
 /// Cut power to the transmitter by driving PB15 LOW.
-///
-/// Halts the CPU in an infinite wait-for-interrupt loop while the hardware power rail decays.
 pub fn power_off() -> ! {
     set_leds(false);
-
-    #[cfg(not(test))]
-    {
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        unsafe {
-            // Drive PB15 LOW (BR15 = bit 31)
-            gpiob.bsrr.write(|w| w.bits(1 << 31));
-
-            // Sleep while hardware power turns off
-            loop {
-                cortex_m::asm::wfi();
-            }
-        }
-    }
 
     #[cfg(test)]
     {
@@ -176,9 +82,18 @@ pub fn power_off() -> ! {
         TEST_POWERED_OFF.store(true, Ordering::SeqCst);
         panic!("simulated power_off");
     }
+
+    #[cfg(not(test))]
+    {
+        if let Some(ref mut d) = crate::hal::get_power_driver() {
+            d.latch_off();
+        }
+        loop {
+            cortex_m::asm::wfi();
+        }
+    }
 }
 
-/// State machine for graceful shutdown monitoring on PB14.
 pub struct PowerManager {
     /// Guard: user must release the power buttons after turning on before shutdown can be armed.
     boot_release_detected: bool,
@@ -218,12 +133,6 @@ impl PowerManager {
     }
 
     /// Update shutdown monitoring.
-    ///
-    /// If held for >= 1.5 seconds after initial boot release, executes graceful shutdown:
-    /// - Plays power-off sound
-    /// - Flushes active model and radio configuration to flash
-    /// - Turns off LEDs
-    /// - Drives PB15 LOW to cut power
     pub fn update(&mut self, dt_ms: u16, storage: &mut RadioStorage, buzzer: &mut Buzzer) {
         if self.is_shutting_down {
             return;

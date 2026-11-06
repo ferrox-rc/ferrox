@@ -13,7 +13,6 @@ path = "src/lib.rs"
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
 embedded-graphics = "0.8.1"
-stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072"] }
 
 [features]
 default = ["board-i6x"]

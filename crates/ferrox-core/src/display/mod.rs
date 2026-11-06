@@ -2,4 +2,4 @@
 
 pub mod fonts;
 pub mod st7567;
-pub use st7567::St7567;
+pub use st7567::{register_display_bus, St7567};

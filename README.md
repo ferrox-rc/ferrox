@@ -231,13 +231,13 @@ Build release binaries using the built-in Cargo workspace aliases:
 ```bash
 # Build for FlySky FS-i6S:
 cargo build-i6s
-llvm-objcopy -O binary target/thumbv6m-none-eabi/release/ferrox-i6s ferrox-i6s.bin
+cargo objcopy -p ferrox-i6s --release -- -O binary ferrox-i6s.bin
 
 # Build for FlySky FS-i6X:
 cargo build-i6x
-llvm-objcopy -O binary target/thumbv6m-none-eabi/release/ferrox-i6x ferrox-i6x.bin
+cargo objcopy -p ferrox-i6x --release -- -O binary ferrox-i6x.bin
 ```
-*(You can also use `rust-objcopy` or `arm-none-eabi-objcopy` in place of `llvm-objcopy`).*
+*(Requires `cargo-binutils`: `cargo install cargo-binutils && rustup component add llvm-tools`).*
 
 Flash the compiled binary via USB DFU:
 ```bash

@@ -1,31 +1,8 @@
-//! FocalTech FT6236 Capacitive Touchscreen Hardware I2C1 Driver for FlySky FS-i6S.
-//!
-//! Pin Assignments:
-//! - PB8:  I2C1_SCL (AF1, Open-Drain, High-Speed, Pull-up) @ 400 kHz Fast Mode
-//! - PB9:  I2C1_SDA (AF1, Open-Drain, High-Speed, Pull-up) @ 400 kHz Fast Mode
-//! - PA15: TOUCH_RST (Active LOW Hardware Reset, pulsed LOW for 20 ms at init)
-//! - PC12: TOUCH_INT (Active LOW Interrupt / Touch Detected)
-//!
-//! Protocol:
-//! - 7-bit I2C Slave Address: `0x38`
-//! - Continuous 7-byte read from register `0x00`:
-//!   - Byte 0: `dev_mode`
-//!   - Byte 1: `gest_id` (0x10: Swipe UP, 0x14: Swipe RIGHT, 0x18: Swipe DOWN, 0x1C: Swipe LEFT)
-//!   - Byte 2: `touches` (Bits 3:0 count active touch contacts)
-//!   - Byte 3: `xhi` / `event` (Bits 7:6 event flag, Bits 3:0 raw_x high nibble)
-//!   - Byte 4: `xlo` (raw_x low byte)
-//!   - Byte 5: `yhi` / `touch_id` (Bits 7:4 ID, Bits 3:0 raw_y high nibble)
-//!   - Byte 6: `ylo` (raw_y low byte)
-//!
-//! Coordinate Transformation:
-//! - The FT6236 sensor coordinates are swapped and scaled to match the ST7567 128×64 LCD:
-//!   - LCD Y (0..63)  = (raw_x >> 1).min(63)
-//!   - LCD X (0..127) = 128 - (raw_y >> 1).min(127)
-
-#[cfg(not(test))]
-use stm32f0xx_hal::pac;
+//! FocalTech FT6236 Capacitive Touchscreen packet decoder and touch interface for FlySky FS-i6S.
 
 pub const FT6236_I2C_ADDR: u8 = 0x38;
+
+pub use crate::hal::register_touch_driver;
 
 /// FT6236 Recognized Hardware Gestures.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -61,15 +38,6 @@ pub struct TouchPoint {
 pub struct TouchSample {
     pub gesture: Gesture,
     pub point: Option<TouchPoint>,
-}
-
-#[allow(dead_code)]
-#[inline(always)]
-fn delay_cycles(n: u32) {
-    #[cfg(not(test))]
-    cortex_m::asm::delay(n);
-    #[cfg(test)]
-    let _ = n;
 }
 
 /// Parse a raw 7-byte FT6236 register frame (`0x00..0x06`).
@@ -118,359 +86,48 @@ pub fn parse_packet(buf: &[u8; 7]) -> TouchSample {
     TouchSample { gesture, point }
 }
 
-/// Initialize I2C1 and GPIOs for FT6236 touch controller:
-/// - PB8: SCL (AF1)
-/// - PB9: SDA (AF1)
-/// - PA15: RST (Push-pull output, pulsed LOW)
-/// - PC12: INT (Input with pull-up)
+/// Initialize FT6236 touch controller.
 pub fn init() {
-    #[cfg(not(test))]
-    {
-        let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpioa = unsafe { &*pac::GPIOA::ptr() };
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        let gpioc = unsafe { &*pac::GPIOC::ptr() };
-        let i2c1 = unsafe { &*pac::I2C1::ptr() };
-
-        unsafe {
-            // 1. Enable clocks for GPIOA, GPIOB, GPIOC, and I2C1
-            // AHBENR: IOPAEN (bit 17), IOPBEN (bit 18), IOPCEN (bit 19)
-            rcc.ahbenr
-                .modify(|r, w| w.bits(r.bits() | (1 << 17) | (1 << 18) | (1 << 19)));
-            // APB1ENR: I2C1EN (bit 21)
-            rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 21)));
-
-            // 2. Configure I2C1 clock source in RCC_CFGR3: Select SYSCLK (48 MHz)
-            // I2C1SW = bit 4
-            rcc.cfgr3.modify(|r, w| w.bits(r.bits() | (1 << 4)));
-
-            // 3. Configure PA15 (TOUCH_RST): General Purpose Output (MODER = 01)
-            gpioa.moder.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(3 << 30)) | (1 << 30))
-            });
-
-            // 4. Configure PC12 (TOUCH_INT): Input (MODER = 00) with pull-up (PUPDR = 01)
-            gpioc.moder.modify(|r, w| w.bits(r.bits() & !(3 << 24)));
-            gpioc.pupdr.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(3 << 24)) | (1 << 24))
-            });
-
-            // 5. Configure PB8 (SCL) and PB9 (SDA):
-            // - Alternate Function mode (MODER = 10)
-            // - Open-drain (OTYPER = 1)
-            // - High speed (OSPEEDR = 11)
-            // - Pull-up enabled (PUPDR = 01)
-            // - AF1 mapping (AFRH bits 3:0 = 0001 for PB8, bits 7:4 = 0001 for PB9)
-            gpiob.moder.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(0x0F << 16)) | (0x0A << 16))
-            });
-            gpiob
-                .otyper
-                .modify(|r, w| w.bits(r.bits() | (1 << 8) | (1 << 9)));
-            gpiob.ospeedr.modify(|r, w| w.bits(r.bits() | (0x0F << 16)));
-            gpiob.pupdr.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(0x0F << 16)) | (0x05 << 16))
-            });
-            gpiob.afrh.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !0xFF) | 0x11)
-            });
-
-            // 6. Pulse PA15 LOW for 20 ms to reset FT6236 controller
-            gpioa.bsrr.write(|w| w.bits(1 << (15 + 16))); // PA15 LOW
-            delay_cycles(48_000 * 20); // ~20 ms @ 48 MHz
-            gpioa.bsrr.write(|w| w.bits(1 << 15)); // PA15 HIGH
-            delay_cycles(48_000 * 50); // ~50 ms power-up boot wait
-
-            // 7. Reset I2C1 peripheral through RCC and configure timings
-            i2c1.cr1.modify(|_, w| w.pe().clear_bit());
-            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() | (1 << 21)));
-            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() & !(1 << 21)));
-            i2c1.cr1.modify(|_, w| w.pe().clear_bit());
-            i2c1.timingr.write(|w| w.bits(0x00B0_1A4B));
-            clear_i2c1_flags(i2c1);
-            i2c1.cr1.modify(|_, w| w.pe().set_bit());
-
-            // 8. Configure FT6236 registers:
-            // Wait 10 ms for sensor internal state machine ready
-            delay_cycles(48_000 * 10);
-
-            // Configure interrupt mode to Polling Mode (0x00):
-            // In polling mode, INT pin PC12 stays active LOW for the entire duration of a touch/gesture.
-            write_reg(0xA4, 0x00);
-            // Valid touch detection threshold (default 22)
-            write_reg(0x80, 22);
-            // Active scan report rate (~70 Hz)
-            write_reg(0x88, 14);
-        }
+    if let Some(ref mut d) = crate::hal::get_touch_driver() {
+        d.init();
     }
 }
 
-/// Clear latched I2C1 status flags using the STM32F0 ICR register.
-/// This is deliberately a raw write: ICR flags are write-one-to-clear.
-#[cfg(not(test))]
-#[inline(always)]
-unsafe fn clear_i2c1_flags(i2c1: &pac::i2c1::RegisterBlock) {
-    // Bit 4: NACKCF, Bit 5: STOPCF, Bit 8: BERRCF, Bit 9: ARLOCF,
-    // Bit 10: OVRCF, Bit 11: PECCF, Bit 12: TIMOUTCF, Bit 13: ALERTCF (0x3F30 | 0x08 = 0x3F38)
-    i2c1.icr.write(|w| w.bits(0x3F38));
-}
-
-/// Abort a failed transfer and return I2C1 peripheral to a clean enabled state.
-/// Every wait is bounded so a faulty bus cannot stall the main loop forever.
-#[cfg(not(test))]
-fn recover_i2c1() {
-    let rcc = unsafe { &*pac::RCC::ptr() };
-    let i2c1 = unsafe { &*pac::I2C1::ptr() };
-
-    unsafe {
-        // Ask the peripheral to terminate any active transfer, then wait briefly for STOPF.
-        i2c1.cr2.modify(|r, w| w.bits(r.bits() | (1 << 14)));
-        let mut timeout = 2_000u32;
-        while !i2c1.isr.read().stopf().bit() && timeout > 0 {
-            timeout -= 1;
-        }
-
-        // Disable peripheral and clear all latched flags
-        i2c1.cr1.modify(|_, w| w.pe().clear_bit());
-        clear_i2c1_flags(i2c1);
-
-        // Reset I2C1 block via APB1 peripheral reset (bit 21)
-        rcc.apb1rstr.modify(|r, w| w.bits(r.bits() | (1 << 21)));
-        rcc.apb1rstr.modify(|r, w| w.bits(r.bits() & !(1 << 21)));
-
-        // Restore timing and re-enable peripheral. GPIO AF configuration is preserved.
-        i2c1.cr1.modify(|_, w| w.pe().clear_bit());
-        i2c1.timingr.write(|w| w.bits(0x00B0_1A4B));
-        clear_i2c1_flags(i2c1);
-        i2c1.cr1.modify(|_, w| w.pe().set_bit());
-    }
-}
-
-/// Hard reset FT6236 controller by toggling PA15 LOW for 20 ms, re-initializing I2C1 and registers.
+/// Hard reset FT6236 controller by toggling reset line.
 pub fn reset_touch_controller() {
-    #[cfg(not(test))]
-    unsafe {
-        let gpioa = &*pac::GPIOA::ptr();
-
-        // 1. Recover/reset I2C1 peripheral first
-        recover_i2c1();
-
-        // 2. Pulse PA15 LOW for ~20 ms to hard-reset the FT6236 controller
-        gpioa.bsrr.write(|w| w.bits(1 << (15 + 16)));
-        delay_cycles(48_000 * 20);
-        gpioa.bsrr.write(|w| w.bits(1 << 15));
-        delay_cycles(48_000 * 50);
-
-        // 3. Configure FT6236 registers
-        delay_cycles(48_000 * 10);
-        write_reg(0xA4, 0x00);
-        write_reg(0x80, 22);
-        write_reg(0x88, 14);
-    }
-}
-
-#[cfg(not(test))]
-static I2C_FAIL_COUNT: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
-
-#[cfg(not(test))]
-fn record_i2c_failure() {
-    use core::sync::atomic::Ordering;
-    recover_i2c1();
-    let fails = I2C_FAIL_COUNT.load(Ordering::Relaxed) + 1;
-    if fails >= 5 {
-        I2C_FAIL_COUNT.store(0, Ordering::Relaxed);
-        reset_touch_controller();
-    } else {
-        I2C_FAIL_COUNT.store(fails, Ordering::Relaxed);
-    }
-}
-
-#[cfg(not(test))]
-fn record_i2c_success() {
-    use core::sync::atomic::Ordering;
-    I2C_FAIL_COUNT.store(0, Ordering::Relaxed);
-}
-
-/// Write a single 8-bit value to an FT6236 register at address `0x38`.
-pub fn write_reg(reg: u8, val: u8) -> bool {
-    #[cfg(not(test))]
-    {
-        let i2c1 = unsafe { &*pac::I2C1::ptr() };
-        unsafe {
-            // SADD = 0x38 << 1, NBYTES = 2, RD_WRN = 0 (write), START = 1, AUTOEND = 1
-            let cr2_val = ((FT6236_I2C_ADDR as u32) << 1) | (2 << 16) | (1 << 13) | (1 << 25);
-            i2c1.cr2.write(|w| w.bits(cr2_val));
-
-            // Write register address
-            let mut timeout = 10_000u32;
-            while !i2c1.isr.read().txis().bit() && timeout > 0 {
-                let isr = i2c1.isr.read();
-                if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
-                    recover_i2c1();
-                    return false;
-                }
-                timeout -= 1;
-            }
-            if timeout == 0 {
-                recover_i2c1();
-                return false;
-            }
-            i2c1.txdr.write(|w| w.txdata().bits(reg));
-
-            // Write register value
-            timeout = 10_000;
-            while !i2c1.isr.read().txis().bit() && timeout > 0 {
-                let isr = i2c1.isr.read();
-                if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
-                    recover_i2c1();
-                    return false;
-                }
-                timeout -= 1;
-            }
-            if timeout == 0 {
-                recover_i2c1();
-                return false;
-            }
-            i2c1.txdr.write(|w| w.txdata().bits(val));
-
-            // Wait for STOPF
-            timeout = 10_000;
-            while !i2c1.isr.read().stopf().bit() && timeout > 0 {
-                let isr = i2c1.isr.read();
-                if isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
-                    recover_i2c1();
-                    return false;
-                }
-                timeout -= 1;
-            }
-            if timeout == 0 {
-                recover_i2c1();
-                return false;
-            }
-            i2c1.icr.write(|w| w.stopcf().set_bit());
-            true
-        }
-    }
-    #[cfg(test)]
-    {
-        let _ = (reg, val);
-        true
-    }
+    init();
 }
 
 /// Check if the touch interrupt pin (PC12) is asserted (Active LOW).
+#[inline(always)]
 pub fn is_touch_int_asserted() -> bool {
-    #[cfg(not(test))]
-    {
-        let gpioc = unsafe { &*pac::GPIOC::ptr() };
-        (gpioc.idr.read().bits() & (1 << 12)) == 0
-    }
-    #[cfg(test)]
-    {
+    if let Some(ref mut d) = crate::hal::get_touch_driver() {
+        d.is_touch_int_asserted()
+    } else {
         false
     }
 }
 
-/// Read the 7-byte touch packet from FT6236 over I2C1 at address `0x38`.
-///
-/// Returns `Some(TouchSample)` if read successfully, or `None` on bus NACK/timeout.
+/// Poll the FT6236 touch controller.
 pub fn read_touch() -> Option<TouchSample> {
-    #[cfg(not(test))]
-    {
-        let i2c1 = unsafe { &*pac::I2C1::ptr() };
-
-        // 1. Write register start address (0x00)
-        unsafe {
-            // SADD = 0x38 << 1, NBYTES = 1, RD_WRN = 0 (write), START = 1, AUTOEND = 0
-            let cr2_val = ((FT6236_I2C_ADDR as u32) << 1) | (1 << 16) | (1 << 13);
-            i2c1.cr2.write(|w| w.bits(cr2_val));
-
-            // Wait for TXIS (TX empty) or error flags
-            let mut timeout = 10_000u32;
-            while !i2c1.isr.read().txis().bit() && timeout > 0 {
-                let isr = i2c1.isr.read();
-                if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
-                    record_i2c_failure();
-                    return None;
-                }
-                timeout -= 1;
-            }
-            if timeout == 0 {
-                record_i2c_failure();
-                return None;
-            }
-
-            // Write register address 0x00
-            i2c1.txdr.write(|w| w.txdata().bits(0x00));
-
-            // Wait for TC (Transfer Complete)
-            timeout = 10_000;
-            while !i2c1.isr.read().tc().bit() && timeout > 0 {
-                let isr = i2c1.isr.read();
-                if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
-                    record_i2c_failure();
-                    return None;
-                }
-                timeout -= 1;
-            }
-            if timeout == 0 {
-                record_i2c_failure();
-                return None;
-            }
-
-            // 2. Repeated START to read 7 bytes (0x00..0x06)
-            // SADD = 0x38 << 1, NBYTES = 7, RD_WRN = 1 (read), START = 1, AUTOEND = 1
-            let cr2_read =
-                ((FT6236_I2C_ADDR as u32) << 1) | (7 << 16) | (1 << 10) | (1 << 13) | (1 << 25);
-            i2c1.cr2.write(|w| w.bits(cr2_read));
-
-            let mut buf = [0u8; 7];
-            for byte in buf.iter_mut() {
-                timeout = 10_000;
-                while !i2c1.isr.read().rxne().bit() && timeout > 0 {
-                    let isr = i2c1.isr.read();
-                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit()
-                    {
-                        record_i2c_failure();
-                        return None;
-                    }
-                    timeout -= 1;
-                }
-                if timeout == 0 {
-                    record_i2c_failure();
-                    return None;
-                }
-                *byte = i2c1.rxdr.read().rxdata().bits();
-            }
-
-            // Wait for STOPF and clear flag
-            timeout = 10_000;
-            while !i2c1.isr.read().stopf().bit() && timeout > 0 {
-                let isr = i2c1.isr.read();
-                if isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
-                    record_i2c_failure();
-                    return None;
-                }
-                timeout -= 1;
-            }
-            if timeout == 0 {
-                record_i2c_failure();
-                return None;
-            }
-            i2c1.icr.write(|w| w.stopcf().set_bit());
-
-            record_i2c_success();
-            Some(parse_packet(&buf))
-        }
-    }
-
     #[cfg(test)]
     {
+        None
+    }
+    #[cfg(not(test))]
+    if let Some(ref mut d) = crate::hal::get_touch_driver() {
+        if let Some((raw_x, raw_y)) = d.read_touch() {
+            let mut buf = [0u8; 7];
+            buf[2] = 1;
+            buf[3] = ((raw_x >> 8) & 0x0F) as u8;
+            buf[4] = (raw_x & 0xFF) as u8;
+            buf[5] = ((raw_y >> 8) & 0x0F) as u8;
+            buf[6] = (raw_y & 0xFF) as u8;
+            Some(parse_packet(&buf))
+        } else {
+            None
+        }
+    } else {
         None
     }
 }

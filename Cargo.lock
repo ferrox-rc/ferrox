@@ -165,7 +165,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "embedded-graphics",
- "stm32f0xx-hal",
 ]
 
 [[package]]
@@ -176,6 +175,7 @@ dependencies = [
  "cortex-m-rt",
  "embedded-graphics",
  "ferrox-core",
+ "ferrox-stm32f0",
  "stm32f0xx-hal",
 ]
 
@@ -187,6 +187,7 @@ dependencies = [
  "cortex-m-rt",
  "embedded-graphics",
  "ferrox-core",
+ "ferrox-stm32f0",
  "stm32f0xx-hal",
 ]
 

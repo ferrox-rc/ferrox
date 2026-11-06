@@ -7,8 +7,17 @@ use embedded_graphics::{
     pixelcolor::BinaryColor,
     Pixel,
 };
-#[cfg(not(test))]
-use stm32f0xx_hal::pac;
+use crate::hal::DisplayBus;
+
+static mut DISPLAY_BUS: Option<&'static mut dyn DisplayBus> = None;
+
+/// Register the target MCU's display bus and backlight driver.
+pub fn register_display_bus(bus: &'static mut dyn DisplayBus) {
+    bus.init();
+    unsafe {
+        DISPLAY_BUS = Some(bus);
+    }
+}
 
 pub const WIDTH: usize = 128;
 pub const HEIGHT: usize = 64;
@@ -26,144 +35,25 @@ impl Default for St7567 {
 }
 
 impl St7567 {
-    /// Initialize GPIO pins and the ST7567 display controller.
+    /// Initialize framebuffer and clear display.
     pub fn new() -> Self {
-        #[allow(unused_mut)]
         let mut display = Self {
             framebuffer: [0u8; BUFFER_SIZE],
         };
-        #[cfg(not(test))]
-        {
-            display.init_hardware();
-            display.init_controller();
-            display.init_backlight_pwm();
-            display.clear_buffer();
-            display.flush();
-            display.set_backlight_level(100);
-        }
+        display.clear_buffer();
+        display.flush();
+        display.set_backlight_level(100);
         display
     }
 
-    /// Configure MCU GPIO ports for parallel LCD interface and backlight.
-    #[cfg(not(test))]
-    fn init_hardware(&self) {
-        let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        let gpiod = unsafe { &*pac::GPIOD::ptr() };
-        let gpioe = unsafe { &*pac::GPIOE::ptr() };
-        let gpiof = unsafe { &*pac::GPIOF::ptr() };
-
-        unsafe {
-            // Enable GPIOB, GPIOC, GPIOD, GPIOE, GPIOF in RCC_AHBENR
-            // Bit 18 = GPIOB, 19 = GPIOC, 20 = GPIOD, 21 = GPIOE, 22 = GPIOF
-            rcc.ahbenr.modify(|r, w| {
-                w.bits(r.bits() | (1 << 18) | (1 << 19) | (1 << 20) | (1 << 21) | (1 << 22))
-            });
-
-            // Configure PE0..PE7 as outputs (MODER = 01)
-            gpioe
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !0x0000_FFFF) | 0x0000_5555));
-
-            // Configure Control pins as outputs (MODER = 01):
-            // PB3 (RS), PB4 (RST), PB5 (RW)
-            let b_mask = (3 << 6) | (3 << 8) | (3 << 10);
-            let b_val = (1 << 6) | (1 << 8) | (1 << 10);
-            gpiob
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !b_mask) | b_val));
-
-            // PD2 (CS), PD7 (RD / Strobe)
-            let d_mask = (3 << 4) | (3 << 14);
-            let d_val = (1 << 4) | (1 << 14);
-            gpiod
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !d_mask) | d_val));
-
-            // Standard Backlight is on PF3 (Active HIGH). Configure PF3 as output.
-            gpiof
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(3 << 6)) | (1 << 6)));
-
-            // Default LCD states matching OpenI6X:
-            // CS (PD2) = Low (chip enabled)
-            // RW (PB5) = Low (write mode enabled)
-            // RD (PD7) = High (strobe idle high)
-            // RST (PB4) = High
-            // RS (PB3) = High
-            gpiod.bsrr.write(|w| w.bits((1 << (2 + 16)) | (1 << 7))); // PD2=0 (CS Low), PD7=1 (RD High)
-            gpiob
-                .bsrr
-                .write(|w| w.bits((1 << (5 + 16)) | (1 << 4) | (1 << 3))); // PB5=0 (RW Low), PB4=1 (RST High), PB3=1 (RS High)
-        }
-    }
-
-    /// Initialize TIM3_CH4 PWM on PC9 (AF0) for optional hardware backlight dimming mod.
-    #[cfg(not(test))]
-    fn init_backlight_pwm(&self) {
-        let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpioc = unsafe { &*pac::GPIOC::ptr() };
-        let tim3 = unsafe { &*pac::TIM3::ptr() };
-
-        unsafe {
-            // Enable TIM3 peripheral clock (RCC_APB1ENR bit 1)
-            rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 1)));
-
-            // Configure PC9 as Alternate Function (MODER = 10, AF0 = TIM3_CH4)
-            gpioc
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(3 << 18)) | (2 << 18)));
-
-            // AFRH: PC9 is pin 9 -> bits 7:4. AF0 is 0b0000
-            gpioc.afrh.modify(|r, w| w.bits(r.bits() & !(0xF << 4)));
-
-            // Configure TIM3 for 1 kHz PWM on Channel 4:
-            // 48 MHz clock: PSC = 47 -> 1 MHz tick. ARR = 999 -> 1000 ticks = 1 kHz.
-            tim3.psc.write(|w| w.bits(47));
-            tim3.arr.write(|w| w.bits(999));
-            tim3.ccr4.write(|w| w.bits(999)); // Start at 100% duty
-
-            // CCMR2: OC4M = 0b110 (PWM Mode 1), OC4PE = 1 (Preload enable)
-            tim3.ccmr2_output()
-                .modify(|r, w| w.bits((r.bits() & !(0x7F << 8)) | (6 << 12) | (1 << 11)));
-
-            // CCER: CC4E = 1 (Enable CH4 output)
-            tim3.ccer.modify(|r, w| w.bits(r.bits() | (1 << 12)));
-
-            // Re-initialize registers (UG = 1)
-            tim3.egr.write(|w| w.bits(1));
-
-            // CR1: ARPE = 1, CEN = 1 (Enable counter)
-            tim3.cr1
-                .modify(|r, w| w.bits(r.bits() | (1 << 7) | (1 << 0)));
-        }
-    }
 
     /// Set Backlight brightness level (0..100%).
-    /// Supports both stock factory backlight (PF3 on/off) and modded hardware (PC9 PWM dimming).
     pub fn set_backlight_level(&self, pct: u8) {
-        #[cfg(not(test))]
-        {
-            let gpiof = unsafe { &*pac::GPIOF::ptr() };
-            let tim3 = unsafe { &*pac::TIM3::ptr() };
-
-            unsafe {
-                if pct == 0 {
-                    // Stock backlight OFF
-                    gpiof.bsrr.write(|w| w.bits(1 << (3 + 16)));
-                    // PC9 PWM duty 0
-                    tim3.ccr4.write(|w| w.bits(0));
-                } else {
-                    // Stock backlight ON
-                    gpiof.bsrr.write(|w| w.bits(1 << 3));
-                    // PC9 PWM duty (0..999)
-                    let duty = (pct.min(100) as u32 * 999) / 100;
-                    tim3.ccr4.write(|w| w.bits(duty));
-                }
+        unsafe {
+            if let Some(ref mut bus) = DISPLAY_BUS {
+                bus.set_backlight_level(pct);
             }
         }
-        #[cfg(test)]
-        let _ = pct;
     }
 
     /// Convenience helper for binary ON/OFF control.
@@ -172,142 +62,21 @@ impl St7567 {
         self.set_backlight_level(if on { 100 } else { 0 });
     }
 
-    #[cfg(not(test))]
-    #[inline(always)]
-    fn delay_cycles(&self, count: u32) {
-        cortex_m::asm::delay(count);
-    }
-
-    /// Send byte to ST7567 using 6800-series parallel strobe:
-    /// Put byte on PE0..PE7, then pulse RD (PD7) High -> Low.
-    #[inline]
-    fn write_byte(&self, byte: u8, is_data: bool) {
-        #[cfg(not(test))]
-        {
-            let gpiob = unsafe { &*pac::GPIOB::ptr() };
-            let gpiod = unsafe { &*pac::GPIOD::ptr() };
-            let gpioe = unsafe { &*pac::GPIOE::ptr() };
-
-            unsafe {
-                // Set RS: PB3 (1 for Data, 0 for Command)
-                if is_data {
-                    gpiob.bsrr.write(|w| w.bits(1 << 3));
-                } else {
-                    gpiob.bsrr.write(|w| w.bits(1 << (3 + 16)));
-                }
-
-                // Put byte on PE0..PE7 (low 8 bits of GPIOE_ODR)
-                gpioe
-                    .odr
-                    .modify(|r, w| w.bits((r.bits() & !0xFF) | (byte as u32)));
-
-                // Strobe RD (PD7): High then Low latches data (OpenI6X timing)
-                gpiod.bsrr.write(|w| w.bits(1 << 7)); // RD High
-                cortex_m::asm::nop();
-                gpiod.bsrr.write(|w| w.bits(1 << (7 + 16))); // RD Low
-            }
-        }
-        #[cfg(test)]
-        {
-            let _ = (byte, is_data);
-        }
-    }
-
-    #[inline]
-    pub fn write_cmd(&self, cmd: u8) {
-        self.write_byte(cmd, false);
-    }
-
-    #[allow(dead_code)]
-    #[inline]
-    pub fn write_data(&self, data: u8) {
-        self.write_byte(data, true);
-    }
-
     /// Set ST7567 Electronic Volume (EV) contrast value (0..63).
     pub fn set_contrast(&self, ev: u8) {
         let val = ev.min(63);
-        self.write_cmd(0x81); // LCD_CMD_EV (Electronic Volume)
-        self.write_cmd(val);
-    }
-
-    /// Hardware reset and send OpenI6X-matched ST7567 initialization sequence.
-    #[cfg(not(test))]
-    fn init_controller(&self) {
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-
         unsafe {
-            // Hardware reset: PB4 Low for ~50us, then High (OpenI6X delay_us(20))
-            gpiob.bsrr.write(|w| w.bits(1 << (4 + 16))); // RST Low
-            self.delay_cycles(500);
-            gpiob.bsrr.write(|w| w.bits(1 << 4)); // RST High
-            self.delay_cycles(500);
+            if let Some(ref mut bus) = DISPLAY_BUS {
+                bus.set_contrast(val);
+            }
         }
-
-        // Exact OpenI6X initialization sequence:
-        self.write_cmd(0xE2); // LCD_CMD_RESET
-        self.delay_cycles(10_000);
-
-        self.write_cmd(0xAE); // LCD_CMD_DISPLAY_OFF
-        self.write_cmd(0xA4); // LCD_CMD_MODE_RAM
-        self.write_cmd(0xA3); // LCD_CMD_BIAS_1_7 (1/7 bias)
-        self.write_cmd(0xC0); // LCD_CMD_COM_NORMAL (COM0 -> COM63)
-        self.write_cmd(0xA1); // LCD_CMD_SEG_INVERSE (SEG131 -> SEG0) - Fixes upside-down!
-        self.write_cmd(0x2F); // LCD_CMD_POWERCTRL_ALL_ON
-        self.write_cmd(0x23); // LCD_CMD_REG_RATIO_011
-        self.write_cmd(0x81); // LCD_CMD_EV (Electronic Volume)
-        self.write_cmd(0x25); // Default contrast
-        self.write_cmd(0x40); // LCD_CMD_SET_STARTLINE (0)
-        self.write_cmd(0xB0); // LCD_CMD_SET_PAGESTART (0)
-        self.write_cmd(0x04); // LCD_CMD_SET_COL_LO (start at line 4: 132 lines controller vs 128 LCD)
-        self.write_cmd(0x10); // LCD_CMD_SET_COL_HI (0)
-        self.write_cmd(0xAF); // LCD_CMD_DISPLAY_ON
-        self.delay_cycles(10_000);
     }
 
-    /// Flush the entire 1024-byte framebuffer to the ST7567 LCD.
-    /// Uses OpenI6X direct 8-bit parallel bus strobing: RS set once per page,
-    /// direct 8-bit STRB to GPIOE_ODR, and single-cycle RD pulses.
+    /// Flush the entire 1024-byte framebuffer to the screen via the registered display bus.
     pub fn flush(&self) {
-        #[cfg(not(test))]
-        {
-            let gpiob = unsafe { &*pac::GPIOB::ptr() };
-            let gpiod = unsafe { &*pac::GPIOD::ptr() };
-
-            unsafe {
-                // Low byte of GPIOE ODR register derived directly from PAC
-                let data_odr_u8 = core::ptr::addr_of!((*pac::GPIOE::ptr()).odr) as *mut u8;
-
-                for page in 0..8 {
-                    // Command mode: PB3 Low
-                    gpiob.bsrr.write(|w| w.bits(1 << (3 + 16)));
-
-                    // Page selection (0xB0..0xB7)
-                    core::ptr::write_volatile(data_odr_u8, 0xB0 | page as u8);
-                    gpiod.bsrr.write(|w| w.bits(1 << 7));
-                    gpiod.bsrr.write(|w| w.bits(1 << (7 + 16)));
-
-                    // Column low nibble = 4 (controller is 132 col, LCD is 128)
-                    core::ptr::write_volatile(data_odr_u8, 0x04);
-                    gpiod.bsrr.write(|w| w.bits(1 << 7));
-                    gpiod.bsrr.write(|w| w.bits(1 << (7 + 16)));
-
-                    // Column high nibble = 0 (0x10)
-                    core::ptr::write_volatile(data_odr_u8, 0x10);
-                    gpiod.bsrr.write(|w| w.bits(1 << 7));
-                    gpiod.bsrr.write(|w| w.bits(1 << (7 + 16)));
-
-                    // Data mode: PB3 High (set ONCE for the entire 128-byte page!)
-                    gpiob.bsrr.write(|w| w.bits(1 << 3));
-
-                    let start = page * WIDTH;
-                    let end = start + WIDTH;
-                    for &byte in &self.framebuffer[start..end] {
-                        core::ptr::write_volatile(data_odr_u8, byte);
-                        gpiod.bsrr.write(|w| w.bits(1 << 7));
-                        gpiod.bsrr.write(|w| w.bits(1 << (7 + 16)));
-                    }
-                }
+        unsafe {
+            if let Some(ref mut bus) = DISPLAY_BUS {
+                bus.flush(&self.framebuffer);
             }
         }
     }

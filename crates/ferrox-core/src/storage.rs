@@ -13,8 +13,20 @@
 
 use crate::board::BoardProfile;
 
-#[cfg(not(test))]
-use stm32f0xx_hal::pac;
+use crate::hal::StorageBus;
+
+static mut STORAGE_BUS: Option<&'static mut dyn StorageBus> = None;
+
+/// Register the target MCU's non-volatile storage driver.
+pub fn register_storage_bus(bus: &'static mut dyn StorageBus) {
+    let ok = bus.init();
+    unsafe {
+        EEPROM_STATUS.detected = ok;
+        EEPROM_STATUS.read_ok = ok;
+        EEPROM_STATUS.write_ok = ok;
+        STORAGE_BUS = Some(bus);
+    }
+}
 
 pub const FLASH_MAGIC: u32 = 0x4653_4B59; // "FSKY"
 pub const CONFIG_VERSION: u32 = 5;
@@ -1453,240 +1465,16 @@ pub fn get_eeprom_status() -> EepromStatus {
     unsafe { EEPROM_STATUS }
 }
 
-/// Direct hardware I2C EEPROM driver with adaptive bus & address auto-detection.
-/// Primary: I2C2 on PB10 (SCL) and PB11 (SDA)
-/// Fallback: I2C1 on PB8 (SCL) and PB9 (SDA)
-#[cfg(not(test))]
+
+
 pub struct EepromI2c;
 
-#[cfg(not(test))]
-#[inline(always)]
-fn clear_i2c_flags(i2c: &pac::i2c1::RegisterBlock) {
-    // Clear NACK, STOP, BERR, ARLO, OVR, PEC, TIMOUT, ALERT flags
-    unsafe {
-        i2c.icr.write(|w| w.bits(0x3F38));
-    }
-}
-
-/// Reset and reinitialize an I2C peripheral (I2C1 or I2C2) following bus faults.
-#[cfg(not(test))]
-fn recover_i2c(bus_num: u8) {
-    let rcc = unsafe { &*pac::RCC::ptr() };
-    unsafe {
-        if bus_num == 1 {
-            let i2c1 = &*pac::I2C1::ptr();
-            // 1. Send STOP request to release lines if busy
-            i2c1.cr2.modify(|r, w| w.bits(r.bits() | (1 << 14)));
-            let mut timeout = 2_000u32;
-            while !i2c1.isr.read().stopf().bit() && timeout > 0 {
-                timeout -= 1;
-            }
-
-            // 2. Disable peripheral and clear flags
-            i2c1.cr1.modify(|_, w| w.pe().clear_bit());
-            clear_i2c_flags(&*pac::I2C1::ptr());
-
-            // 3. Reset peripheral via APB1 peripheral reset (bit 21 = I2C1)
-            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() | (1 << 21)));
-            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() & !(1 << 21)));
-
-            // 4. Restore timing (SYSCLK 48 MHz / 100 kHz standard / 400 kHz fast) and re-enable
-            i2c1.cr1.modify(|_, w| w.pe().clear_bit());
-            i2c1.timingr.write(|w| w.bits(0x00B0_1A4B));
-            clear_i2c_flags(&*pac::I2C1::ptr());
-            i2c1.cr1.modify(|_, w| w.pe().set_bit());
-        } else {
-            let i2c2 = &*pac::I2C2::ptr();
-            let i2c_block = &*pac::I2C2::ptr();
-
-            // 1. Send STOP request to release lines if busy
-            i2c2.cr2.modify(|r, w| w.bits(r.bits() | (1 << 14)));
-            let mut timeout = 2_000u32;
-            while !i2c2.isr.read().stopf().bit() && timeout > 0 {
-                timeout -= 1;
-            }
-
-            // 2. Disable peripheral and clear flags
-            i2c2.cr1.modify(|_, w| w.pe().disabled());
-            clear_i2c_flags(i2c_block);
-
-            // 3. Reset peripheral via APB1 peripheral reset (bit 22 = I2C2)
-            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() | (1 << 22)));
-            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() & !(1 << 22)));
-
-            // 4. Restore timing (48 MHz APB1/SYSCLK -> 1 MHz Fast Mode Plus) and re-enable
-            i2c2.cr1.modify(|_, w| w.pe().disabled());
-            i2c2.timingr.write(|w| {
-                w.presc()
-                    .bits(0)
-                    .scldel()
-                    .bits(3)
-                    .sdadel()
-                    .bits(0)
-                    .sclh()
-                    .bits(9)
-                    .scll()
-                    .bits(25)
-            });
-            clear_i2c_flags(i2c_block);
-            i2c2.cr1.modify(|_, w| w.pe().enabled());
-        }
-    }
-}
-
-#[cfg(not(test))]
-unsafe fn probe_device(i2c: &pac::i2c1::RegisterBlock, bus_num: u8, addr_7bit: u8) -> bool {
-    // Clear flags
-    clear_i2c_flags(i2c);
-
-    // Standard I2C probe transaction: 0-byte write with AUTOEND (START -> ADDR+W -> ACK/NACK -> STOP)
-    // Matches universal I2C discovery standard (Linux i2cdetect, Arduino Wire.endTransmission, poll_ack)
-    // Avoids driving unaddressed EEPROM read data onto the bus before a word address is loaded.
-    i2c.cr2.write(|w| {
-        w.sadd()
-            .bits((addr_7bit as u16) << 1)
-            .nbytes()
-            .bits(0)
-            .rd_wrn()
-            .write()
-            .autoend()
-            .automatic()
-            .start()
-            .start()
-    });
-
-    let mut timeout = 20_000u32;
-    let mut got_nack = false;
-    while i2c.isr.read().stopf().bit_is_clear() && timeout > 0 {
-        let isr = i2c.isr.read();
-        if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set() {
-            clear_i2c_flags(i2c);
-            recover_i2c(bus_num);
-            return false;
-        }
-        if isr.nackf().bit_is_set() {
-            got_nack = true;
-            i2c.icr.write(|w| w.nackcf().clear());
-        }
-        timeout -= 1;
-    }
-
-    if timeout == 0 {
-        clear_i2c_flags(i2c);
-        recover_i2c(bus_num);
-        return false;
-    }
-
-    // Clear STOPF flag
-    i2c.icr.write(|w| w.stopcf().clear());
-
-    // Device responded with ACK (no NACK detected before STOP)
-    !got_nack
-}
-
-#[cfg(not(test))]
 impl EepromI2c {
-    /// Initialize I2C2 on PB10 (SCL) and PB11 (SDA) and adaptively detect EEPROM address.
     pub fn init() {
-        let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        let i2c2 = unsafe { &*pac::I2C2::ptr() };
-        let syscfg = unsafe { &*pac::SYSCFG::ptr() };
-
-        // 1. Enable GPIOB, SYSCFG, and I2C2 clocks
-        rcc.ahbenr.modify(|_, w| w.iopben().enabled());
-        rcc.apb2enr.modify(|_, w| w.syscfgen().enabled());
-        rcc.apb1enr.modify(|_, w| w.i2c2en().enabled());
-
-        // 2. Hardware Bus Recovery: Clock 9 SCL pulses on PB10 with PB11 open-drain pull-up
-        // If an EEPROM warm-reset occurred mid-read while outputting a '0' data bit,
-        // it may clamp SDA low indefinitely until 9 SCL clock edges release the slave shift register.
-        gpiob.moder.modify(|_, w| w.moder10().output().moder11().input());
-        gpiob.otyper.modify(|_, w| w.ot10().open_drain().ot11().open_drain());
-        gpiob.pupdr.modify(|_, w| w.pupdr10().pull_up().pupdr11().pull_up());
-        gpiob.ospeedr.modify(|_, w| w.ospeedr10().high_speed().ospeedr11().high_speed());
-
-        for _ in 0..9 {
-            gpiob.bsrr.write(|w| w.br10().reset()); // SCL low
-            for _ in 0..120 {
-                cortex_m::asm::nop(); // ~2.5 us low pulse (400 kHz)
-            }
-            gpiob.bsrr.write(|w| w.bs10().set()); // SCL high
-            for _ in 0..120 {
-                cortex_m::asm::nop(); // ~2.5 us high pulse
-            }
-        }
-
-        // 3. Enable Fast Mode Plus (Fm+ 20 mA high-drive sink) on I2C2 pins in SYSCFG
-        syscfg.cfgr1.modify(|_, w| w.i2c2_fmp().fmp());
-
-        // 4. Configure PB10 and PB11 as Alternate Function 1 (I2C2), Open-Drain, High-Speed, Pull-up
-        gpiob.afrh.modify(|_, w| w.afrh10().af1().afrh11().af1());
-        gpiob
-            .moder
-            .modify(|_, w| w.moder10().alternate().moder11().alternate());
-        gpiob
-            .otyper
-            .modify(|_, w| w.ot10().open_drain().ot11().open_drain());
-        gpiob
-            .ospeedr
-            .modify(|_, w| w.ospeedr10().high_speed().ospeedr11().high_speed());
-        gpiob
-            .pupdr
-            .modify(|_, w| w.pupdr10().pull_up().pupdr11().pull_up());
-
-        // 5. Reset I2C2 peripheral via APB1 peripheral reset
-        i2c2.cr1.modify(|_, w| w.pe().disabled());
-        rcc.apb1rstr
-            .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 22)) });
-        rcc.apb1rstr
-            .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 22)) });
-        i2c2.cr1.modify(|_, w| w.pe().disabled());
-
-        // Timing for 48 MHz APB1/SYSCLK -> 1 MHz (1000 kHz) Fast Mode Plus (Fm+)
-        // Matches proven flysky-i6x-rs timing
-        i2c2.timingr.write(|w| {
-            w.presc()
-                .bits(0)
-                .scldel()
-                .bits(3)
-                .sdadel()
-                .bits(0)
-                .sclh()
-                .bits(9)
-                .scll()
-                .bits(25)
-        });
-
-        // 6. Clear flags and enable I2C2 peripheral
-        clear_i2c_flags(unsafe { &*pac::I2C2::ptr() });
-        i2c2.cr1.modify(|_, w| w.pe().enabled());
-
-        // 7. Adaptive Probe:
-        // First check I2C2 (PB10/PB11) across addresses 0x50..=0x57
         unsafe {
-            EEPROM_STATUS.bus = 0;
-            EEPROM_STATUS.detected = false;
-
-            for addr in 0x50..=0x57 {
-                if probe_device(&*pac::I2C2::ptr(), 2, addr) {
-                    EEPROM_STATUS.bus = 2; // I2C2
-                    EEPROM_STATUS.addr = addr;
-                    EEPROM_STATUS.detected = true;
-                    break;
-                }
-            }
-
-            // Fallback: If not found on I2C2 and I2C1 clock is enabled, check I2C1 (PB8/PB9)
-            if !EEPROM_STATUS.detected && rcc.apb1enr.read().i2c1en().bit_is_set() {
-                for addr in 0x50..=0x57 {
-                    if probe_device(&*pac::I2C1::ptr(), 1, addr) {
-                        EEPROM_STATUS.bus = 1; // I2C1
-                        EEPROM_STATUS.addr = addr;
-                        EEPROM_STATUS.detected = true;
-                        break;
-                    }
-                }
+            if let Some(ref mut bus) = STORAGE_BUS {
+                let ok = bus.init();
+                EEPROM_STATUS.detected = ok;
             }
         }
     }
@@ -1696,335 +1484,42 @@ impl EepromI2c {
         if data.is_empty() {
             return Ok(());
         }
-
-        let status = unsafe { EEPROM_STATUS };
-        let bus_num = if status.bus == 1 { 1 } else { 2 };
-        let dev_addr = if status.detected { status.addr } else { 0x50 };
-        let i2c = unsafe {
-            if bus_num == 1 {
-                &*pac::I2C1::ptr()
-            } else {
-                &*pac::I2C2::ptr()
-            }
-        };
-
-        // 1. Send 2-byte memory address write header without STOP (autoend=false)
-        let addr_bytes = addr.to_be_bytes();
-        i2c.cr2.write(|w| {
-            w.sadd()
-                .bits((dev_addr as u16) << 1)
-                .nbytes()
-                .bits(2)
-                .rd_wrn()
-                .write()
-                .autoend()
-                .software()
-                .start()
-                .start()
-        });
-
-        for &byte in &addr_bytes {
-            let mut timeout = 100_000u32;
-            while i2c.isr.read().txis().bit_is_clear() {
-                let isr = i2c.isr.read();
-                if isr.nackf().bit_is_set()
-                    || isr.berr().bit_is_set()
-                    || isr.arlo().bit_is_set()
-                    || isr.ovr().bit_is_set()
-                {
-                    clear_i2c_flags(i2c);
-                    recover_i2c(bus_num);
-                    return Err(StorageError::I2cError);
-                }
-                timeout -= 1;
-                if timeout == 0 {
-                    recover_i2c(bus_num);
-                    return Err(StorageError::I2cError);
-                }
-            }
-            i2c.txdr.write(|w| w.txdata().bits(byte));
-        }
-
-        // Wait for TC (Transfer Complete)
-        let mut timeout = 100_000u32;
-        while i2c.isr.read().tc().bit_is_clear() {
-            let isr = i2c.isr.read();
-            if isr.nackf().bit_is_set()
-                || isr.berr().bit_is_set()
-                || isr.arlo().bit_is_set()
-                || isr.ovr().bit_is_set()
-            {
-                clear_i2c_flags(i2c);
-                recover_i2c(bus_num);
-                return Err(StorageError::I2cError);
-            }
-            timeout -= 1;
-            if timeout == 0 {
-                recover_i2c(bus_num);
-                return Err(StorageError::I2cError);
-            }
-        }
-
-        // 2. Read sequential data bytes in chunks of up to 255 bytes (NBYTES limitation)
-        let mut read_offset = 0;
-        while read_offset < data.len() {
-            let chunk_len = core::cmp::min(255, data.len() - read_offset);
-            let is_last = (read_offset + chunk_len) == data.len();
-
-            i2c.cr2.write(|w| {
-                w.sadd()
-                    .bits((dev_addr as u16) << 1)
-                    .nbytes()
-                    .bits(chunk_len as u8)
-                    .rd_wrn()
-                    .read()
-                    .autoend()
-                    .bit(is_last)
-                    .start()
-                    .start()
-            });
-
-            for i in 0..chunk_len {
-                let mut byte_timeout = 100_000u32;
-                while i2c.isr.read().rxne().bit_is_clear() {
-                    let isr = i2c.isr.read();
-                    if isr.nackf().bit_is_set()
-                        || isr.berr().bit_is_set()
-                        || isr.arlo().bit_is_set()
-                        || isr.ovr().bit_is_set()
-                    {
-                        clear_i2c_flags(i2c);
-                        recover_i2c(bus_num);
-                        return Err(StorageError::I2cError);
+        unsafe {
+            if let Some(ref mut bus) = STORAGE_BUS {
+                match bus.read(addr, data) {
+                    Ok(()) => {
+                        EEPROM_STATUS.read_ok = true;
+                        Ok(())
                     }
-                    byte_timeout -= 1;
-                    if byte_timeout == 0 {
-                        recover_i2c(bus_num);
-                        return Err(StorageError::I2cError);
-                    }
-                }
-                data[read_offset + i] = i2c.rxdr.read().rxdata().bits();
-            }
-
-            if !is_last {
-                let mut tc_timeout = 100_000u32;
-                while i2c.isr.read().tc().bit_is_clear() {
-                    let isr = i2c.isr.read();
-                    if isr.nackf().bit_is_set()
-                        || isr.berr().bit_is_set()
-                        || isr.arlo().bit_is_set()
-                        || isr.ovr().bit_is_set()
-                    {
-                        clear_i2c_flags(i2c);
-                        recover_i2c(bus_num);
-                        return Err(StorageError::I2cError);
-                    }
-                    tc_timeout -= 1;
-                    if tc_timeout == 0 {
-                        recover_i2c(bus_num);
-                        return Err(StorageError::I2cError);
-                    }
+                    Err(()) => Err(StorageError::I2cError),
                 }
             } else {
-                let mut stop_timeout = 100_000u32;
-                while i2c.isr.read().stopf().bit_is_clear() {
-                    let isr = i2c.isr.read();
-                    if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set()
-                    {
-                        clear_i2c_flags(i2c);
-                        recover_i2c(bus_num);
-                        return Err(StorageError::I2cError);
-                    }
-                    stop_timeout -= 1;
-                    if stop_timeout == 0 {
-                        recover_i2c(bus_num);
-                        return Err(StorageError::I2cError);
-                    }
-                }
-                i2c.icr.write(|w| w.stopcf().clear());
+                Err(StorageError::I2cError)
             }
-
-            read_offset += chunk_len;
         }
-
-        Ok(())
     }
 
-    /// Write a single page chunk (up to 64 bytes) that does NOT cross a 64-byte boundary.
-    fn write_page_aligned(addr: u16, chunk: &[u8]) -> Result<(), StorageError> {
-        if chunk.is_empty() {
+    /// Write arbitrary slice to non-volatile storage via the registered StorageBus driver.
+    pub fn write(addr: u16, data: &[u8]) -> Result<(), StorageError> {
+        if data.is_empty() {
             return Ok(());
         }
-
-        let status = unsafe { EEPROM_STATUS };
-        let bus_num = if status.bus == 1 { 1 } else { 2 };
-        let dev_addr = if status.detected { status.addr } else { 0x50 };
-        let i2c = unsafe {
-            if bus_num == 1 {
-                &*pac::I2C1::ptr()
+        unsafe {
+            if let Some(ref mut bus) = STORAGE_BUS {
+                match bus.write(addr, data) {
+                    Ok(()) => {
+                        EEPROM_STATUS.write_ok = true;
+                        Ok(())
+                    }
+                    Err(()) => {
+                        EEPROM_STATUS.write_err = true;
+                        Err(StorageError::I2cError)
+                    }
+                }
             } else {
-                &*pac::I2C2::ptr()
-            }
-        };
-
-        let total_bytes = (2 + chunk.len()) as u8;
-        let addr_bytes = addr.to_be_bytes();
-
-        i2c.cr2.write(|w| {
-            w.sadd()
-                .bits((dev_addr as u16) << 1)
-                .nbytes()
-                .bits(total_bytes)
-                .rd_wrn()
-                .write()
-                .autoend()
-                .automatic()
-                .start()
-                .start()
-        });
-
-        // 1. Send 2 address bytes
-        for &byte in &addr_bytes {
-            let mut timeout = 100_000u32;
-            while i2c.isr.read().txis().bit_is_clear() {
-                let isr = i2c.isr.read();
-                if isr.nackf().bit_is_set()
-                    || isr.berr().bit_is_set()
-                    || isr.arlo().bit_is_set()
-                    || isr.ovr().bit_is_set()
-                {
-                    clear_i2c_flags(i2c);
-                    recover_i2c(bus_num);
-                    return Err(StorageError::I2cError);
-                }
-                timeout -= 1;
-                if timeout == 0 {
-                    recover_i2c(bus_num);
-                    return Err(StorageError::I2cError);
-                }
-            }
-            i2c.txdr.write(|w| w.txdata().bits(byte));
-        }
-
-        // 2. Send payload bytes
-        for &byte in chunk {
-            let mut timeout = 100_000u32;
-            while i2c.isr.read().txis().bit_is_clear() {
-                let isr = i2c.isr.read();
-                if isr.nackf().bit_is_set()
-                    || isr.berr().bit_is_set()
-                    || isr.arlo().bit_is_set()
-                    || isr.ovr().bit_is_set()
-                {
-                    clear_i2c_flags(i2c);
-                    recover_i2c(bus_num);
-                    return Err(StorageError::I2cError);
-                }
-                timeout -= 1;
-                if timeout == 0 {
-                    recover_i2c(bus_num);
-                    return Err(StorageError::I2cError);
-                }
-            }
-            i2c.txdr.write(|w| w.txdata().bits(byte));
-        }
-
-        // Wait for STOPF
-        let mut stop_timeout = 100_000u32;
-        while i2c.isr.read().stopf().bit_is_clear() {
-            let isr = i2c.isr.read();
-            if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set() {
-                clear_i2c_flags(i2c);
-                recover_i2c(bus_num);
-                return Err(StorageError::I2cError);
-            }
-            stop_timeout -= 1;
-            if stop_timeout == 0 {
-                recover_i2c(bus_num);
-                return Err(StorageError::I2cError);
+                Err(StorageError::I2cError)
             }
         }
-        i2c.icr.write(|w| w.stopcf().clear());
-
-        // 3. ACK Polling for EEPROM internal write cycle (max 5ms)
-        Self::poll_ack(i2c, bus_num, dev_addr)?;
-
-        Ok(())
-    }
-
-    /// Poll I2C address until EEPROM ACKs that its internal self-timed write cycle has completed.
-    fn poll_ack(
-        i2c: &pac::i2c1::RegisterBlock,
-        bus_num: u8,
-        dev_addr: u8,
-    ) -> Result<(), StorageError> {
-        let mut retries = 50u32; // up to ~10ms total polling
-
-        while retries > 0 {
-            crate::watchdog::feed();
-            retries -= 1;
-
-            // Send 0-byte write to test device readiness
-            i2c.cr2.write(|w| {
-                w.sadd()
-                    .bits((dev_addr as u16) << 1)
-                    .nbytes()
-                    .bits(0)
-                    .rd_wrn()
-                    .write()
-                    .autoend()
-                    .automatic()
-                    .start()
-                    .start()
-            });
-
-            let mut wait = 20_000u32;
-            let mut got_nack = false;
-            while i2c.isr.read().stopf().bit_is_clear() && wait > 0 {
-                let isr = i2c.isr.read();
-                if isr.berr().bit_is_set() || isr.arlo().bit_is_set() || isr.ovr().bit_is_set() {
-                    clear_i2c_flags(i2c);
-                    recover_i2c(bus_num);
-                    return Err(StorageError::I2cError);
-                }
-                if isr.nackf().bit_is_set() {
-                    got_nack = true;
-                    i2c.icr.write(|w| w.nackcf().clear());
-                }
-                wait -= 1;
-            }
-            i2c.icr.write(|w| w.stopcf().clear());
-
-            if !got_nack && wait > 0 {
-                return Ok(()); // Device ACKed, write complete!
-            }
-
-            {
-                let start = crate::time::millis();
-                while crate::time::millis().wrapping_sub(start) < 1 {
-                    crate::watchdog::feed();
-                }
-            }
-        }
-
-        recover_i2c(bus_num);
-        Err(StorageError::I2cError)
-    }
-
-    /// Write arbitrary slice with automatic page boundary splitting to prevent wrap-around.
-    pub fn write(mut addr: u16, data: &[u8]) -> Result<(), StorageError> {
-        let mut written = 0;
-        while written < data.len() {
-            let page_offset = (addr % (PAGE_SIZE as u16)) as usize;
-            let chunk_len = core::cmp::min(PAGE_SIZE - page_offset, data.len() - written);
-
-            let chunk = &data[written..written + chunk_len];
-            Self::write_page_aligned(addr, chunk)?;
-
-            addr = addr.saturating_add(chunk_len as u16);
-            written += chunk_len;
-        }
-        Ok(())
     }
 }
 

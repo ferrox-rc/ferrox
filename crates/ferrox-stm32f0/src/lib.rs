@@ -6,16 +6,106 @@
 //! - I2C1 / I2C2 EEPROM storage driver (`storage`)
 //! - SysTick hardware monotonic timer & delay (`time`)
 //! - Independent Watchdog (IWDG) (`watchdog`)
+//! - System clock, reset flags, and DFU bootloader jump (`chip`)
+//! - TIM15 PPM in/out trainer driver (`trainer`)
+//! - SPI1 & TIM16 RF transceiver frontend (`rf`)
+//! - USB 2.0 Full-Speed controller (`usb`)
+//! - ADC1 & DMA1 scanner (`adc`)
+//! - Key matrix & button drivers (`keys`)
+//! - CRSF USART DMA serial ports (`uart`)
+//! - Electronic power latch (`power`)
+//! - FT6236 capacitive touch controller (`touch`)
 
 #![no_std]
+#![allow(static_mut_refs)]
 
+pub mod adc;
 pub mod buzzer;
+pub mod chip;
 pub mod display;
+pub mod keys;
+pub mod power;
+pub mod rf;
 pub mod storage;
 pub mod time;
+pub mod touch;
+pub mod trainer;
+pub mod uart;
+pub mod usb;
 pub mod watchdog;
 
+pub use adc::Stm32f0AdcDriver;
 pub use buzzer::Tim1Buzzer;
+pub use chip::{
+    check_and_clear_reset_flags, enter_dfu_bootloader, init_system_clock, Stm32f0SystemDriver,
+};
 pub use display::St7567ParallelBus;
+pub use keys::{I6sKeyDriver, I6xKeyDriver};
+pub use power::Stm32f0PowerDriver;
+pub use rf::Stm32f0RfBus;
 pub use storage::EepromI2cBus;
+pub use touch::Stm32f0TouchDriver;
+pub use trainer::Stm32f0TrainerDriver;
+pub use uart::{I6sSerialPort, I6xSerialPort};
+pub use usb::Stm32f0UsbDriver;
 pub use watchdog::{feed as watchdog_feed, start as watchdog_start, WatchdogManager};
+
+/// Initialize and register all STM32F0 hardware drivers for FlySky FS-i6X.
+pub fn init_i6x_drivers() {
+    static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
+    static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
+    static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;
+    static mut STORAGE: EepromI2cBus = EepromI2cBus;
+    static mut TRAINER: Stm32f0TrainerDriver = Stm32f0TrainerDriver::new();
+    static mut RF_BUS: Stm32f0RfBus = Stm32f0RfBus;
+    static mut USB: Stm32f0UsbDriver = Stm32f0UsbDriver;
+    static mut ADC: Stm32f0AdcDriver = Stm32f0AdcDriver::new(false);
+    static mut KEYS: I6xKeyDriver = I6xKeyDriver::new();
+    static mut UART: I6xSerialPort = I6xSerialPort::new();
+
+    unsafe {
+        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER, Some(enter_dfu_bootloader));
+        ferrox_core::buzzer::register_tone_output(&mut BUZZER);
+        ferrox_core::display::register_display_bus(&mut DISPLAY);
+        ferrox_core::storage::register_storage_bus(&mut STORAGE);
+        ferrox_core::trainer::register_trainer_driver(&mut TRAINER);
+        ferrox_core::rf::spi::register_rf_bus(&mut RF_BUS);
+        ferrox_core::usb::register_usb_driver(&mut USB);
+        ferrox_core::adc::register_adc_driver(&mut ADC);
+        ferrox_core::boot::register_key_driver(&mut KEYS);
+        ferrox_core::uart::register_serial_port(&mut UART);
+        ferrox_core::watchdog::register_watchdog(watchdog_start, watchdog_feed);
+    }
+}
+
+/// Initialize and register all STM32F0 hardware drivers for FlySky FS-i6S.
+pub fn init_i6s_drivers() {
+    static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
+    static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
+    static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;
+    static mut STORAGE: EepromI2cBus = EepromI2cBus;
+    static mut TRAINER: Stm32f0TrainerDriver = Stm32f0TrainerDriver::new();
+    static mut RF_BUS: Stm32f0RfBus = Stm32f0RfBus;
+    static mut USB: Stm32f0UsbDriver = Stm32f0UsbDriver;
+    static mut ADC: Stm32f0AdcDriver = Stm32f0AdcDriver::new(true);
+    static mut KEYS: I6sKeyDriver = I6sKeyDriver::new();
+    static mut UART: I6sSerialPort = I6sSerialPort::new();
+    static mut POWER: Stm32f0PowerDriver = Stm32f0PowerDriver;
+    static mut TOUCH: Stm32f0TouchDriver = Stm32f0TouchDriver;
+
+    unsafe {
+        ferrox_core::chip::register_system_driver(&mut SYSTEM_DRIVER, Some(enter_dfu_bootloader));
+        ferrox_core::buzzer::register_tone_output(&mut BUZZER);
+        ferrox_core::display::register_display_bus(&mut DISPLAY);
+        ferrox_core::storage::register_storage_bus(&mut STORAGE);
+        ferrox_core::trainer::register_trainer_driver(&mut TRAINER);
+        ferrox_core::rf::spi::register_rf_bus(&mut RF_BUS);
+        ferrox_core::usb::register_usb_driver(&mut USB);
+        ferrox_core::adc::register_adc_driver(&mut ADC);
+        ferrox_core::boot::register_key_driver(&mut KEYS);
+        ferrox_core::uart::register_serial_port(&mut UART);
+        ferrox_core::hal::register_power_driver(&mut POWER);
+        ferrox_core::hal::register_touch_driver(&mut TOUCH);
+        ferrox_core::watchdog::register_watchdog(watchdog_start, watchdog_feed);
+    }
+}

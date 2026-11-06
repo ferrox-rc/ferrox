@@ -209,16 +209,18 @@ mod tests {
         // Custom slots: RPM (15), TEMP (16), VSPD (12), ALT (13)
         storage.active_model.telem_slots = [15, 16, 12, 13];
 
-        let mut telem = TelemetryData::default();
-        telem.connected = true;
-        telem.rpm = 4500;
-        telem.last_rpm_ms = 1000;
-        telem.temp_c_x10 = 350; // 35.0 C
-        telem.last_temp_ms = 1000;
-        telem.vspeed_cms = 150;
-        telem.last_vspd_ms = 1000;
-        telem.alt_m = 120;
-        telem.last_alt_ms = 1000;
+        let telem = TelemetryData {
+            connected: true,
+            rpm: 4500,
+            last_rpm_ms: 1000,
+            temp_c_x10: 350, // 35.0 C
+            last_temp_ms: 1000,
+            vspeed_cms: 150,
+            last_vspd_ms: 1000,
+            alt_m: 120,
+            last_alt_ms: 1000,
+            ..Default::default()
+        };
 
         // Render at 2000ms: only 1000ms elapsed (< 2500ms) -> Live, no stale indicator
         pages::telemetry::render(
@@ -236,11 +238,13 @@ mod tests {
         let mut lcd = St7567::new();
         let storage = RadioStorage::default_factory();
 
-        let mut telem = TelemetryData::default();
-        telem.connected = true;
-        telem.rx_voltage_mv = 12600;
-        telem.last_rx_voltage_ms = 1000;
-        telem.rssi = 99;
+        let telem = TelemetryData {
+            connected: true,
+            rx_voltage_mv: 12600,
+            last_rx_voltage_ms: 1000,
+            rssi: 99,
+            ..Default::default()
+        };
 
         // Render at 2000ms: 1000ms elapsed (< 2500ms) -> Live, no stale indicator
         pages::model::render(&mut lcd, &storage, &telem, false, 2000);

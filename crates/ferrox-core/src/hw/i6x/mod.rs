@@ -113,26 +113,7 @@ pub fn decode_board_switches(
     SwitchPos,
 ) {
     let (se, sf) = if ext_switches {
-        #[cfg(all(feature = "stm32", not(test)))]
-        {
-            let gpioc = unsafe { &*stm32f0xx_hal::pac::GPIOC::ptr() };
-            let idr = gpioc.idr.read().bits();
-            let sw_e = if (idr & (1 << 12)) == 0 {
-                SwitchPos::Down
-            } else {
-                SwitchPos::Up
-            };
-            let sw_f = if (idr & (1 << 15)) == 0 {
-                SwitchPos::Down
-            } else {
-                SwitchPos::Up
-            };
-            (sw_e, sw_f)
-        }
-        #[cfg(any(not(feature = "stm32"), test))]
-        {
-            (SwitchPos::Up, SwitchPos::Up)
-        }
+        crate::boot::read_ext_switches()
     } else {
         (SwitchPos::Up, SwitchPos::Up)
     };

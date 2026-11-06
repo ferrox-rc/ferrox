@@ -1,30 +1,12 @@
-//! Hardware SysTick 1.000 ms monotonic timekeeping driver.
+//! Platform-agnostic monotonic timekeeping for Ferrox flight controller.
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use cortex_m_rt::exception;
 
 static SYSTEM_MILLIS: AtomicU32 = AtomicU32::new(0);
 
-/// Initialize Cortex-M SysTick timer for 1 kHz (1.000 ms) ticks at 48 MHz core clock.
-/// Configures SysTick to lowest hardware interrupt priority (0xC0) so it never
-/// preempts or delays RF time-critical IRQs (TIM16 and EXTI2_3 at 0x80).
-pub fn init() {
-    #[cfg(not(test))]
-    unsafe {
-        let mut p = cortex_m::peripheral::Peripherals::steal();
-        // Set SysTick interrupt priority to lowest (0xC0) in SHPR3
-        p.SCB
-            .set_priority(cortex_m::peripheral::scb::SystemHandler::SysTick, 0xC0);
-
-        // 48 MHz clock -> 48,000 ticks per 1 ms
-        p.SYST.set_reload(48_000 - 1);
-        p.SYST.clear_current();
-        p.SYST
-            .set_clock_source(cortex_m::peripheral::syst::SystClkSource::Core);
-        p.SYST.enable_interrupt();
-        p.SYST.enable_counter();
-    }
-}
+/// Initialize monotonic timekeeper (no-op on host/core, initialized by hardware HAL).
+#[inline(always)]
+pub fn init() {}
 
 /// Monotonic system uptime in milliseconds since boot.
 /// Lock-free, zero-overhead atomic read with Relaxed ordering.
@@ -33,18 +15,20 @@ pub fn millis() -> u32 {
     SYSTEM_MILLIS.load(Ordering::Relaxed)
 }
 
-#[exception]
-fn SysTick() {
+/// Advance monotonic millisecond counter by 1 ms.
+/// Called directly by the target MCU's SysTick exception handler.
+#[inline(always)]
+pub fn tick_ms() {
     let current = SYSTEM_MILLIS.load(Ordering::Relaxed);
     SYSTEM_MILLIS.store(current.wrapping_add(1), Ordering::Relaxed);
 }
 
-#[cfg(test)]
+/// Set system uptime in milliseconds (used for testing and initial synchronization).
 pub fn set_millis(ms: u32) {
     SYSTEM_MILLIS.store(ms, Ordering::Relaxed);
 }
 
-#[cfg(test)]
+/// Advance system uptime by `ms` (used for test simulation).
 pub fn advance_millis(ms: u32) {
     let cur = SYSTEM_MILLIS.load(Ordering::Relaxed);
     SYSTEM_MILLIS.store(cur.wrapping_add(ms), Ordering::Relaxed);

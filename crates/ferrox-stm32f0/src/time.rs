@@ -1,9 +1,6 @@
 //! Hardware SysTick 1.000 ms monotonic timekeeping driver for STM32F072.
 
-use core::sync::atomic::{AtomicU32, Ordering};
 use cortex_m_rt::exception;
-
-static SYSTEM_MILLIS: AtomicU32 = AtomicU32::new(0);
 
 /// Initialize Cortex-M SysTick timer for 1 kHz (1.000 ms) ticks at 48 MHz core clock.
 /// Configures SysTick to lowest hardware interrupt priority (0xC0) so it never
@@ -26,11 +23,10 @@ pub fn init() {
 /// Monotonic system uptime in milliseconds since boot.
 #[inline(always)]
 pub fn millis() -> u32 {
-    SYSTEM_MILLIS.load(Ordering::Relaxed)
+    ferrox_core::time::millis()
 }
 
 #[exception]
 fn SysTick() {
-    let current = SYSTEM_MILLIS.load(Ordering::Relaxed);
-    SYSTEM_MILLIS.store(current.wrapping_add(1), Ordering::Relaxed);
+    ferrox_core::time::tick_ms();
 }

@@ -1,4 +1,5 @@
 #![cfg_attr(not(test), no_std)]
+#![allow(static_mut_refs)]
 
 pub mod board;
 pub use board::{ActiveBoard, BoardProfile};
@@ -12,9 +13,9 @@ pub mod display;
 #[cfg(feature = "rf-dsm")]
 pub mod dsm;
 pub mod hal;
+pub mod adc;
+pub mod boot;
 pub mod hw;
-pub use hw::adc;
-pub use hw::keys as boot;
 pub mod input;
 pub mod mixer;
 pub mod rf;
@@ -28,5 +29,6 @@ pub mod trim;
 pub mod ui;
 pub use ui::menu;
 pub mod usb;
+pub mod uart;
 pub mod vario;
 pub mod watchdog;

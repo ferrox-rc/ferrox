@@ -11,7 +11,6 @@ use crate::mixer::SAFE_IDLE_CHANNELS;
 use afhds2a::{Afhds2a, TelemetryData, NUM_CHANNELS};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
-use stm32f0xx_hal::pac::interrupt;
 
 struct RfDriverCell(UnsafeCell<Option<Afhds2a>>);
 unsafe impl Sync for RfDriverCell {}
@@ -286,9 +285,8 @@ pub fn get_telemetry() -> TelemetryData {
     TELEMETRY_BUFFER.read()
 }
 
-/// TIM16 Interrupt Handler: Triggers transmission of next AFHDS 2A frame.
-#[interrupt]
-fn TIM16() {
+/// Periodic protocol timer tick handler: Triggers transmission of next AFHDS 2A frame.
+pub fn on_timer_tick() {
     spi::clear_tim16_flag();
 
     if RF_SILENCED.load(Ordering::Relaxed) {
@@ -327,23 +325,14 @@ fn TIM16() {
     }
 }
 
-/// EXTI2_3 Interrupt Handler: Triggers when A7105 GIO2 transitions LOW
+/// Transceiver GIO2 event handler: Triggers when A7105 GIO2 transitions LOW
 /// (indicating TX packet finished or RX packet received).
-#[interrupt]
-fn EXTI2_3() {
-    unsafe {
-        let exti = &*stm32f0xx_hal::pac::EXTI::ptr();
-        if (exti.pr.read().bits() & (1 << 2)) != 0 {
-            // Clear pending flag for EXTI2
-            exti.pr.write(|w| w.bits(1 << 2));
-
-            let driver = &mut *RF_DRIVER.0.get();
-            if let Some(ref mut d) = driver {
-                d.on_gio2_event();
-                // Publish updated telemetry to triple buffer lock-free
-                TELEMETRY_BUFFER.write(&d.telemetry);
-            }
-        }
+pub fn on_gio2_event() {
+    let driver = unsafe { &mut *RF_DRIVER.0.get() };
+    if let Some(ref mut d) = driver {
+        d.on_gio2_event();
+        // Publish updated telemetry to triple buffer lock-free
+        TELEMETRY_BUFFER.write(&d.telemetry);
     }
 }
 

@@ -275,7 +275,7 @@ mod tests {
         // Header and protocol checks
         assert_eq!(out[0], 0x55);
         assert_eq!(out[1], 0x80 | (MULTI_PROTO_DSM & 0x1F)); // bind bit set + proto 6
-        assert_eq!(out[2], (0 << 4) | 12); // DSMX-11 sub-proto, 12 channels
+        assert_eq!(out[2], 12); // DSMX-11 sub-proto, 12 channels
         assert_eq!(out[3], 0);
 
         // Verify channel payload is populated
