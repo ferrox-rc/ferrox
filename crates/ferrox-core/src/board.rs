@@ -3,7 +3,7 @@
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::input::{InputState, SwitchPos};
-use crate::storage::{AdcInputMode, RadioConfig, RadioStorage};
+use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 use crate::ui::glyphs;
 
 /// Modular RF protocols supported by `ferrox-core`.
@@ -338,6 +338,12 @@ pub trait BoardProfile: Copy + Clone + 'static {
     /// Hardware dispatch hook: configure J4 pins as GPIO inputs or SWD debug.
     fn set_j4_mode_enabled(enabled: bool);
 
+    /// Check if a mix source ID is available on this board given radio and model configuration.
+    fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool;
+
+    /// Check if a switch condition index is available on this board given radio configuration.
+    fn is_switch_cond_available(radio: &RadioConfig, cond: u8) -> bool;
+
     /// Early board initialization (e.g. power latch on FS-i6S).
     fn pre_init();
 
@@ -565,6 +571,154 @@ impl BoardProfile for I6sSpec {
     #[inline]
     fn set_j4_mode_enabled(enabled: bool) {
         crate::boot::init_j4_keys(enabled);
+    }
+
+    fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
+        match src {
+            0..=4 => true, // None, Roll, Pitch, Thr, Yaw
+            5 => radio.get_adc_mode(4).is_pot(), // VRA
+            6 => radio.get_adc_mode(5).is_pot(), // VRB
+            7 => matches!(
+                radio.get_adc_mode(0),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SA
+            8 => matches!(
+                radio.get_adc_mode(1),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SB
+            9 => matches!(
+                radio.get_adc_mode(2),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SC
+            10 => matches!(
+                radio.get_adc_mode(3),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SD
+            11 => true, // MAX constant
+            12..=15 => true, // CH1..CH4 primary flight channels
+            16..=29 => {
+                let ch_idx = (src - 12) as usize; // 4..17
+                let aux_idx = ch_idx - 4; // 0..13
+                if model.wing_tail_mix == 3 && ch_idx == 5 {
+                    return true;
+                }
+                if model.aux_channels[aux_idx] != 0 {
+                    return true;
+                }
+                model.mixes.iter().any(|m| m.target_ch == (ch_idx + 1) as u8)
+            }
+            30 => true, // Thr+
+            31 => radio.ext_switches != 0, // SE
+            32 => radio.ext_switches != 0, // SF
+            33 => radio.j4_sg_sh_en != 0, // SG
+            34 => radio.j4_sg_sh_en != 0, // SH
+            35 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(6),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWI
+            36 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(7),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWJ
+            37 => radio.ext_adc != 0 && radio.get_adc_mode(6).is_pot(), // VRC
+            38 => radio.ext_adc != 0 && radio.get_adc_mode(7).is_pot(), // VRD
+            39 => radio.ext_adc != 0 && radio.get_adc_mode(8).is_pot(), // VRE
+            40 => radio.ext_adc != 0 && radio.get_adc_mode(9).is_pot(), // VRF
+            41 => radio.ext_adc != 0 && radio.get_adc_mode(10).is_pot(), // VRG
+            42 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(8),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWK
+            43 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(9),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWL
+            44 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(10),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWM
+            45..=49 => true, // GV1..GV5
+            _ => false,
+        }
+    }
+
+    fn is_switch_cond_available(radio: &RadioConfig, cond: u8) -> bool {
+        match cond {
+            0 => true, // Always ON
+            1 | 2 => matches!(
+                radio.get_adc_mode(0),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SA
+            3 | 5 => matches!(
+                radio.get_adc_mode(1),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SB Up, Down
+            4 => radio.get_adc_mode(1) == AdcInputMode::ThreePos, // SB Mid
+            6 | 8 => matches!(
+                radio.get_adc_mode(2),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SC Up, Down
+            7 => radio.get_adc_mode(2) == AdcInputMode::ThreePos, // SC Mid
+            9 | 10 => matches!(
+                radio.get_adc_mode(3),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SD
+            11 | 12 => radio.ext_switches != 0, // SE
+            13 | 14 => radio.ext_switches != 0, // SF
+            15 | 16 => radio.j4_sg_sh_en != 0, // SG
+            17 | 18 => radio.j4_sg_sh_en != 0, // SH
+            19 | 20 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(6),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWI
+            21 | 22 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(7),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWJ
+            23 | 24 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(8),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWK
+            25 | 26 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(9),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWL
+            27 | 28 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(10),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWM
+            _ => false,
+        }
     }
 
     #[inline]
@@ -1037,6 +1191,155 @@ impl BoardProfile for I6xSpec {
     #[inline]
     fn set_j4_mode_enabled(_enabled: bool) {}
 
+    fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
+        match src {
+            0..=4 => true, // None, Roll, Pitch, Thr, Yaw
+            5 => radio.get_adc_mode(4).is_pot(), // VRA
+            6 => radio.get_adc_mode(5).is_pot(), // VRB
+            7 => matches!(
+                radio.get_adc_mode(0),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SA
+            8 => matches!(
+                radio.get_adc_mode(1),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SB
+            9 => matches!(
+                radio.get_adc_mode(2),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SC
+            10 => matches!(
+                radio.get_adc_mode(3),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SD
+            11 => true, // MAX constant
+            12..=15 => true, // CH1..CH4 primary flight channels
+            16..=29 => {
+                let ch_idx = (src - 12) as usize; // 4..17
+                let aux_idx = ch_idx - 4; // 0..13
+                if model.wing_tail_mix == 3 && ch_idx == 5 {
+                    return true;
+                }
+                if model.aux_channels[aux_idx] != 0 {
+                    return true;
+                }
+                model.mixes.iter().any(|m| m.target_ch == (ch_idx + 1) as u8)
+            }
+            30 => true, // Thr+
+            31 => radio.ext_switches != 0, // SE
+            32 => radio.ext_switches != 0, // SF
+            33 => radio.j4_sg_sh_en != 0, // SG
+            34 => radio.j4_sg_sh_en != 0, // SH
+            35 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(6),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWI
+            36 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(7),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWJ
+            37 => radio.ext_adc != 0 && radio.get_adc_mode(6).is_pot(), // VRC
+            38 => radio.ext_adc != 0 && radio.get_adc_mode(7).is_pot(), // VRD
+            39 => radio.ext_adc != 0 && radio.get_adc_mode(8).is_pot(), // VRE
+            40 => radio.ext_adc != 0 && radio.get_adc_mode(9).is_pot(), // VRF
+            41 => radio.ext_adc != 0 && radio.get_adc_mode(10).is_pot(), // VRG
+            42 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(8),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWK
+            43 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(9),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWL
+            44 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(10),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWM
+            45..=49 => true, // GV1..GV5
+            _ => false,
+        }
+    }
+
+    fn is_switch_cond_available(radio: &RadioConfig, cond: u8) -> bool {
+        match cond {
+            0 => true, // Always ON
+            1 | 2 => matches!(
+                radio.get_adc_mode(0),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SA
+            3 | 5 => matches!(
+                radio.get_adc_mode(1),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SB Up, Down
+            4 => radio.get_adc_mode(1) == AdcInputMode::ThreePos, // SB Mid
+            6 | 8 => matches!(
+                radio.get_adc_mode(2),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SC Up, Down
+            7 => radio.get_adc_mode(2) == AdcInputMode::ThreePos, // SC Mid
+            9 | 10 => matches!(
+                radio.get_adc_mode(3),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SD
+            11 | 12 => radio.ext_switches != 0, // SE
+            13 | 14 => radio.ext_switches != 0, // SF
+            15 | 16 => radio.j4_sg_sh_en != 0, // SG
+            17 | 18 => radio.j4_sg_sh_en != 0, // SH
+            19 | 20 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(6),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWI
+            21 | 22 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(7),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWJ
+            23 | 24 => {
+                radio.ext_adc != 255
+                    && radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(8),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWK
+            25 | 26 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(9),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWL
+            27 | 28 => {
+                radio.ext_adc != 0
+                    && matches!(
+                        radio.get_adc_mode(10),
+                        AdcInputMode::TwoPos | AdcInputMode::ThreePos
+                    )
+            } // SWM
+            _ => false,
+        }
+    }
+
     #[inline]
     fn pre_init() {}
 
@@ -1324,6 +1627,71 @@ impl BoardProfile for PocketSpec {
     #[inline]
     fn set_j4_mode_enabled(_enabled: bool) {}
 
+    fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
+        match src {
+            0..=4 => true, // None, Roll, Pitch, Thr, Yaw
+            5 => radio.get_adc_mode(4).is_pot(), // S1
+            6 => radio.get_adc_mode(5).is_pot(), // S2
+            7 => matches!(
+                radio.get_adc_mode(0),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SA
+            8 => matches!(
+                radio.get_adc_mode(1),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SB
+            9 => matches!(
+                radio.get_adc_mode(2),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SC
+            10 => matches!(
+                radio.get_adc_mode(3),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SD
+            11 => true, // MAX constant
+            12..=15 => true, // CH1..CH4 primary flight channels
+            16..=29 => {
+                let ch_idx = (src - 12) as usize; // 4..17
+                let aux_idx = ch_idx - 4; // 0..13
+                if model.wing_tail_mix == 3 && ch_idx == 5 {
+                    return true;
+                }
+                if model.aux_channels[aux_idx] != 0 {
+                    return true;
+                }
+                model.mixes.iter().any(|m| m.target_ch == (ch_idx + 1) as u8)
+            }
+            30 => true, // Thr+
+            45..=49 => true, // GV1..GV5
+            _ => false,
+        }
+    }
+
+    fn is_switch_cond_available(radio: &RadioConfig, cond: u8) -> bool {
+        match cond {
+            0 => true, // Always ON
+            1 | 2 => matches!(
+                radio.get_adc_mode(0),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SA
+            3 | 5 => matches!(
+                radio.get_adc_mode(1),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SB Up, Down
+            4 => radio.get_adc_mode(1) == AdcInputMode::ThreePos, // SB Mid
+            6 | 8 => matches!(
+                radio.get_adc_mode(2),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SC Up, Down
+            7 => radio.get_adc_mode(2) == AdcInputMode::ThreePos, // SC Mid
+            9 | 10 => matches!(
+                radio.get_adc_mode(3),
+                AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
+            ), // SD
+            _ => false,
+        }
+    }
+
     #[inline]
     fn pre_init() {}
 
@@ -1404,8 +1772,11 @@ impl BoardProfile for PocketSpec {
 #[cfg(feature = "board-i6s")]
 pub type ActiveBoard = I6sSpec;
 
-#[cfg(all(not(feature = "board-i6s"), not(feature = "board-pocket")))]
+#[cfg(feature = "board-i6x")]
 pub type ActiveBoard = I6xSpec;
 
 #[cfg(feature = "board-pocket")]
 pub type ActiveBoard = PocketSpec;
+
+#[cfg(not(any(feature = "board-i6s", feature = "board-i6x", feature = "board-pocket")))]
+pub type ActiveBoard = I6xSpec;
