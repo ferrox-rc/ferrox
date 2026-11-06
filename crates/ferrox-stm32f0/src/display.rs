@@ -145,7 +145,7 @@ impl DisplayBus for St7567ParallelBus {
         self.delay_cycles(10_000);
     }
 
-    fn flush(&mut self, framebuffer: &[u8; 1024]) {
+    fn flush(&mut self, framebuffer: &[u8]) {
         let gpiob = unsafe { &*pac::GPIOB::ptr() };
         let gpiod = unsafe { &*pac::GPIOD::ptr() };
 

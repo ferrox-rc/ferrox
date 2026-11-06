@@ -30,8 +30,8 @@ pub trait DisplayBus {
     /// Initialize GPIOs and controller registers.
     fn init(&mut self);
 
-    /// Flush the 1024-byte framebuffer to the screen.
-    fn flush(&mut self, framebuffer: &[u8; 1024]);
+    /// Flush the framebuffer to the screen.
+    fn flush(&mut self, framebuffer: &[u8]);
 
     /// Set display contrast value (0..63).
     fn set_contrast(&mut self, contrast: u8);
@@ -46,7 +46,7 @@ pub struct NullDisplayBus;
 
 impl DisplayBus for NullDisplayBus {
     fn init(&mut self) {}
-    fn flush(&mut self, _framebuffer: &[u8; 1024]) {}
+    fn flush(&mut self, _framebuffer: &[u8]) {}
     fn set_contrast(&mut self, _contrast: u8) {}
     fn set_backlight_level(&mut self, _pct: u8) {}
 }
@@ -124,8 +124,15 @@ pub trait AdcDriver {
     /// Initialize ADC peripheral and autonomous DMA scanning.
     fn init(&mut self, ext_adc: bool);
 
+    /// Read raw 12-bit ADC values into the provided destination channel slice.
+    fn read_channels(&mut self, dest: &mut [u16]);
+
     /// Read the latest raw 12-bit ADC snapshot across all scanned channels.
-    fn read_raw(&mut self) -> [u16; MAX_ADC_CHANNELS];
+    fn read_raw(&mut self) -> [u16; MAX_ADC_CHANNELS] {
+        let mut buf = [2048u16; MAX_ADC_CHANNELS];
+        self.read_channels(&mut buf);
+        buf
+    }
 
     /// Block until the first full ADC conversion sequence finishes.
     fn wait_first_conversion(&mut self);
@@ -137,6 +144,9 @@ pub struct NullAdcDriver;
 
 impl AdcDriver for NullAdcDriver {
     fn init(&mut self, _ext_adc: bool) {}
+    fn read_channels(&mut self, dest: &mut [u16]) {
+        dest.fill(2048);
+    }
     fn read_raw(&mut self) -> [u16; MAX_ADC_CHANNELS] {
         [2048; MAX_ADC_CHANNELS]
     }

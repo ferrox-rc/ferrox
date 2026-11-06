@@ -126,6 +126,12 @@ impl AdcDriver for Stm32f0AdcDriver {
         }
     }
 
+    fn read_channels(&mut self, dest: &mut [u16]) {
+        let snapshot = self.read_raw();
+        let copy_len = dest.len().min(snapshot.len());
+        dest[..copy_len].copy_from_slice(&snapshot[..copy_len]);
+    }
+
     fn read_raw(&mut self) -> [u16; MAX_ADC_CHANNELS] {
         unsafe {
             let ch_count = *SCAN_CHANNELS.0.get();
