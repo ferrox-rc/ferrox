@@ -4,9 +4,11 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 static SYSTEM_MILLIS: AtomicU32 = AtomicU32::new(0);
 
-/// Initialize monotonic timekeeper (no-op on host/core, initialized by hardware HAL).
+/// Initialize monotonic timekeeper (delegates to hardware HAL SystemDriver).
 #[inline(always)]
-pub fn init() {}
+pub fn init() {
+    crate::chip::init_time();
+}
 
 /// Monotonic system uptime in milliseconds since boot.
 /// Lock-free, zero-overhead atomic read with Relaxed ordering.

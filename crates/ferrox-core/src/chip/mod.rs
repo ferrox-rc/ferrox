@@ -90,6 +90,13 @@ pub fn init_system_clock() {
     }
 }
 
+/// Initialize SysTick monotonic 1.000 ms timekeeper using registered SystemDriver.
+pub fn init_time() {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.init_time();
+    }
+}
+
 /// Check if the MCU was rebooted warm by the hardware watchdog or software reset,
 /// and clear the reset status flags.
 pub fn check_and_clear_reset_flags() -> bool {

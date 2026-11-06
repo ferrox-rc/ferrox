@@ -10,7 +10,6 @@ static mut TONE_OUTPUT: Option<&'static mut dyn ToneOutput> = None;
 
 /// Register the target MCU's hardware tone output driver.
 pub fn register_tone_output(output: &'static mut dyn ToneOutput) {
-    output.init();
     unsafe {
         TONE_OUTPUT = Some(output);
     }

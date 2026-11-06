@@ -117,14 +117,20 @@ pub fn test_set_j4_buttons(sg: bool, sh: bool) {
     TEST_J4_BUTTONS.store(val, core::sync::atomic::Ordering::Relaxed);
 }
 
+#[inline(always)]
+fn delay_cycles(n: u32) {
+    #[cfg(not(test))]
+    cortex_m::asm::delay(n);
+    #[cfg(test)]
+    let _ = n;
+}
+
 /// Check if the DFU bootloader key combination is held.
 pub fn is_dfu_requested(keys: u16) -> bool {
     #[cfg(feature = "board-i6s")]
     {
-        // On FS-i6S, hold Left + Right front buttons during power-on
-        let left_pressed = (keys & (1 << 9)) != 0;
-        let right_pressed = (keys & (1 << 10)) != 0;
-        left_pressed && right_pressed
+        // On FS-i6S, hold Left + Right front buttons during power-on (bits 10 and 11)
+        (keys & ((1 << 10) | (1 << 11))) == ((1 << 10) | (1 << 11))
     }
     #[cfg(not(feature = "board-i6s"))]
     {
@@ -149,8 +155,20 @@ pub fn check_sram_dfu_entry(profile: &McuProfile) {
 /// Check if DFU boot keys are pressed and jump to bootloader if requested.
 pub fn check_dfu_entry(profile: &McuProfile) {
     init_keys();
-    let keys = scan_keys();
-    if is_dfu_requested(keys) {
+
+    // Wait ~20ms for power rails and switch contacts to settle at power-on
+    delay_cycles(40_000);
+
+    let mut match_count = 0;
+    for _ in 0..5 {
+        let keys = scan_keys();
+        if is_dfu_requested(keys) {
+            match_count += 1;
+        }
+        delay_cycles(2_000);
+    }
+
+    if match_count >= 3 {
         chip::enter_dfu_bootloader(profile);
     }
 }

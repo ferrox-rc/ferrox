@@ -17,6 +17,7 @@ pub fn init() {
             .set_clock_source(cortex_m::peripheral::syst::SystClkSource::Core);
         p.SYST.enable_interrupt();
         p.SYST.enable_counter();
+        cortex_m::interrupt::enable();
     }
 }
 

@@ -13,7 +13,6 @@ static mut DISPLAY_BUS: Option<&'static mut dyn DisplayBus> = None;
 
 /// Register the target MCU's display bus and backlight driver.
 pub fn register_display_bus(bus: &'static mut dyn DisplayBus) {
-    bus.init();
     unsafe {
         DISPLAY_BUS = Some(bus);
     }
@@ -37,6 +36,11 @@ impl Default for St7567 {
 impl St7567 {
     /// Initialize framebuffer and clear display.
     pub fn new() -> Self {
+        unsafe {
+            if let Some(ref mut bus) = DISPLAY_BUS {
+                bus.init();
+            }
+        }
         let mut display = Self {
             framebuffer: [0u8; BUFFER_SIZE],
         };

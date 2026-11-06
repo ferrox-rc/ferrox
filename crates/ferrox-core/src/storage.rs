@@ -19,11 +19,7 @@ static mut STORAGE_BUS: Option<&'static mut dyn StorageBus> = None;
 
 /// Register the target MCU's non-volatile storage driver.
 pub fn register_storage_bus(bus: &'static mut dyn StorageBus) {
-    let ok = bus.init();
     unsafe {
-        EEPROM_STATUS.detected = ok;
-        EEPROM_STATUS.read_ok = ok;
-        EEPROM_STATUS.write_ok = ok;
         STORAGE_BUS = Some(bus);
     }
 }
