@@ -10,6 +10,8 @@ use crate::board::{ActiveBoard, BoardIdleHook, BoardProfile};
 use crate::buzzer::Buzzer;
 use crate::calib::CalibWizard;
 use crate::crsf;
+#[cfg(feature = "rf-dsm")]
+use crate::dsm;
 use crate::curve;
 use crate::display::St7567;
 use crate::input::{self, InputState, SwitchPos};
@@ -171,16 +173,20 @@ impl FlightPipeline {
             #[cfg(feature = "rf-dsm")]
             crate::board::RfProtocol::Dsm => {
                 crsf::set_enabled(false, 0, false);
-                rf::set_silenced(sim_mode);
-                if !sim_mode {
-                    // DSM protocol over MULTI-Module UART or internal RF
-                    let _sub_proto = active_model.dsm_sub_proto;
-                    // Channels are passed to RF subsystem or external module
-                    rf::set_channels(&rf_chs);
+                let dsm_active = !sim_mode;
+                dsm::set_enabled(dsm_active);
+                dsm::set_bind_mode(rf::is_binding());
+                rf::set_silenced(true);
+                if dsm_active {
+                    let sub_proto = crate::board::DsmSubProtocol::from_u8(active_model.dsm_sub_proto);
+                    dsm::update_link(now, &rf_chs, sub_proto);
+                    dsm::poll_telemetry(now);
                 }
             }
             crate::board::RfProtocol::Afhds2a | crate::board::RfProtocol::Cc2500 => {
                 crsf::set_enabled(false, 0, false);
+                #[cfg(feature = "rf-dsm")]
+                dsm::set_enabled(false);
                 rf::set_silenced(sim_mode);
                 if !sim_mode {
                     rf::set_channels(&rf_chs);
@@ -207,6 +213,28 @@ impl FlightPipeline {
                     last_vspd_ms: ct.last_vspd_ms,
                     last_rpm_ms: ct.last_rpm_ms,
                     last_temp_ms: ct.last_temp_ms,
+                    packets_sent: 0,
+                    packets_received: 0,
+                }
+            }
+            #[cfg(feature = "rf-dsm")]
+            crate::board::RfProtocol::Dsm => {
+                let dt = dsm::get_telemetry();
+                rf::afhds2a::TelemetryData {
+                    connected: dt.connected,
+                    rssi: dt.rssi_pct,
+                    rx_voltage_mv: dt.rx_voltage_mv,
+                    alt_m: 0,
+                    alt_dm: 0,
+                    vspeed_cms: 0,
+                    has_vspeed: false,
+                    rpm: 0,
+                    temp_c_x10: 0,
+                    last_rx_voltage_ms: if dt.connected { now } else { 0 },
+                    last_alt_ms: 0,
+                    last_vspd_ms: 0,
+                    last_rpm_ms: 0,
+                    last_temp_ms: 0,
                     packets_sent: 0,
                     packets_received: 0,
                 }
