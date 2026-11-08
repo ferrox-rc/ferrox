@@ -11,7 +11,7 @@
 | **RadioMaster Pocket** (`PocketSpec`) | STM32F407VG (Cortex-M4F) | **In Progress (`BoardProfile` Ready)** | Internal **ExpressLRS (CRSF)** or **CC2500** + External Nano Bay (**DSM / Multi**) |
 | **Future STM32F4 / H7 Handsets** | Cortex-M4F / Cortex-M7 | **Planned** | Declarative `BoardProfile` + modular `rf-*` feature selection |
 
-Supports modular RF protocols (**AFHDS 2A**, **CRSF / ExpressLRS** with native on-radio device configurator, **CC2500**, and **Spektrum DSM2 / DSMX** with optional Forward Programming), a zero-dependency direct PAC **USB 2.0 Full-Speed** stack (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** & **Electronic Power Management** (i6S), **Matrix Keypad** (i6X), **TIM15 Trainer Subsystem** (CPPM Out/In & Spektrum Satellite wireless trainer), and a fast **128×64 Monochrome LCD** engine.
+Supports modular RF protocols (**AFHDS 2A**, **CRSF / ExpressLRS** with native on-radio device configurator, **CC2500**, and **Spektrum DSM2 / DSMX** with optional Forward Programming), a zero-dependency direct PAC **USB 2.0 Full-Speed** stack (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** & **Electronic Power Management** (i6S), **Matrix Keypad** (i6X), **Trainer Subsystem** (CPPM Out/In & Spektrum Satellite wireless trainer), and a fast **128×64 Monochrome LCD** engine.
 
 ---
 

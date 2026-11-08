@@ -1176,7 +1176,7 @@ pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> !
     // Initialize CRSF / ExpressLRS expansion bay peripheral
     crsf::init(storage.radio.ext_module_pwr == 0);
 
-    // Initialize Trainer / PPM subsystem (TIM15, PF9 In, PF10 Out)
+    // Initialize Trainer / PPM subsystem (PPM Out generator and Student PPM In capture)
     trainer::init(
         storage.radio.is_ppm_out_enabled(),
         storage.radio.is_ppm_in_enabled(),
