@@ -76,16 +76,48 @@ pub fn update_dual_rate(
                 }
             }
             2 => {
-                adjust_clamped_u8(&mut storage.active_model.dr_high[axis], 50, 100, 5, keys.up, keys.down, buzzer);
+                adjust_clamped_u8(
+                    &mut storage.active_model.dr_high[axis],
+                    50,
+                    100,
+                    5,
+                    keys.up,
+                    keys.down,
+                    buzzer,
+                );
             }
             3 => {
-                adjust_clamped_u8(&mut storage.active_model.dr_low[axis], 30, 100, 5, keys.up, keys.down, buzzer);
+                adjust_clamped_u8(
+                    &mut storage.active_model.dr_low[axis],
+                    30,
+                    100,
+                    5,
+                    keys.up,
+                    keys.down,
+                    buzzer,
+                );
             }
             4 => {
-                adjust_clamped_i8(&mut storage.active_model.expo_high[axis], -100, 100, 5, keys.up, keys.down, buzzer);
+                adjust_clamped_i8(
+                    &mut storage.active_model.expo_high[axis],
+                    -100,
+                    100,
+                    5,
+                    keys.up,
+                    keys.down,
+                    buzzer,
+                );
             }
             5 => {
-                adjust_clamped_i8(&mut storage.active_model.expo_low[axis], -100, 100, 5, keys.up, keys.down, buzzer);
+                adjust_clamped_i8(
+                    &mut storage.active_model.expo_low[axis],
+                    -100,
+                    100,
+                    5,
+                    keys.up,
+                    keys.down,
+                    buzzer,
+                );
             }
             _ => {}
         }
@@ -850,7 +882,7 @@ pub fn update_global_vars(
             let gvar_item_idx = if has_diff { 2 } else { 1 };
             ctrl.state = MenuState::WingMixer;
             ctrl.selected_item = gvar_item_idx;
-            ctrl.scroll_offset = gvar_item_idx.saturating_sub(3);
+            ctrl.scroll_offset = gvar_item_idx.saturating_sub(GVAR_COUNT);
             ctrl.waiting_release = true;
             buzzer.click();
             return;
