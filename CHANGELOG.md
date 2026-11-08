@@ -5,6 +5,22 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc2] - 2026-11-08
+
+### Added
+- **Hardware-Agnostic HAL Extraction (`crates/ferrox-stm32f0`)**:
+  - Extracted all STM32F072 / APM32F072 PAC drivers into a dedicated `crates/ferrox-stm32f0` crate (`adc`, `buzzer`, `chip`, `display`, `keys`, `power`, `rf`, `storage`, `time`, `touch`, `trainer`, `uart`, `usb`, `watchdog`).
+  - Introduced `PlatformContext` ([`crates/ferrox-core/src/hal.rs`](crates/ferrox-core/src/hal.rs)) for explicit hardware driver injection at startup (`create_i6x_context`, `create_i6s_context`), leaving `ferrox-core` completely free of target MCU PAC dependencies.
+  - Generalized `DisplayBus` and `AdcDriver` HAL contracts to slice-based interfaces so `ferrox-core` makes no target-specific assumptions about display geometry or analog channel counts.
+
+### Fixed
+- **DFU Bootloader Entry Across Soft Reset ([`crates/ferrox-stm32f0/src/chip.rs`](crates/ferrox-stm32f0/src/chip.rs), [`crates/ferrox-core/src/boot.rs`](crates/ferrox-core/src/boot.rs))**:
+  - Relocated the retained DFU magic flag (`0xDEAD_BEEF`) from hardcoded top-of-SRAM (`0x2000_3FF0`) into a dedicated `.uninit` section (`DFU_RETAINED_FLAG`), preventing the larger `PlatformContext` startup stack frame from overwriting the flag during `SCB::sys_reset()`.
+  - Rendered the `BOOTLOADER` splash screen on both soft-reset and cold-boot key-combo DFU entry while preserving `GPIOB..GPIOF` clocks (`PB15` power latch on FS-i6S, `PB4` LCD `RST`, and `PC9`/`PF3` LCD backlight) in `rcc_deinit()`.
+- **System Initialization & UID Read Fixes ([`crates/ferrox-stm32f0/src/chip.rs`](crates/ferrox-stm32f0/src/chip.rs), [`crates/ferrox-core/src/runtime.rs`](crates/ferrox-core/src/runtime.rs))**:
+  - Fixed SysTick monotonic timer initialization ordering and deferred peripheral bus initialization until after `PlatformContext` registration.
+  - Resolved recursive call in `Stm32f0SystemDriver::read_uid`.
+
 ## [1.0.0-rc1] - 2026-11-03
 
 ### Added
