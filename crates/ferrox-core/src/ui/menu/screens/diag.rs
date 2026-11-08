@@ -250,8 +250,18 @@ pub fn update_system_info(
         #[cfg(not(test))]
         {
             let start = crate::time::millis();
-            while crate::time::millis().wrapping_sub(start) < 120 {
+            let mut last = start;
+            loop {
                 crate::watchdog::feed();
+                let now = crate::time::millis();
+                let dt = now.wrapping_sub(last) as u16;
+                if dt > 0 {
+                    last = now;
+                    buzzer.tick(dt);
+                }
+                if now.wrapping_sub(start) >= 120 {
+                    break;
+                }
             }
         }
         crate::boot::reboot_to_dfu();

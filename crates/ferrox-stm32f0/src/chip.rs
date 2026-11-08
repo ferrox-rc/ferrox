@@ -17,7 +17,12 @@ impl Default for Stm32f0SystemDriver {
 }
 
 pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
-pub const DFU_FLAG_ADDR: *mut u32 = 0x2000_3FF0 as *mut u32;
+
+/// Retained magic word in `.uninit` SRAM to signal DFU entry across a software reset.
+/// Stored in `.uninit` so startup code does not zero it and the initial stack frame at
+/// `_stack_start` (`0x2000_4000`) does not overwrite it before `check_sram_dfu_entry()`.
+#[link_section = ".uninit"]
+static mut DFU_RETAINED_FLAG: u32 = 0;
 
 /// Memory addresses for supported STM32F0 / APM32F0 chips.
 #[cfg(feature = "apm32")]
@@ -73,28 +78,26 @@ impl SystemDriver for Stm32f0SystemDriver {
 
     fn has_retained_dfu_flag(&mut self) -> bool {
         unsafe {
-            let flag = core::ptr::read_volatile(DFU_FLAG_ADDR);
+            let flag = core::ptr::read_volatile(core::ptr::addr_of!(DFU_RETAINED_FLAG));
             flag == DFU_MAGIC_FLAG
         }
     }
 
     fn set_retained_dfu_flag(&mut self) {
         unsafe {
-            core::ptr::write_volatile(DFU_FLAG_ADDR, DFU_MAGIC_FLAG);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG), DFU_MAGIC_FLAG);
         }
     }
 
     fn clear_retained_dfu_flag(&mut self) {
         unsafe {
-            core::ptr::write_volatile(DFU_FLAG_ADDR, 0);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG), 0);
         }
     }
 
     fn reboot_to_dfu(&mut self) -> ! {
-        unsafe {
-            core::ptr::write_volatile(DFU_FLAG_ADDR, DFU_MAGIC_FLAG);
-            cortex_m::peripheral::SCB::sys_reset();
-        }
+        self.set_retained_dfu_flag();
+        cortex_m::peripheral::SCB::sys_reset()
     }
 
     fn enter_dfu_bootloader(&mut self) -> ! {
@@ -176,6 +179,18 @@ pub fn check_and_clear_reset_flags() -> bool {
 /// Reset RCC to default power-on state (HSI 8MHz, no PLL, peripheral clocks disabled).
 unsafe fn rcc_deinit() {
     let rcc = &*pac::RCC::ptr();
+    let gpioc = &*pac::GPIOC::ptr();
+    let gpiof = &*pac::GPIOF::ptr();
+
+    // Switch PC9 (LCD backlight) from TIM3_CH4 AF to steady GPIO output HIGH
+    // and ensure PF3 (stock backlight) stays HIGH before TIM3 is reset on APB1.
+    rcc.ahbenr
+        .modify(|r, w| w.bits(r.bits() | (1 << 19) | (1 << 22)));
+    gpioc
+        .moder
+        .modify(|r, w| w.bits((r.bits() & !(3 << 18)) | (1 << 18)));
+    gpioc.bsrr.write(|w| w.bits(1 << 9));
+    gpiof.bsrr.write(|w| w.bits(1 << 3));
 
     // Turn on HSI
     rcc.cr.modify(|_, w| w.hsion().set_bit());
@@ -203,8 +218,11 @@ unsafe fn rcc_deinit() {
     rcc.apb1rstr.write(|w| w.bits(0xFFFF_FFFF));
     rcc.apb1rstr.write(|w| w.bits(0x0000_0000));
 
-    // Reset peripheral clocks except SYSCFG & SRAM
-    rcc.ahbenr.write(|w| w.bits(0x0000_0014)); // SRAMEN + FLITFEN
+    // Reset peripheral clocks except SYSCFG, SRAM, and GPIOB..GPIOF (preserving PB15 power latch,
+    // PB4 LCD RST, and PC9/PF3 LCD backlight while leaving GPIOA in reset state for USB DFU).
+    rcc.ahbenr.write(|w| {
+        w.bits(0x0000_0014 | (1 << 18) | (1 << 19) | (1 << 20) | (1 << 21) | (1 << 22))
+    });
     rcc.apb2enr.write(|w| w.bits(0x0000_0001)); // SYSCFGEN
     rcc.apb1enr.write(|w| w.bits(0x0000_0000));
 }
