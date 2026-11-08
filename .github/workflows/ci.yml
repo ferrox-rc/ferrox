@@ -38,7 +38,9 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run clippy (-D warnings)
-        run: cargo clippy --target thumbv6m-none-eabi -- -D warnings
+        run: |
+          cargo clippy -p ferrox-i6s --target thumbv6m-none-eabi -- -D warnings
+          cargo clippy -p ferrox-i6x --target thumbv6m-none-eabi -- -D warnings
 
       - name: Run host unit tests
         run: |
@@ -55,5 +57,5 @@ jobs:
 
       - name: Check binary footprints
         run: |
-          cargo size --bin ferrox-i6s --release -- -A
-          cargo size --bin ferrox-i6x --release -- -A
+          cargo size -p ferrox-i6s --bin ferrox-i6s --release -- -A
+          cargo size -p ferrox-i6x --bin ferrox-i6x --release -- -A

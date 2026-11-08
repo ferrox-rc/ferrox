@@ -504,6 +504,7 @@ pub struct PlatformContext<'a> {
 
 impl<'a> PlatformContext<'a> {
     /// Register all drivers in this context with the runtime subsystems.
+    #[allow(clippy::missing_transmute_annotations)]
     pub fn register(self) {
         crate::chip::register_system_driver(unsafe { core::mem::transmute(self.system) });
         crate::buzzer::register_tone_output(unsafe { core::mem::transmute(self.tone) });
