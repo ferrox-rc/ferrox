@@ -53,7 +53,7 @@ impl PpmDecoder {
         }
     }
 
-    /// Process an edge-to-edge pulse duration in microseconds (e.g. from TIM15_CH1 capture delta).
+    /// Process an edge-to-edge pulse duration in microseconds (e.g. from timer input capture delta).
     pub fn process_pulse(&mut self, pulse_us: u16) {
         if pulse_us >= MIN_SYNC_GAP_US && (pulse_us as u32) < MAX_FRAME_GAP_US {
             // Valid frame sync gap detected: commit frame if we received at least 4 channels
