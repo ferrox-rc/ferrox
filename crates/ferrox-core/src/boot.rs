@@ -129,11 +129,18 @@ pub fn is_dfu_requested(keys: u16) -> bool {
     }
 }
 
-/// Check if high SRAM flag requests a DFU jump across soft reboot.
+fn enter_dfu_with_splash() -> ! {
+    let mut lcd = crate::display::st7567::St7567::new();
+    crate::ui::splash::draw_bootloader(&mut lcd);
+    lcd.flush();
+    chip::enter_dfu_bootloader();
+}
+
+/// Check if retained `.uninit` SRAM flag requests a DFU jump across soft reboot.
 pub fn check_sram_dfu_entry() {
     if chip::has_retained_dfu_flag() {
         chip::clear_retained_dfu_flag();
-        chip::enter_dfu_bootloader();
+        enter_dfu_with_splash();
     }
 }
 
@@ -154,7 +161,7 @@ pub fn check_dfu_entry() {
     }
 
     if match_count >= 3 {
-        chip::enter_dfu_bootloader();
+        enter_dfu_with_splash();
     }
 }
 
