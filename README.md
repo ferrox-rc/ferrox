@@ -1,5 +1,10 @@
 # ferrox
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20Ferrox%20RC-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Gw4JS7skCq)
+[![Release](https://img.shields.io/github/v/release/ferrox-rc/ferrox?include_prereleases&style=for-the-badge&label=Release)](https://github.com/ferrox-rc/ferrox/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/ferrox-rc/ferrox/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ferrox-rc/ferrox/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
+
 **A universal, high-performance, bare-metal RC transmitter operating system written in `no_std` Rust.**
 
 `ferrox` is a multi-radio firmware monorepo built around **`ferrox-core`**, a hardware-agnostic flight control, mixing, telemetry, and UI engine parameterized by compile-time [`BoardProfile`](crates/ferrox-core/src/board.rs) specialization. Originally forged on the **FlySky FS-i6X** and **FlySky FS-i6S**, `ferrox` is architected to bring deterministic, memory-safe Rust firmware to a growing lineup of RC transmitters across the open-source ecosystem:
