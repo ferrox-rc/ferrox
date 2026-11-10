@@ -192,6 +192,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrox-pocket"
+version = "1.0.0-rc.2"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "ferrox-core",
+ "ferrox-stm32f4",
+ "stm32f4",
+]
+
+[[package]]
 name = "ferrox-stm32f0"
 version = "1.0.0-rc.2"
 dependencies = [
@@ -200,6 +211,16 @@ dependencies = [
  "embedded-graphics",
  "ferrox-core",
  "stm32f0xx-hal",
+]
+
+[[package]]
+name = "ferrox-stm32f4"
+version = "1.0.0-rc.2"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "ferrox-core",
+ "stm32f4",
 ]
 
 [[package]]
@@ -324,6 +345,18 @@ dependencies = [
  "nb 1.1.0",
  "stm32f0",
  "void",
+]
+
+[[package]]
+name = "stm32f4"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb94729242cd1aebe6dab42a2ca0131985ae93bc3ab2751b680df724bb35528d"
+dependencies = [
+ "bare-metal 1.0.0",
+ "cortex-m",
+ "cortex-m-rt",
+ "vcell",
 ]
 
 [[package]]
