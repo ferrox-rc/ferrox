@@ -161,9 +161,21 @@ pub trait KeyDriver {
     /// Scan all physical buttons and return 16-bit key bitmask.
     fn scan_keys(&mut self) -> u16;
 
-    /// Read auxiliary external digital switches (e.g. SE/SF on PC12/PC15 or SG/SH).
-    fn read_ext_switches(&mut self) -> (crate::input::SwitchPos, crate::input::SwitchPos) {
-        (crate::input::SwitchPos::Up, crate::input::SwitchPos::Up)
+    /// Read auxiliary external digital switches (e.g. SE, SF, SG, SH).
+    fn read_ext_switches(
+        &mut self,
+    ) -> (
+        crate::input::SwitchPos,
+        crate::input::SwitchPos,
+        crate::input::SwitchPos,
+        crate::input::SwitchPos,
+    ) {
+        (
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+        )
     }
 
     /// Read front left and right buttons (FS-i6S).

@@ -17,10 +17,13 @@ rustflags = [
 build-i6s = "build --release -p ferrox-i6s"
 build-i6x = "build --release -p ferrox-i6x"
 build-pocket = "build --release -p ferrox-pocket --target thumbv7em-none-eabihf"
+build-boxer = "build --release -p ferrox-pocket --no-default-features --features boxer --target thumbv7em-none-eabihf"
+build-zorro = "build --release -p ferrox-pocket --no-default-features --features zorro --target thumbv7em-none-eabihf"
+build-tx12 = "build --release -p ferrox-pocket --no-default-features --features tx12 --target thumbv7em-none-eabihf"
+build-qx7 = "build --release -p ferrox-pocket --no-default-features --features qx7 --target thumbv7em-none-eabihf"
+build-tprov2 = "build --release -p ferrox-pocket --no-default-features --features tprov2 --target thumbv7em-none-eabihf"
 test-host-i6s = "test -p ferrox-core --features board-i6s --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 test-host-i6x = "test -p ferrox-core --features board-i6x --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
-test-host-pocket = "test -p ferrox-core --features board-pocket --lib --target x86_64-unknown-linux-gnu -- --test-threads=1 --skip test_dynamic_mixer_source_and_switch_availability"
+test-host-pocket = "test -p ferrox-core --features board-pocket --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 test-host = "test-host-i6s"
 test-all = "test-host-i6s"
-
-

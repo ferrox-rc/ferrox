@@ -2061,9 +2061,12 @@ mod tests {
         assert!(storage.is_source_available(11));
         assert!(storage.is_source_available(30));
 
-        // Pots VRA & VRB are available by default
+        // Pots VRA & VRB are available by default (Pocket has no VRB / S2)
         assert!(storage.is_source_available(5));
+        #[cfg(not(feature = "board-pocket"))]
         assert!(storage.is_source_available(6));
+        #[cfg(feature = "board-pocket")]
+        assert!(!storage.is_source_available(6));
 
         // Switches SA..SD are available by default
         assert!(storage.is_source_available(7)); // SA
@@ -2071,57 +2074,60 @@ mod tests {
         assert!(storage.is_source_available(9)); // SC
         assert!(storage.is_source_available(10)); // SD
 
-        // Extended switches SE..SH and SWI..SWM / VRC..VRG unavailable by default
-        assert!(!storage.is_source_available(31)); // SE
-        assert!(!storage.is_source_available(32)); // SF
-        assert!(!storage.is_source_available(33)); // SG
-        assert!(!storage.is_source_available(34)); // SH
-        assert!(!storage.is_source_available(35)); // SWI
-        assert!(!storage.is_source_available(36)); // SWJ
-        assert!(!storage.is_source_available(37)); // VRC
-        assert!(!storage.is_source_available(38)); // VRD
-        assert!(!storage.is_source_available(39)); // VRE
-        assert!(!storage.is_source_available(40)); // VRF
-        assert!(!storage.is_source_available(41)); // VRG
-        assert!(!storage.is_source_available(42)); // SWK
-        assert!(!storage.is_source_available(43)); // SWL
-        assert!(!storage.is_source_available(44)); // SWM
+        #[cfg(any(feature = "board-i6x", feature = "board-i6s"))]
+        {
+            // Extended switches SE..SH and SWI..SWM / VRC..VRG unavailable by default
+            assert!(!storage.is_source_available(31)); // SE
+            assert!(!storage.is_source_available(32)); // SF
+            assert!(!storage.is_source_available(33)); // SG
+            assert!(!storage.is_source_available(34)); // SH
+            assert!(!storage.is_source_available(35)); // SWI
+            assert!(!storage.is_source_available(36)); // SWJ
+            assert!(!storage.is_source_available(37)); // VRC
+            assert!(!storage.is_source_available(38)); // VRD
+            assert!(!storage.is_source_available(39)); // VRE
+            assert!(!storage.is_source_available(40)); // VRF
+            assert!(!storage.is_source_available(41)); // VRG
+            assert!(!storage.is_source_available(42)); // SWK
+            assert!(!storage.is_source_available(43)); // SWL
+            assert!(!storage.is_source_available(44)); // SWM
 
-        // Enable ext_adc
-        storage.radio.ext_adc = 1;
-        assert!(storage.is_source_available(37)); // VRC
-        assert!(storage.is_source_available(38)); // VRD
-        assert!(storage.is_source_available(39)); // VRE
-        assert!(storage.is_source_available(40)); // VRF
-        assert!(storage.is_source_available(41)); // VRG
-        storage.radio.set_adc_mode_val(10, 2); // 2-pos switch on PC5 (2 = TwoPos)
-        assert!(!storage.is_source_available(41)); // VRG is now switch, not pot
-        assert!(storage.is_source_available(44)); // SWM
-        assert!(storage.is_switch_cond_available(27)); // SWM^
-        assert!(storage.is_switch_cond_available(28)); // SWMv
+            // Enable ext_adc
+            storage.radio.ext_adc = 1;
+            assert!(storage.is_source_available(37)); // VRC
+            assert!(storage.is_source_available(38)); // VRD
+            assert!(storage.is_source_available(39)); // VRE
+            assert!(storage.is_source_available(40)); // VRF
+            assert!(storage.is_source_available(41)); // VRG
+            storage.radio.set_adc_mode_val(10, 2); // 2-pos switch on PC5 (2 = TwoPos)
+            assert!(!storage.is_source_available(41)); // VRG is now switch, not pot
+            assert!(storage.is_source_available(44)); // SWM
+            assert!(storage.is_switch_cond_available(27)); // SWM^
+            assert!(storage.is_switch_cond_available(28)); // SWMv
 
-        // Turn PC5 to OFF (1 = Off)
-        storage.radio.set_adc_mode_val(10, 1);
-        assert!(!storage.is_source_available(41)); // VRG not available when Off
-        assert!(!storage.is_source_available(44)); // SWM not available when Off
-        assert!(!storage.is_switch_cond_available(27)); // SWM^ not available when Off
-        assert!(!storage.is_switch_cond_available(28)); // SWMv not available when Off
-        assert!(!storage.is_aux_source_available(41)); // VRG not available in AUX CHANNELS
-        assert!(!storage.is_aux_source_available(44)); // SWM not available in AUX CHANNELS
+            // Turn PC5 to OFF (1 = Off)
+            storage.radio.set_adc_mode_val(10, 1);
+            assert!(!storage.is_source_available(41)); // VRG not available when Off
+            assert!(!storage.is_source_available(44)); // SWM not available when Off
+            assert!(!storage.is_switch_cond_available(27)); // SWM^ not available when Off
+            assert!(!storage.is_switch_cond_available(28)); // SWMv not available when Off
+            assert!(!storage.is_aux_source_available(41)); // VRG not available in AUX CHANNELS
+            assert!(!storage.is_aux_source_available(44)); // SWM not available in AUX CHANNELS
 
-        // Enable ext_switches
-        storage.radio.ext_switches = 1;
-        assert!(storage.is_source_available(31)); // SE
-        assert!(storage.is_source_available(32)); // SF
-        assert!(storage.is_switch_cond_available(11)); // SE^
-        assert!(storage.is_switch_cond_available(14)); // SFv
+            // Enable ext_switches
+            storage.radio.ext_switches = 1;
+            assert!(storage.is_source_available(31)); // SE
+            assert!(storage.is_source_available(32)); // SF
+            assert!(storage.is_switch_cond_available(11)); // SE^
+            assert!(storage.is_switch_cond_available(14)); // SFv
 
-        // Enable SG/SH
-        storage.radio.j4_sg_sh_en = 1;
-        assert!(storage.is_source_available(33)); // SG
-        assert!(storage.is_source_available(34)); // SH
-        assert!(storage.is_switch_cond_available(15)); // SG^
-        assert!(storage.is_switch_cond_available(18)); // SHv
+            // Enable SG/SH
+            storage.radio.j4_sg_sh_en = 1;
+            assert!(storage.is_source_available(33)); // SG
+            assert!(storage.is_source_available(34)); // SH
+            assert!(storage.is_switch_cond_available(15)); // SG^
+            assert!(storage.is_switch_cond_available(18)); // SHv
+        }
 
         // Channels: default model has aux_channels [7, 8, 5, 6, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0]
         // CH5..CH10 are configured (sources 16..21)

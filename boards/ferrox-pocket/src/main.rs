@@ -39,6 +39,6 @@ use cortex_m_rt::entry;
 
 #[entry]
 fn main() -> ! {
-    let ctx = ferrox_stm32f4::create_pocket_context();
+    let ctx = ferrox_stm32f4::create_active_context();
     ferrox_core::runtime::run(ctx, core::ptr::addr_of_mut!(PANIC_COUNT))
 }

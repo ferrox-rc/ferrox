@@ -1,12 +1,19 @@
+use core::marker::PhantomData;
 use ferrox_core::display::st7567::WIDTH;
 use ferrox_core::hal::DisplayBus;
 use stm32f4::stm32f407 as pac;
 
-pub struct St7567SpiBus;
+use crate::descriptor::{PocketHal, Qx7HalDescriptor};
 
-impl St7567SpiBus {
+pub struct St7567SpiBus<H: Qx7HalDescriptor = PocketHal> {
+    _phantom: PhantomData<H>,
+}
+
+impl<H: Qx7HalDescriptor> St7567SpiBus<H> {
     pub const fn new() -> Self {
-        Self
+        Self {
+            _phantom: PhantomData,
+        }
     }
 
     #[inline(always)]
@@ -53,13 +60,13 @@ impl St7567SpiBus {
     }
 }
 
-impl Default for St7567SpiBus {
+impl<H: Qx7HalDescriptor> Default for St7567SpiBus<H> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DisplayBus for St7567SpiBus {
+impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
     fn init(&mut self) {
         let rcc = unsafe { &*pac::RCC::ptr() };
         let gpioa = unsafe { &*pac::GPIOA::ptr() };
@@ -137,11 +144,9 @@ impl DisplayBus for St7567SpiBus {
             tim4.psc.write(|w| w.bits(83));
             tim4.arr.write(|w| w.bits(999));
             tim4.ccr2().write(|w| w.bits(999)); // Initial 100% duty
-            // CCMR1: OC2M = 0b110 (PWM Mode 1), OC2PE = 1
             tim4.ccmr1_output().modify(|r, w| {
                 w.bits((r.bits() & !(0x7F << 8)) | (0x06 << 12) | (1 << 11))
             });
-            // CCER: CC2E = 1
             tim4.ccer.modify(|r, w| w.bits(r.bits() | (1 << 4)));
             tim4.egr.write(|w| w.bits(1));
             tim4.cr1.modify(|r, w| w.bits(r.bits() | 0x01)); // CEN
@@ -153,12 +158,15 @@ impl DisplayBus for St7567SpiBus {
             self.delay_cycles(168_000 * 50); // ~50ms
         }
 
-        // 9. ST7567 Controller Initialization Sequence for RadioMaster Pocket
-        // Pocket has inverted screen mounting: SEG_NORMAL (0xA0) + COM_REVERSE (0xC8)
+        // 9. ST7567 Controller Initialization Sequence
+        let seg_cmd = if H::LCD_HORIZ_INVERT { 0xA1 } else { 0xA0 };
+        let com_cmd = if H::LCD_VERT_INVERT { 0xC8 } else { 0xC0 };
+        let contrast_val = (0x1C as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 0x3F) as u8;
+
         self.write_cmd(0xE2); // Soft reset
         self.delay_cycles(168_000 * 10);
-        self.write_cmd(0xA0); // Set seg (normal)
-        self.write_cmd(0xC8); // Set com (reversed)
+        self.write_cmd(seg_cmd);
+        self.write_cmd(com_cmd);
         self.write_cmd(0xF8); // Set booster ratio
         self.write_cmd(0x00); // 5x
         self.write_cmd(0xA3); // Bias = 1/6
@@ -166,37 +174,36 @@ impl DisplayBus for St7567SpiBus {
         self.write_cmd(0x2F); // Power circuits ON
         self.write_cmd(0x24); // Internal pump control
         self.write_cmd(0x81); // Set contrast command
-        self.write_cmd(0x1C); // Default Vop/contrast
+        self.write_cmd(contrast_val);
         self.write_cmd(0xA6); // Normal display (not inverse)
         self.write_cmd(0xAF); // Display ON
         self.delay_cycles(168_000 * 10);
     }
 
     fn flush(&mut self, framebuffer: &[u8]) {
-        for page in 0..8 {
-            // Set Column Address MSB = 0, Page Address, Column Address LSB = 0 (Pocket starts at 0x00)
-            self.write_cmd(0x10);
-            self.write_cmd(0xB0 | page as u8);
-            self.write_cmd(0x00);
+        let col_offset: u8 = if H::LCD_HORIZ_INVERT { 4 } else { 0 };
 
-            let start = page * WIDTH;
-            let end = start + WIDTH;
-            for &byte in &framebuffer[start..end] {
-                self.write_byte(byte, true);
+        for page in 0..8 {
+            self.write_cmd(0x10 | (col_offset >> 4));
+            self.write_cmd(0xB0 | page as u8);
+            self.write_cmd(col_offset & 0x0F);
+
+            let page_offset = page * WIDTH;
+            for x in 0..WIDTH {
+                self.write_byte(framebuffer[page_offset + x], true);
             }
         }
     }
 
     fn set_contrast(&mut self, contrast: u8) {
-        // EdgeTX applies LCD_CONTRAST_OFFSET = -10 on RadioMaster Pocket
-        let val = contrast.saturating_sub(10).clamp(5, 60);
+        let val = (contrast.min(63) as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 63) as u8;
         self.write_cmd(0x81);
         self.write_cmd(val);
     }
 
     fn set_backlight_level(&mut self, pct: u8) {
-        let tim4 = unsafe { &*pac::TIM4::ptr() };
         let duty = (pct.min(100) as u32 * 999) / 100;
+        let tim4 = unsafe { &*pac::TIM4::ptr() };
         tim4.ccr2().write(|w| unsafe { w.bits(duty) });
     }
 }

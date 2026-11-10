@@ -12,12 +12,18 @@ test = false
 bench = false
 
 [dependencies]
-ferrox-core = { path = "../../crates/ferrox-core", default-features = false, features = ["board-pocket"] }
-ferrox-stm32f4 = { path = "../../crates/ferrox-stm32f4" }
+ferrox-core = { path = "../../crates/ferrox-core", default-features = false }
+ferrox-stm32f4 = { path = "../../crates/ferrox-stm32f4", default-features = false }
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7"
 stm32f4 = { version = "0.15", features = ["stm32f407", "rt"] }
 
 [features]
-default = []
+default = ["pocket"]
+pocket = ["ferrox-core/board-pocket", "ferrox-stm32f4/board-pocket"]
+boxer = ["ferrox-core/board-boxer", "ferrox-stm32f4/board-boxer"]
+zorro = ["ferrox-core/board-zorro", "ferrox-stm32f4/board-zorro"]
+tx12 = ["ferrox-core/board-tx12", "ferrox-stm32f4/board-tx12"]
+qx7 = ["ferrox-core/board-qx7", "ferrox-stm32f4/board-qx7"]
+tprov2 = ["ferrox-core/board-tprov2", "ferrox-stm32f4/board-tprov2"]
 edgetx-bootloader = ["ferrox-stm32f4/edgetx-bootloader"]

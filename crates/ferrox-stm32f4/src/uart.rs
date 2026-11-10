@@ -1,31 +1,37 @@
+use core::marker::PhantomData;
 use ferrox_core::hal::SerialPort;
 use stm32f4::stm32f407 as pac;
+
+use crate::descriptor::{PocketHal, Qx7HalDescriptor};
 
 const RX_BUF_SIZE: usize = 256;
 static mut RX_DMA_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
 static mut RX_TAIL: usize = 0;
 
-pub struct PocketSerialPort {
+pub struct PocketSerialPort<H: Qx7HalDescriptor = PocketHal> {
     active: bool,
+    _phantom: PhantomData<H>,
 }
 
-impl PocketSerialPort {
+impl<H: Qx7HalDescriptor> PocketSerialPort<H> {
     pub const fn new() -> Self {
-        Self { active: false }
+        Self {
+            active: false,
+            _phantom: PhantomData,
+        }
     }
 }
 
-impl Default for PocketSerialPort {
+impl<H: Qx7HalDescriptor> Default for PocketSerialPort<H> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SerialPort for PocketSerialPort {
+impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
     fn init(&mut self, _active_high: bool) {
         let rcc = unsafe { &*pac::RCC::ptr() };
         let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        let gpioc = unsafe { &*pac::GPIOC::ptr() };
         let gpiod = unsafe { &*pac::GPIOD::ptr() };
 
         unsafe {
@@ -35,17 +41,13 @@ impl SerialPort for PocketSerialPort {
             });
             rcc.apb2enr.modify(|r, w| w.bits(r.bits() | (1 << 4)));
 
-            // PB1 (INTMODULE_BOOTCMD): GPIO Output, driven LOW (normal operation)
-            gpiob
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 2)) | (0x01 << 2)));
-            gpiob.bsrr.write(|w| w.bits(1 << (1 + 16))); // PB1 LOW
+            // Internal RF Boot pin (if present): GPIO Output, driven LOW (normal operation)
+            if let Some(boot) = H::INT_RF_BOOTCMD {
+                boot.enable_clock_and_output(false);
+            }
 
-            // PC4 (INTMODULE_PWR): GPIO Output, default OFF
-            gpioc
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 8)) | (0x01 << 8)));
-            gpioc.bsrr.write(|w| w.bits(1 << (4 + 16))); // PC4 LOW
+            // Internal RF Power pin: GPIO Output, default OFF
+            H::INT_RF_PWR.enable_clock_and_output(false);
 
             // PD8 (EXTMODULE_PWR): GPIO Output, default OFF
             gpiod
@@ -122,19 +124,20 @@ impl SerialPort for PocketSerialPort {
                 .write(|w| w.bits(core::ptr::addr_of_mut!(RX_DMA_BUF) as u32));
             stream2.ndtr.write(|w| w.bits(RX_BUF_SIZE as u32));
 
-            // CHSEL = 4, MINC = 1, CIRC = 1, EN = 1
+            // CHSEL = 4, MINC = 1, CIRC = 1, PL = 01 (Medium), EN = 1
             stream2.cr.write(|w| {
                 w.bits(
-                    (4 << 25)  // Channel 4
-                    | (1 << 10) // MINC
-                    | (1 << 8)  // CIRC
+                    (4 << 25)      // Channel 4
+                    | (0x01 << 16) // Priority Medium
+                    | (1 << 10)    // MINC
+                    | (1 << 8)     // CIRC
                     | (1 << 0), // EN
                 )
             });
 
             RX_TAIL = 0;
 
-            // Enable USART1: UE=1, TE=1, RE=1 + cr1_extra
+            // Enable USART1: UE = 1, TE = 1, RE = 1
             usart1
                 .cr1
                 .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
@@ -144,47 +147,46 @@ impl SerialPort for PocketSerialPort {
     }
 
     fn set_module_power(&mut self, enabled: bool) {
-        let gpioc = unsafe { &*pac::GPIOC::ptr() };
-        let gpiod = unsafe { &*pac::GPIOD::ptr() };
-        unsafe {
-            if enabled {
-                gpioc.bsrr.write(|w| w.bits(1 << 4)); // PC4 HIGH (Internal RF ON)
-                gpiod.bsrr.write(|w| w.bits(1 << 8)); // PD8 HIGH (External Bay ON)
-            } else {
-                gpioc.bsrr.write(|w| w.bits(1 << (4 + 16))); // PC4 LOW
-                gpiod.bsrr.write(|w| w.bits(1 << (8 + 16))); // PD8 LOW
-            }
+        if enabled {
+            H::INT_RF_PWR.set_high();
+        } else {
+            H::INT_RF_PWR.set_low();
         }
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) {
         let usart1 = unsafe { &*pac::USART1::ptr() };
-        unsafe {
-            for &b in bytes {
-                // Wait for TXE (bit 7)
-                while (usart1.sr.read().bits() & (1 << 7)) == 0 {}
-                usart1.dr.write(|w| w.bits(b as u32));
+
+        for &b in bytes {
+            // Wait for TXE (Transmit data register empty, bit 7 in SR)
+            let mut timeout = 50_000;
+            while (usart1.sr.read().bits() & (1 << 7)) == 0 && timeout > 0 {
+                timeout -= 1;
             }
-            // Wait for TC (bit 6)
-            while (usart1.sr.read().bits() & (1 << 6)) == 0 {}
+            unsafe {
+                let dr = core::ptr::addr_of!(usart1.dr) as *mut u8;
+                core::ptr::write_volatile(dr, b);
+            }
         }
     }
 
     fn read_byte(&mut self) -> Option<u8> {
-        let dma2 = unsafe { &*pac::DMA2::ptr() };
-        let stream2 = &dma2.st[2];
-        let ndtr = stream2.ndtr.read().bits() as usize;
-        let head = RX_BUF_SIZE.saturating_sub(ndtr) % RX_BUF_SIZE;
-        let tail = unsafe { RX_TAIL };
+        if !self.active {
+            return None;
+        }
 
-        if head != tail {
-            let byte = unsafe { RX_DMA_BUF[tail] };
-            unsafe {
-                RX_TAIL = (tail + 1) % RX_BUF_SIZE;
+        let dma2 = unsafe { &*pac::DMA2::ptr() };
+        let ndtr = dma2.st[2].ndtr.read().bits() as usize;
+        let head = RX_BUF_SIZE.saturating_sub(ndtr) % RX_BUF_SIZE;
+
+        unsafe {
+            if RX_TAIL != head {
+                let b = RX_DMA_BUF[RX_TAIL];
+                RX_TAIL = (RX_TAIL + 1) % RX_BUF_SIZE;
+                Some(b)
+            } else {
+                None
             }
-            Some(byte)
-        } else {
-            None
         }
     }
 }

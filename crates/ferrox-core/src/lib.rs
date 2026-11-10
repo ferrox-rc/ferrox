@@ -10,8 +10,18 @@ compile_error!("Multiple board features cannot be enabled simultaneously (board-
 #[cfg(all(feature = "board-i6s", feature = "board-pocket"))]
 compile_error!("Multiple board features cannot be enabled simultaneously (board-i6s and board-pocket).");
 
-#[cfg(not(any(feature = "board-i6x", feature = "board-i6s", feature = "board-pocket", test)))]
-compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, or board-pocket).");
+#[cfg(not(any(
+    feature = "board-i6x",
+    feature = "board-i6s",
+    feature = "board-pocket",
+    feature = "board-boxer",
+    feature = "board-zorro",
+    feature = "board-tx12",
+    feature = "board-qx7",
+    feature = "board-tprov2",
+    test
+)))]
+compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, board-pocket, board-boxer, board-zorro, board-tx12, board-qx7, or board-tprov2).");
 
 pub mod board;
 pub use board::{ActiveBoard, BoardProfile};

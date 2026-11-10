@@ -48,12 +48,22 @@ pub fn scan_keys() -> u16 {
     hw | get_touch_keys()
 }
 
-/// Read external digital switches (SE/SF on PC12/PC15 or SG/SH on J4).
-pub fn read_ext_switches() -> (crate::input::SwitchPos, crate::input::SwitchPos) {
+/// Read external digital switches (SE/SF/SG/SH).
+pub fn read_ext_switches() -> (
+    crate::input::SwitchPos,
+    crate::input::SwitchPos,
+    crate::input::SwitchPos,
+    crate::input::SwitchPos,
+) {
     if let Some(ref mut d) = unsafe { KEY_DRIVER.as_mut() } {
         d.read_ext_switches()
     } else {
-        (crate::input::SwitchPos::Up, crate::input::SwitchPos::Up)
+        (
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+        )
     }
 }
 

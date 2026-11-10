@@ -1,14 +1,21 @@
+use core::marker::PhantomData;
 use ferrox_core::hal::StorageBus;
 use stm32f4::stm32f407 as pac;
 
-const EEPROM_ADDR: u8 = 0x51; // 7-bit I2C address for M24256 on Pocket
+use crate::descriptor::{PinDef, PocketHal, Qx7HalDescriptor};
+
+const EEPROM_ADDR: u8 = 0x51; // 7-bit I2C address for M24256 on Q X7 family
 const PAGE_SIZE: usize = 64;
 
-pub struct PocketEepromI2cBus;
+pub struct PocketEepromI2cBus<H: Qx7HalDescriptor = PocketHal> {
+    _phantom: PhantomData<H>,
+}
 
-impl PocketEepromI2cBus {
+impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
     pub const fn new() -> Self {
-        Self
+        Self {
+            _phantom: PhantomData,
+        }
     }
 
     fn wait_while_busy(&self) {
@@ -63,6 +70,16 @@ impl PocketEepromI2cBus {
         while (i2c1.sr1.read().bits() & (1 << 7)) == 0 {
             // TXE bit
             timeout -= 1;
+            if timeout == 0 {
+                return Err(());
+            }
+        }
+        i2c1.dr.write(|w| unsafe { w.bits(byte as u32) });
+
+        timeout = 100_000;
+        while (i2c1.sr1.read().bits() & (1 << 2)) == 0 {
+            // BTF bit
+            timeout -= 1;
             if (i2c1.sr1.read().bits() & (1 << 10)) != 0 {
                 // AF bit (NACK)
                 i2c1.sr1.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
@@ -72,7 +89,6 @@ impl PocketEepromI2cBus {
                 return Err(());
             }
         }
-        i2c1.dr.write(|w| unsafe { w.bits(byte as u32) });
         Ok(())
     }
 
@@ -82,60 +98,64 @@ impl PocketEepromI2cBus {
     }
 
     fn poll_ack(&self) -> bool {
-        let mut attempts = 1000;
-        while attempts > 0 {
-            attempts -= 1;
-            if self.send_start().is_ok() && self.send_addr(EEPROM_ADDR, false).is_ok() {
+        for _ in 0..100 {
+            if self.send_start().is_err() {
+                continue;
+            }
+            if self.send_addr(EEPROM_ADDR, false).is_ok() {
                 self.send_stop();
                 return true;
             }
             self.send_stop();
-            cortex_m::asm::delay(1680); // ~10µs
+            cortex_m::asm::delay(168_000); // 1ms delay between retries
         }
         false
     }
 }
 
-impl Default for PocketEepromI2cBus {
+impl<H: Qx7HalDescriptor> Default for PocketEepromI2cBus<H> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl StorageBus for PocketEepromI2cBus {
+impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
     fn init(&mut self) -> bool {
         let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpiob = unsafe { &*pac::GPIOB::ptr() };
-        let gpiod = unsafe { &*pac::GPIOD::ptr() };
         let i2c1 = unsafe { &*pac::I2C1::ptr() };
 
         unsafe {
-            // Enable GPIOB, GPIOD (AHB1) and I2C1 (APB1)
-            rcc.ahb1enr
-                .modify(|r, w| w.bits(r.bits() | (1 << 1) | (1 << 3)));
+            // Enable I2C1 (bit 21) in APB1ENR
             rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 21)));
 
-            // PD10 (EEPROM_WP): GPIO Output, driven LOW to enable writes
-            gpiod
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 20)) | (0x01 << 20)));
-            gpiod.bsrr.write(|w| w.bits(1 << (10 + 16))); // PD10 LOW
+            // Configure Write Protect pin: Push-Pull Output, driven LOW (write enabled)
+            H::EEPROM_WP.enable_clock_and_output(false);
 
-            // PB8 (SCL), PB9 (SDA): AF4 Open-Drain with pull-up
-            gpiob.moder.modify(|r, w| {
-                w.bits((r.bits() & !((0x03 << 16) | (0x03 << 18))) | (0x02 << 16) | (0x02 << 18))
-            });
-            gpiob
-                .otyper
-                .modify(|r, w| w.bits(r.bits() | (1 << 8) | (1 << 9)));
-            gpiob.pupdr.modify(|r, w| {
-                w.bits((r.bits() & !((0x03 << 16) | (0x03 << 18))) | (0x01 << 16) | (0x01 << 18))
-            });
-            gpiob.afrh.modify(|r, w| {
-                let mask = (0x0F << 0) | (0x0F << 4);
-                let af4 = (0x04 << 0) | (0x04 << 4);
-                w.bits((r.bits() & !mask) | af4)
-            });
+            // Configure SCL and SDA pins: AF4 Open-Drain with pull-up
+            let configure_i2c_pin = |pin_def: PinDef| {
+                rcc.ahb1enr
+                    .modify(|r, w| w.bits(r.bits() | pin_def.rcc_ahb1_bit()));
+                let gpio = &*pin_def.gpio_ptr();
+                let pin = pin_def.pin;
+                let shift = pin * 2;
+                gpio.moder
+                    .modify(|r, w| w.bits((r.bits() & !(0x03 << shift)) | (0x02 << shift)));
+                gpio.otyper.modify(|r, w| w.bits(r.bits() | (1 << pin)));
+                gpio.pupdr
+                    .modify(|r, w| w.bits((r.bits() & !(0x03 << shift)) | (0x01 << shift)));
+                if pin < 8 {
+                    let af_shift = pin * 4;
+                    gpio.afrl
+                        .modify(|r, w| w.bits((r.bits() & !(0x0F << af_shift)) | (0x04 << af_shift)));
+                } else {
+                    let af_shift = (pin - 8) * 4;
+                    gpio.afrh
+                        .modify(|r, w| w.bits((r.bits() & !(0x0F << af_shift)) | (0x04 << af_shift)));
+                }
+            };
+
+            configure_i2c_pin(H::EEPROM_SCL);
+            configure_i2c_pin(H::EEPROM_SDA);
 
             // Software reset I2C1
             i2c1.cr1.modify(|r, w| w.bits(r.bits() | (1 << 15)));
@@ -144,9 +164,9 @@ impl StorageBus for PocketEepromI2cBus {
 
             // Configure I2C1: APB1 = 42 MHz
             i2c1.cr2.write(|w| w.bits(42)); // 42 MHz
-            // Fast Mode (400 kHz), Duty = 0 (2:1): CCR = 42MHz / (3 * 400kHz) = 35 = 0x23
+            // Fast Mode (400 kHz), Duty = 0 (2:1): CCR = 42MHz / (3 * 400kHz) = 35
             i2c1.ccr.write(|w| w.bits(0x8000 | 35));
-            // TRISE = (300ns * 42MHz) + 1 = 13.6 -> 14
+            // TRISE = (300ns * 42MHz) + 1 = 14
             i2c1.trise.write(|w| w.bits(14));
             // Enable peripheral
             i2c1.cr1.modify(|r, w| w.bits(r.bits() | 0x01));
@@ -178,64 +198,71 @@ impl StorageBus for PocketEepromI2cBus {
 
             let mut timeout = 100_000u32;
             while (i2c1.sr1.read().bits() & (1 << 6)) == 0 {
-                // RXNE
                 timeout -= 1;
                 if timeout == 0 {
                     return Err(());
                 }
             }
             buf[0] = i2c1.dr.read().bits() as u8;
-        } else {
-            // Enable ACK
             i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) });
-
-            for i in 0..len {
-                if i == len - 1 {
-                    // Disable ACK and send STOP on last byte
-                    i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
-                    self.send_stop();
-                }
-
-                let mut timeout = 100_000u32;
-                while (i2c1.sr1.read().bits() & (1 << 6)) == 0 {
-                    timeout -= 1;
-                    if timeout == 0 {
-                        return Err(());
-                    }
-                }
-                buf[i] = i2c1.dr.read().bits() as u8;
-            }
+            return Ok(());
         }
 
+        // Multiple bytes read
+        i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) }); // ACK enabled
+        for (i, byte) in buf.iter_mut().enumerate() {
+            if i == len - 1 {
+                // Disable ACK and send STOP on last byte
+                i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
+                self.send_stop();
+            }
+
+            let mut timeout = 100_000u32;
+            while (i2c1.sr1.read().bits() & (1 << 6)) == 0 {
+                // RXNE bit
+                timeout -= 1;
+                if timeout == 0 {
+                    return Err(());
+                }
+            }
+            *byte = i2c1.dr.read().bits() as u8;
+        }
+
+        i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) }); // Restore ACK
         Ok(())
     }
 
-    fn write(&mut self, mut addr: u16, mut buf: &[u8]) -> Result<(), ()> {
-        while !buf.is_empty() {
-            let offset_in_page = (addr as usize) % PAGE_SIZE;
-            let bytes_in_page = (PAGE_SIZE - offset_in_page).min(buf.len());
+    fn write(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
+        let mut cur_addr = addr;
+        let mut offset = 0;
+        let total = buf.len();
+
+        while offset < total {
+            let page_offset = (cur_addr as usize) % PAGE_SIZE;
+            let bytes_in_page = PAGE_SIZE - page_offset;
+            let chunk_size = bytes_in_page.min(total - offset);
 
             self.wait_while_busy();
             self.send_start()?;
             self.send_addr(EEPROM_ADDR, false)?;
 
-            // 16-bit address
-            self.write_byte((addr >> 8) as u8)?;
-            self.write_byte((addr & 0xFF) as u8)?;
+            // Send word address
+            self.write_byte((cur_addr >> 8) as u8)?;
+            self.write_byte((cur_addr & 0xFF) as u8)?;
 
-            for &byte in &buf[..bytes_in_page] {
+            // Stream page chunk
+            for &byte in &buf[offset..offset + chunk_size] {
                 self.write_byte(byte)?;
             }
-
             self.send_stop();
 
-            // Wait for internal write cycle to complete (up to ~5 ms)
+            // Wait for internal write cycle to complete (~5ms)
             if !self.poll_ack() {
                 return Err(());
             }
 
-            addr += bytes_in_page as u16;
-            buf = &buf[bytes_in_page..];
+            cur_addr += chunk_size as u16;
+            offset += chunk_size;
         }
 
         Ok(())
