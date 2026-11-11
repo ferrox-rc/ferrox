@@ -23,9 +23,10 @@ compile_error!("Multiple board features cannot be enabled simultaneously (board-
     feature = "board-x9d",
     feature = "board-x9e",
     feature = "board-at9spro",
+    feature = "board-gx12",
     test
 )))]
-compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, board-pocket, board-boxer, board-zorro, board-tx12, board-qx7, board-tprov2, board-t12, board-x9d, board-x9e, or board-at9spro).");
+compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, board-pocket, board-boxer, board-zorro, board-tx12, board-qx7, board-tprov2, board-t12, board-x9d, board-x9e, board-at9spro, or board-gx12).");
 
 pub mod board;
 pub use board::{ActiveBoard, BoardProfile};

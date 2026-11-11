@@ -18,6 +18,7 @@
 | **FrSky Taranis X9D / X9D+** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD |
 | **FrSky Taranis X9E** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD (Tray) |
 | **RadioLink AT9S Pro / AT10II** (`boards/ferrox-pocket`) | STM32F405 / STM32F407 (Cortex-M4F) | **Supported Target** | Multi-Protocol + External CRSF / ELRS Bay | 320x240 Color TFT (4-bit Indexed) |
+| **RadioMaster GX12** (`boards/ferrox-pocket`) | STM32F407xG (Cortex-M4F) | **Supported Target** | Internal **ExpressLRS Gemini (CRSF)** + External JR Bay | 128x64 Mono OLED + Scroll Wheel |
 
 Supports modular RF protocols (**AFHDS 2A**, **CRSF / ExpressLRS** with native on-radio device configurator, **CC2500**, and **Spektrum DSM2 / DSMX** with optional Forward Programming), zero-dependency direct PAC **USB 2.0 Full-Speed** stack (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** & **Electronic Power Management** (i6S), **Matrix Keypad** (i6X), **Rotary Scroll Wheel** (Pocket, T12, X9D, AT9S Pro), **MicroSD SPI Storage & Flight Telemetry Logging** (Pocket), **Trainer Subsystem** (CPPM Out/In & Spektrum Satellite wireless trainer), **Responsive 128x64 and 212x64 Wide Displays**, and a zero-heap **320x240 4-bit Indexed RGB565 Color Canvas**.
 
@@ -74,6 +75,7 @@ The `ferrox` workspace unifies development, host-side testing, and binary releas
 | **FrSky Taranis X9D / X9D+** | Wide 212x64 Mono LCD | I2C1 EEPROM + SPI SD Card | Internal ACCST/ACCESS + External JR Module Bay | Gimbals, 8 Switches (SA..SH), 2 Pots (S1/S2), 2 Sliders (LS/RS) |
 | **FrSky Taranis X9E** | Wide 212x64 Mono LCD | I2C1 EEPROM + SPI SD Card | Internal ACCST/ACCESS + External JR Module Bay | Tray Gimbals, Expanded Switch Matrix, Rotary Pots & Sliders |
 | **RadioLink AT9S Pro** | 320x240 Color TFT (4bpp Indexed) | I2C1 EEPROM + SPI Storage | Multi-Protocol + External CRSF/ELRS Module Bay | Gimbals, Rotary Scroll Wheel, 8 Switches, 2 Pots, 2 Sliders |
+| **RadioMaster GX12** | 128x64 Mono OLED | Hybrid: I2C1 EEPROM + SPI2 microSD + In-RAM | Internal ExpressLRS Gemini (CRSF) + External JR Module Bay | Gimbals, Optical Scroll Wheel, 8 Switches (SA..SH), 2 Detented Pots (S1/S2) |
 
 ---
 
@@ -295,6 +297,7 @@ cargo build-i6x
 # Cortex-M4F Targets:
 cargo build-pocket      # RM Pocket direct DFU
 cargo build-pocket-sd   # RM Pocket EdgeTX SD bootloader
+cargo build-gx12        # RadioMaster GX12
 cargo build-t12         # Jumper T12
 cargo build-x9d         # FrSky Taranis X9D / X9D+
 cargo build-x9e         # FrSky Taranis X9E
@@ -305,6 +308,9 @@ Flash the compiled binary via USB DFU:
 ```bash
 # Flash RadioMaster Pocket:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-pocket.bin
+
+# Flash RadioMaster GX12:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-gx12.bin
 
 # Flash FlySky FS-i6X:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
@@ -347,6 +353,7 @@ To guarantee mathematical correctness and protocol compliance across all target 
   # Test key board targets:
   cargo test -p ferrox-core --lib --features board-i6x --target x86_64-unknown-linux-gnu -- --test-threads=1
   cargo test -p ferrox-core --lib --features board-pocket --target x86_64-unknown-linux-gnu -- --test-threads=1
+  cargo test -p ferrox-core --lib --features board-gx12 --target x86_64-unknown-linux-gnu -- --test-threads=1
   cargo test -p ferrox-core --lib --features board-t12 --target x86_64-unknown-linux-gnu -- --test-threads=1
   cargo test -p ferrox-core --lib --features board-x9d --target x86_64-unknown-linux-gnu -- --test-threads=1
   cargo test -p ferrox-core --lib --features board-x9e --target x86_64-unknown-linux-gnu -- --test-threads=1
@@ -358,6 +365,7 @@ To guarantee mathematical correctness and protocol compliance across all target 
   cargo build-i6x
   cargo build-pocket
   cargo build-pocket-sd
+  cargo build-gx12
   cargo build-t12
   cargo build-x9d
   cargo build-x9e
@@ -374,6 +382,7 @@ This project stands on the shoulders of the open-source RC community and owes sp
 
 - **Kuba (qba667), Janek (ajjjjjjjj), and the OpenI6X Team**: For their groundbreaking reverse-engineering of the FlySky FS-i6X/i6S hardware, bus timings, ST7567 LCD initialization sequence, A7105 SPI registers, bootloader jump sequences, and the `PC9` backlight PWM dimming mod.
 - **Wimalopaan**: For extensive real-hardware testing on both FS-i6X and FS-i6S, logic analyzer protocol traces, multi-pot/switch hardware expansion verification, and deep feedback on TBS-Agent UI paradigms and over-the-air CRSF parameter synchronization.
+- **Suds**: For testing collaboration, feedback, and hardware bring-up support on the RadioMaster GX12.
 - **OpenTX and EdgeTX Teams**: For defining modern open-source RC transmitter mixing, telemetry architectures, and simulator standards.
 - **ExpressLRS & Team BlackSheep**: For pioneering open, high-performance CRSF protocols and parameter synchronization.
 

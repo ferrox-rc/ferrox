@@ -476,3 +476,21 @@ impl Qx7HalDescriptor for At9sProHal {
     };
     const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
 }
+
+/// RadioMaster GX12 HAL Descriptor.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Gx12Hal;
+
+impl Qx7HalDescriptor for Gx12Hal {
+    const STICK_INVERT: [bool; 4] = [false, true, true, false];
+    const S1_INVERT: bool = false;
+    const S2_INVERT: bool = true;
+    const LCD_VERT_INVERT: bool = false;
+    const LCD_HORIZ_INVERT: bool = false;
+    const KEY_ENTER: PinDef = PinDef::new(Port::A, 10);
+    const SW_SE: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 14));
+    const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
+    const SW_SG: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 7));
+    const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
+    const LED_STATUS: PinDef = PinDef::new(Port::A, 7);
+}

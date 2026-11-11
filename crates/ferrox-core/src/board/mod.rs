@@ -462,6 +462,7 @@ impl BoardIdleHook for DefaultIdleState {
 
 pub mod at9spro;
 pub mod boxer;
+pub mod gx12;
 pub mod i6s;
 pub mod i6x;
 pub mod pocket;
@@ -476,6 +477,7 @@ pub mod zorro;
 
 pub use at9spro::At9sProSpec;
 pub use boxer::BoxerSpec;
+pub use gx12::Gx12Spec;
 pub use i6s::I6sSpec;
 pub use i6x::I6xSpec;
 pub use pocket::PocketSpec;
@@ -528,6 +530,9 @@ pub type ActiveBoard = X9eSpec;
 #[cfg(feature = "board-at9spro")]
 pub type ActiveBoard = At9sProSpec;
 
+#[cfg(feature = "board-gx12")]
+pub type ActiveBoard = Gx12Spec;
+
 #[cfg(not(any(
     feature = "board-i6s",
     feature = "board-i6x",
@@ -540,7 +545,8 @@ pub type ActiveBoard = At9sProSpec;
     feature = "board-t12",
     feature = "board-x9d",
     feature = "board-x9e",
-    feature = "board-at9spro"
+    feature = "board-at9spro",
+    feature = "board-gx12"
 )))]
 pub type ActiveBoard = I6xSpec;
 

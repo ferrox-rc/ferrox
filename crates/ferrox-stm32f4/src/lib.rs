@@ -80,6 +80,7 @@ define_qx7_context!(create_t12_context, T12Hal);
 define_qx7_context!(create_x9d_context, X9dHal);
 define_qx7_context!(create_x9e_context, X9eHal);
 define_qx7_context!(create_at9spro_context, At9sProHal);
+define_qx7_context!(create_gx12_context, Gx12Hal);
 
 /// Create PlatformContext for the active board target feature.
 pub fn create_active_context() -> ferrox_core::hal::PlatformContext<'static> {
@@ -101,6 +102,8 @@ pub fn create_active_context() -> ferrox_core::hal::PlatformContext<'static> {
     return create_x9e_context();
     #[cfg(feature = "board-at9spro")]
     return create_at9spro_context();
+    #[cfg(feature = "board-gx12")]
+    return create_gx12_context();
     #[cfg(not(any(
         feature = "board-boxer",
         feature = "board-zorro",
@@ -110,7 +113,8 @@ pub fn create_active_context() -> ferrox_core::hal::PlatformContext<'static> {
         feature = "board-t12",
         feature = "board-x9d",
         feature = "board-x9e",
-        feature = "board-at9spro"
+        feature = "board-at9spro",
+        feature = "board-gx12"
     )))]
     create_pocket_context()
 }

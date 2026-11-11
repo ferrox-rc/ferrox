@@ -380,3 +380,26 @@ The `ferrox-stm32f4` crate provides a unified hardware abstraction layer for Cor
   - **Backward-Compatible UI:** `BinaryColorAdapter` maps standard monochrome UI elements to `ColorIndex::Fg` and `ColorIndex::Bg`, with color accents for warnings, alarms, and telemetry.
 - **Inputs:** 4-axis Hall/pot gimbals, 4 auxiliary analog axes (2 pots + 2 side sliders), 8 switches, and center rotary scroll wheel.
 
+### 7.5 RadioMaster GX12 Architecture
+
+- **Primary MCU:** STMicroelectronics **STM32F407xG** (Cortex-M4F @ 168 MHz, 1024 KB Flash, 192 KB SRAM).
+- **Display Subsystem:** 128x64 monochrome OLED (SSD1309 / ST7567 compatible):
+  - Standard 1024-byte framebuffer in SRAM (`128 * 64 / 8`).
+  - Standard monochrome UI rendering with high-contrast OLED black levels and responsive layout.
+- **Internal RF Subsystem:** ExpressLRS Gemini dual-band transmitter:
+  - High-speed full-duplex CRSF interface wired to `USART1` (`PB6` TX / `PB7` RX).
+  - Internal RF module power control on `PC4` (`HIGH` = enabled).
+  - Internal RF bootloader recovery / update trigger pin on `PB1`.
+  - Supports bidirectional telemetry up to 1.875M baud without software packet drop.
+- **External Module Bay:** Standard JR-compatible module bay:
+  - External module power control on `PE0`.
+  - Modular RF protocol routing supporting external ExpressLRS, TBS Crossfire, and multi-protocol transmitters.
+- **Power Management & Soft Latch:**
+  - Soft-power latch circuit wired to `PD0` (Power Switch Sense) and `PD1` (Power Latch Hold).
+  - Debounced boot release guard and animated 1.5s hold-to-shutdown timer.
+- **Navigation & Switch Expander Subsystem:**
+  - Optical rotary scroll encoder paired with 5-button tactile cluster (`SYS`, `MDL`, `RTN`, `PAGE<`, `PAGE>`).
+  - Dual PCA9555 I2C GPIO expanders on `I2C2` (device addresses `0x74` and `0x75`) providing transparent scanning for switches `SA..SH`.
+  - Deterministic single-loop scan avoids RTOS task contention and I2C bus lockups.
+
+
