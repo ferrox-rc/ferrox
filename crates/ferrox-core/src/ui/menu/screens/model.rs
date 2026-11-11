@@ -155,7 +155,7 @@ fn render_setup_row(
             widgets::draw_list_row(lcd, slot, inverted, "Arm Sw:", Some(arm_str), 52);
         }
         3 => {
-            widgets::draw_list_row(lcd, slot, inverted, "Timers (1..4): [SETUP]", None, 0);
+            widgets::draw_list_row(lcd, slot, inverted, "Timers: [SETUP]", None, 0);
         }
         4 => {
             if is_edit {
@@ -368,15 +368,7 @@ pub fn update_setup(
         }
         let is_sel = !ctrl.editing && idx == ctrl.selected_item;
         let is_edit = ctrl.editing && idx == ctrl.selected_item;
-        render_setup_row(
-            lcd,
-            slot,
-            idx,
-            is_sel,
-            is_edit,
-            ctrl.sub_idx,
-            storage,
-        );
+        render_setup_row(lcd, slot, idx, is_sel, is_edit, ctrl.sub_idx, storage);
     }
 
     if ctrl.editing {
@@ -696,7 +688,11 @@ pub fn update_timer_setup(
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
                 } else if keys.down {
-                    cfg.start_src = if cfg.start_src == 0 { 31 } else { cfg.start_src - 1 };
+                    cfg.start_src = if cfg.start_src == 0 {
+                        31
+                    } else {
+                        cfg.start_src - 1
+                    };
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
                 }
@@ -717,7 +713,11 @@ pub fn update_timer_setup(
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
                 } else if keys.down {
-                    cfg.stop_src = if cfg.stop_src == 0 { 28 } else { cfg.stop_src - 1 };
+                    cfg.stop_src = if cfg.stop_src == 0 {
+                        28
+                    } else {
+                        cfg.stop_src - 1
+                    };
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
                 }
@@ -738,7 +738,11 @@ pub fn update_timer_setup(
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
                 } else if keys.down {
-                    cfg.reset_src = if cfg.reset_src == 0 { 28 } else { cfg.reset_src - 1 };
+                    cfg.reset_src = if cfg.reset_src == 0 {
+                        28
+                    } else {
+                        cfg.reset_src - 1
+                    };
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
                 }
@@ -769,7 +773,13 @@ pub fn update_timer_setup(
             0 => {
                 let mut sel_buf = *b"TIMER 1";
                 sel_buf[6] = b'1' + timer_idx as u8;
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Timer:", Some(ascii_as_str(&sel_buf)));
+                widgets::draw_list_row_right(
+                    lcd,
+                    slot,
+                    is_sel,
+                    "Timer:",
+                    Some(ascii_as_str(&sel_buf)),
+                );
             }
             1 => {
                 let mut t_buf = [0u8; 8];
@@ -794,7 +804,9 @@ pub fn update_timer_setup(
                     1 => "THs (RUN)",
                     2 => "THt (LTCH)",
                     3 => "ALWAYS",
-                    s if (4..=31).contains(&s) => crate::ui::format::SWITCH_COND_NAMES[(s - 3) as usize],
+                    s if (4..=31).contains(&s) => {
+                        crate::ui::format::SWITCH_COND_NAMES[(s - 3) as usize]
+                    }
                     _ => "OFF",
                 };
                 widgets::draw_list_row_right(lcd, slot, is_sel, "Start:", Some(trig_str));

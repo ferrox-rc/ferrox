@@ -447,12 +447,16 @@ pub fn compute_channels(
         WingTailTemplate::Freeform => {
             // Freeform (released gimbals):
             // Primary channels CH1..CH4 are decoupled from physical sticks
-            // and initialize to neutral 0 (1500 us). They are driven entirely
-            // by matrix mixer lines or auxiliary channel assignments.
-            ch_vals[0] = 0;
-            ch_vals[1] = 0;
-            ch_vals[2] = 0;
-            ch_vals[3] = 0;
+            // and initialize to their direct source assignments (or neutral 0 if unassigned).
+            // They can also be further modulated by matrix mixer lines.
+            for ch in 0..4 {
+                let src = model.freeform_ch1_4[ch];
+                ch_vals[ch] = if src != 0 {
+                    evaluate_source(src, &cond_sticks, pots, switches, &ch_vals, &model.gvars)
+                } else {
+                    0
+                };
+            }
         }
     }
 

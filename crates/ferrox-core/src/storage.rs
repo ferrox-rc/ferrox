@@ -502,7 +502,7 @@ pub struct ModelConfig {
     pub timer1_reset_src: u8, // 368: Timer 1 Reset switch (0: None, 1..=28: switch conditions)
     pub timer1_flags: u8, // 369: Timer 1 bitflags (bit 0: latch, bit 1: arm reset, bit 2: audio)
     pub timers_ext: [crate::timer::TimerConfig; 3], // 370..388: Independent Timer 2, 3, 4 configs (3 * 6 = 18 bytes)
-    pub _pad_timers: [u8; 4], // 388..392: 4-byte word boundary alignment (Total: 392 bytes)
+    pub freeform_ch1_4: [u8; 4], // 388..392: Direct source assignments for CH1..CH4 in Freeform mode (Total: 392 bytes)
 }
 
 impl ModelConfig {
@@ -563,7 +563,44 @@ impl ModelConfig {
                 crate::timer::TimerConfig::disabled(),
                 crate::timer::TimerConfig::disabled(),
             ],
-            _pad_timers: [0; 4],
+            freeform_ch1_4: [0; 4],
+        }
+    }
+
+    /// Read source assigned to a logical channel (0..17 for CH1..CH18).
+    /// In Freeform mode, CH1..CH4 use `freeform_ch1_4[0..4]`.
+    /// In standard wing modes, CH1..CH4 default to their stick sources (1: Roll, 2: Pitch, 3: Thr, 4: Yaw).
+    /// CH5..CH18 use `aux_channels[0..13]`.
+    #[inline]
+    pub fn channel_source(&self, ch_idx: usize) -> u8 {
+        match ch_idx {
+            0..=3 => {
+                if self.wing_tail_mix == 4 {
+                    self.freeform_ch1_4[ch_idx]
+                } else {
+                    (ch_idx + 1) as u8 // 1: Roll, 2: Pitch, 3: Thr, 4: Yaw
+                }
+            }
+            4..=17 => self.aux_channels[ch_idx - 4],
+            _ => 0,
+        }
+    }
+
+    /// Set source assigned to a logical channel (0..17 for CH1..CH18).
+    /// In Freeform mode, CH1..CH4 update `freeform_ch1_4[0..4]`.
+    /// CH5..CH18 update `aux_channels[0..13]`.
+    #[inline]
+    pub fn set_channel_source(&mut self, ch_idx: usize, src: u8) {
+        match ch_idx {
+            0..=3 => {
+                if self.wing_tail_mix == 4 {
+                    self.freeform_ch1_4[ch_idx] = src;
+                }
+            }
+            4..=17 => {
+                self.aux_channels[ch_idx - 4] = src;
+            }
+            _ => {}
         }
     }
 
@@ -1649,7 +1686,7 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                     crate::timer::TimerConfig::disabled(),
                     crate::timer::TimerConfig::disabled(),
                 ];
-                model._pad_timers = [0; 4];
+                model.freeform_ch1_4 = [0; 4];
             }
             unsafe {
                 core::ptr::copy_nonoverlapping(

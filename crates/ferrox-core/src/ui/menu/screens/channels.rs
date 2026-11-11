@@ -38,7 +38,8 @@ pub fn update_aux_channels(
     storage: &mut RadioStorage,
     buzzer: &mut Buzzer,
 ) {
-    const AUX_COUNT: usize = 14;
+    let is_freeform = storage.active_model.wing_tail_mix == 4;
+    let ch_count = if is_freeform { 18 } else { 14 };
 
     if keys.cancel {
         if ctrl.editing {
@@ -55,7 +56,7 @@ pub fn update_aux_channels(
         widgets::navigate_4slot_list(
             &mut ctrl.selected_item,
             &mut ctrl.scroll_offset,
-            AUX_COUNT,
+            ch_count,
             keys.up,
             keys.down,
             buzzer,
@@ -66,19 +67,24 @@ pub fn update_aux_channels(
             buzzer.click();
         }
     } else {
+        let ch_idx = if is_freeform {
+            ctrl.selected_item
+        } else {
+            4 + ctrl.selected_item
+        };
         let aux_sources = crate::board::ActiveBoard::AUX_SOURCES;
         if let Some(pot) = keys.pot_change {
-            storage.active_model.aux_channels[ctrl.selected_item] = pot;
+            storage.active_model.set_channel_source(ch_idx, pot);
             buzzer.play_tone(2400, 40);
         } else {
-            let cur_val = storage.active_model.aux_channels[ctrl.selected_item];
+            let cur_val = storage.active_model.channel_source(ch_idx);
             if keys.up {
                 let next_val = storage.next_available_aux_source(cur_val, aux_sources);
-                storage.active_model.aux_channels[ctrl.selected_item] = next_val;
+                storage.active_model.set_channel_source(ch_idx, next_val);
                 buzzer.play_tone(2200, 20);
             } else if keys.down {
                 let next_val = storage.prev_available_aux_source(cur_val, aux_sources);
-                storage.active_model.aux_channels[ctrl.selected_item] = next_val;
+                storage.active_model.set_channel_source(ch_idx, next_val);
                 buzzer.play_tone(2200, 20);
             }
         }
@@ -88,16 +94,22 @@ pub fn update_aux_channels(
         }
     }
 
-    widgets::draw_header(lcd, "AUX CHANNELS");
+    let header_title = if is_freeform { "CHANNELS (1..18)" } else { "AUX CHANNELS" };
+    widgets::draw_header(lcd, header_title);
 
     for slot in 0..4 {
-        let idx = ctrl.scroll_offset + slot;
-        if idx >= AUX_COUNT {
+        let list_idx = ctrl.scroll_offset + slot;
+        if list_idx >= ch_count {
             break;
         }
-        let is_sel = idx == ctrl.selected_item;
+        let is_sel = list_idx == ctrl.selected_item;
 
-        let ch_num = 5 + idx;
+        let ch_idx = if is_freeform {
+            list_idx
+        } else {
+            4 + list_idx
+        };
+        let ch_num = 1 + ch_idx;
         let mut ch_buf = *b"CH00: ";
         if ch_num >= 10 {
             ch_buf[2] = b'0' + (ch_num / 10) as u8;
@@ -108,7 +120,8 @@ pub fn update_aux_channels(
         }
         let ch_label = ascii_as_str(&ch_buf);
 
-        let src_idx = (storage.active_model.aux_channels[idx] as usize).min(SOURCE_NAMES.len() - 1);
+        let src_val = storage.active_model.channel_source(ch_idx);
+        let src_idx = (src_val as usize).min(SOURCE_NAMES.len() - 1);
         widgets::draw_list_row(lcd, slot, is_sel, ch_label, Some(SOURCE_NAMES[src_idx]), 48);
     }
 
@@ -193,7 +206,10 @@ pub fn format_channel_label<'a>(
             1 => "L.ELV",
             3 => "L.AIL",
             4 => {
-                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 1) {
+                let direct_src = model.freeform_ch1_4[0] as usize;
+                if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
+                    SOURCE_NAMES[direct_src]
+                } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 1) {
                     let src = m.source as usize;
                     if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
                 } else {
@@ -206,7 +222,10 @@ pub fn format_channel_label<'a>(
             1 => "R.ELV",
             2 => "L.VTL",
             4 => {
-                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 2) {
+                let direct_src = model.freeform_ch1_4[1] as usize;
+                if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
+                    SOURCE_NAMES[direct_src]
+                } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 2) {
                     let src = m.source as usize;
                     if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
                 } else {
@@ -217,7 +236,10 @@ pub fn format_channel_label<'a>(
         },
         2 => match model.wing_tail_mix {
             4 => {
-                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 3) {
+                let direct_src = model.freeform_ch1_4[2] as usize;
+                if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
+                    SOURCE_NAMES[direct_src]
+                } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 3) {
                     let src = m.source as usize;
                     if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
                 } else {
@@ -229,7 +251,10 @@ pub fn format_channel_label<'a>(
         3 => match model.wing_tail_mix {
             2 => "R.VTL",
             4 => {
-                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 4) {
+                let direct_src = model.freeform_ch1_4[3] as usize;
+                if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
+                    SOURCE_NAMES[direct_src]
+                } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 4) {
                     let src = m.source as usize;
                     if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
                 } else {
@@ -380,5 +405,76 @@ mod tests {
         model.mixes[0].target_ch = 1;
         model.mixes[0].source = 3;
         assert_eq!(format_channel_label(0, &model, &mut buf), "1:Thr");
+
+        // Freeform with direct source assigned to CH1 (e.g. SA = source 7)
+        model.freeform_ch1_4[0] = 7;
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:SA");
+    }
+
+    #[test]
+    fn test_aux_channels_screen_freeform_vs_normal() {
+        let mut ctrl = MenuController::new();
+        let mut buzzer = Buzzer::new();
+        let mut lcd = St7567::new();
+        let mut storage = RadioStorage::default_factory();
+
+        // 1. Normal mode: 14 channels (CH5..CH18)
+        storage.active_model.wing_tail_mix = 0;
+        let keys_down = NavKeys {
+            ok: false,
+            cancel: false,
+            up: false,
+            down: true,
+            bind: false,
+            sw_change: None,
+            dr_change: None,
+            pot_change: None,
+        };
+
+        // Scroll to item 13 (the last item in normal 14-item list)
+        for _ in 0..13 {
+            update_aux_channels(&mut ctrl, &mut lcd, &keys_down, &mut storage, &mut buzzer);
+        }
+        assert_eq!(ctrl.selected_item, 13);
+        // Next down wraps to 0
+        update_aux_channels(&mut ctrl, &mut lcd, &keys_down, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.selected_item, 0);
+
+        // 2. Freeform mode: 18 channels (CH1..CH18)
+        storage.active_model.wing_tail_mix = 4;
+        for _ in 0..17 {
+            update_aux_channels(&mut ctrl, &mut lcd, &keys_down, &mut storage, &mut buzzer);
+        }
+        assert_eq!(ctrl.selected_item, 17);
+        // Next down wraps to 0
+        update_aux_channels(&mut ctrl, &mut lcd, &keys_down, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.selected_item, 0);
+
+        // Test editing CH1 (item 0) directly in Freeform mode
+        let keys_ok = NavKeys {
+            ok: true,
+            cancel: false,
+            up: false,
+            down: false,
+            bind: false,
+            sw_change: None,
+            dr_change: None,
+            pot_change: None,
+        };
+        update_aux_channels(&mut ctrl, &mut lcd, &keys_ok, &mut storage, &mut buzzer);
+        assert!(ctrl.editing);
+
+        let keys_up = NavKeys {
+            ok: false,
+            cancel: false,
+            up: true,
+            down: false,
+            bind: false,
+            sw_change: None,
+            dr_change: None,
+            pot_change: None,
+        };
+        update_aux_channels(&mut ctrl, &mut lcd, &keys_up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.freeform_ch1_4[0], 1); // 1: Roll
     }
 }
