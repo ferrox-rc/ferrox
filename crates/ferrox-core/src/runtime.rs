@@ -273,6 +273,7 @@ pub struct BackgroundIdleManager {
     pub bind_was_held: bool,
     pub ok_hold_ms: u16,
     pub cancel_hold_ms: u16,
+    pub timers: crate::timer::TimerBank,
     pub timer_remaining_secs: u16,
     pub timer_elapsed_secs: u16,
     pub timer_ms_acc: u16,
@@ -325,6 +326,7 @@ impl BackgroundIdleManager {
             bind_was_held: false,
             ok_hold_ms: 0,
             cancel_hold_ms: 0,
+            timers: crate::timer::TimerBank::new(),
             timer_remaining_secs: 0,
             timer_elapsed_secs: 0,
             timer_ms_acc: 0,
@@ -646,27 +648,14 @@ impl BackgroundIdleManager {
             }
         }
 
-        // 8c. Flight Timer Engine
+        // 8c. Flight Timer Engine (4 Independent Timers)
         let active_idx = storage.radio.active_model;
         let model = storage.active_model();
+        let timer_configs = model.all_timer_configs();
+
         if self.prev_timer_model != active_idx {
             self.prev_timer_model = active_idx;
-            self.timer_remaining_secs = model.timer_secs;
-            self.timer_elapsed_secs = 0;
-            self.timer_ms_acc = 0;
-            self.timer_latched = false;
-        }
-
-        // Arm Switch transitions: auto-reset upon Arming, unlatch upon Disarming
-        if model.arm_switch > 0 && model.arm_switch <= ActiveBoard::MAX_MIX_SWITCH {
-            if flight.just_armed {
-                self.timer_remaining_secs = model.timer_secs;
-                self.timer_elapsed_secs = 0;
-                self.timer_ms_acc = 0;
-                self.timer_latched = false;
-            } else if flight.just_disarmed {
-                self.timer_latched = false;
-            }
+            self.timers.reset_all(&timer_configs);
         }
 
         // Cooldown timer, toast duration, and key release guard for timer reset
@@ -682,10 +671,7 @@ impl BackgroundIdleManager {
 
         // Check for manual reset via assigned button or [CANCEL] held for >= 1.0s on flight dashboard
         if timer_reset_clicked && self.timer_reset_cooldown_ms == 0 {
-            self.timer_remaining_secs = model.timer_secs;
-            self.timer_elapsed_secs = 0;
-            self.timer_ms_acc = 0;
-            self.timer_latched = false;
+            self.timers.reset_all(&timer_configs);
             self.cancel_hold_ms = 0;
             self.cancel_waiting_release = true;
             self.timer_reset_toast_ms = 800;
@@ -698,10 +684,7 @@ impl BackgroundIdleManager {
         {
             self.cancel_hold_ms = self.cancel_hold_ms.saturating_add(dt_ms);
             if self.cancel_hold_ms >= 1000 {
-                self.timer_remaining_secs = model.timer_secs;
-                self.timer_elapsed_secs = 0;
-                self.timer_ms_acc = 0;
-                self.timer_latched = false;
+                self.timers.reset_all(&timer_configs);
                 self.cancel_hold_ms = 0;
                 self.cancel_waiting_release = true;
                 self.timer_reset_toast_ms = 800;
@@ -712,7 +695,7 @@ impl BackgroundIdleManager {
             self.cancel_hold_ms = 0;
         }
 
-        // Evaluate timer trigger condition
+        // Evaluate timer triggers and update all 4 timers
         let is_armed_or_unassigned =
             if model.arm_switch > 0 && model.arm_switch <= ActiveBoard::MAX_MIX_SWITCH {
                 flight.is_armed
@@ -721,32 +704,23 @@ impl BackgroundIdleManager {
             };
         let stick_mode = StickMode::from_u8(storage.radio.stick_mode);
         let controls = flight.state.flight_controls(stick_mode);
-        let timer_running = mixer::is_timer_active(
-            model.timer_source,
+
+        self.timers.update(
+            dt_ms,
+            &timer_configs,
             controls.throttle,
-            &mut self.timer_latched,
             &flight.state.switches,
             is_armed_or_unassigned,
+            flight.just_armed,
+            flight.just_disarmed,
+            buzzer,
         );
 
-        if timer_running && dt_ms > 0 {
-            self.timer_ms_acc = self.timer_ms_acc.saturating_add(dt_ms);
-            while self.timer_ms_acc >= 1000 {
-                self.timer_ms_acc -= 1000;
-                if self.timer_remaining_secs > 0 {
-                    self.timer_remaining_secs -= 1;
-                    if self.timer_remaining_secs == 0 {
-                        buzzer.timer_elapsed_alarm();
-                    } else if self.timer_remaining_secs <= 10 {
-                        buzzer.timer_countdown_beep();
-                    } else if self.timer_remaining_secs.is_multiple_of(60) {
-                        buzzer.timer_minute_beep();
-                    }
-                } else {
-                    self.timer_elapsed_secs = self.timer_elapsed_secs.saturating_add(1);
-                }
-            }
-        }
+        // Keep legacy Timer 1 scalar fields in sync for telemetry/logging
+        self.timer_remaining_secs = self.timers.timers[0].remaining_secs;
+        self.timer_elapsed_secs = self.timers.timers[0].elapsed_secs;
+        self.timer_ms_acc = self.timers.timers[0].ms_acc;
+        self.timer_latched = self.timers.timers[0].latched_running;
 
         // 9. Display Frame Rendering (~30 Hz)
         let run_display = now.wrapping_sub(self.last_display_ms) >= 33;

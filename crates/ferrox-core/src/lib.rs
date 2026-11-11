@@ -52,6 +52,8 @@ pub use runtime::{BackgroundIdleManager, FlightPipeline, FlightSnapshot};
 pub mod safety;
 pub mod storage;
 pub mod time;
+pub mod timer;
+pub use timer::{TimerBank, TimerConfig};
 pub mod trainer;
 pub mod trim;
 pub mod telemetry_log;

@@ -155,27 +155,9 @@ fn render_setup_row(
             widgets::draw_list_row(lcd, slot, inverted, "Arm Sw:", Some(arm_str), 52);
         }
         3 => {
-            let t_secs = storage.active_model.timer_secs;
-            let mut t_buf = [0u8; 8];
-            let t_str = if t_secs == 0 {
-                "OFF"
-            } else {
-                format_timer(t_secs, false, &mut t_buf)
-            };
-            widgets::draw_list_row(lcd, slot, inverted, "Timer:", Some(t_str), 52);
+            widgets::draw_list_row(lcd, slot, inverted, "Timers (1..4): [SETUP]", None, 0);
         }
         4 => {
-            let trig_str = match storage.active_model.timer_source {
-                0 => "OFF",
-                1 => "THs (RUN)",
-                2 => "THt (LTCH)",
-                3 => "ALWAYS ON",
-                s if (4..=17).contains(&s) => crate::ui::format::SWITCH_COND_NAMES[(s - 3) as usize],
-                _ => "OFF",
-            };
-            widgets::draw_list_row(lcd, slot, inverted, "T-Trig:", Some(trig_str), 52);
-        }
-        5 => {
             if is_edit {
                 let mut cp_buf = *b"Copy -> M00";
                 write_dec2((sub_idx + 1) as u8, &mut cp_buf[9..11]);
@@ -184,7 +166,7 @@ fn render_setup_row(
                 widgets::draw_list_row(lcd, slot, inverted, "Copy: [OK Duplicate]", None, 0);
             }
         }
-        6 => {
+        5 => {
             let proto_str = if storage.active_model.rf_protocol == 0 {
                 "AFHDS 2A"
             } else {
@@ -192,13 +174,13 @@ fn render_setup_row(
             };
             widgets::draw_list_row(lcd, slot, inverted, "Protocol:", Some(proto_str), 64);
         }
-        7 => {
+        6 => {
             widgets::draw_list_row(lcd, slot, inverted, "Telemetry: [SETUP]", None, 0);
         }
-        8 => {
+        7 => {
             widgets::draw_list_row(lcd, slot, inverted, "Vario: [SETUP]", None, 0);
         }
-        9 => {
+        8 => {
             widgets::draw_list_row(lcd, slot, inverted, "Reset: [OK Defaults]", None, 0);
         }
         _ => {}
@@ -214,7 +196,7 @@ pub fn update_setup(
     buzzer: &mut Buzzer,
 ) {
     let active_idx = storage.radio.active_model as usize;
-    const FIELD_COUNT: usize = 10;
+    const FIELD_COUNT: usize = 9;
 
     if !ctrl.editing {
         if keys.cancel {
@@ -252,43 +234,41 @@ pub fn update_setup(
                     buzzer.click();
                 }
                 3 => {
-                    // Timer duration edit
-                    ctrl.editing = true;
+                    // Open Timers (1..4) submenu
+                    ctrl.state = MenuState::TimerSetup;
+                    ctrl.selected_item = 0;
+                    ctrl.scroll_offset = 0;
+                    ctrl.sub_idx = 0; // Timer 1..4 selector (0 = Timer 1)
                     buzzer.click();
                 }
                 4 => {
-                    // Timer trigger edit
-                    ctrl.editing = true;
-                    buzzer.click();
-                }
-                5 => {
                     // Model duplicate/copy edit
                     ctrl.editing = true;
                     ctrl.sub_idx = (active_idx + 1) % NUM_MODELS;
                     buzzer.click();
                 }
-                6 => {
+                5 => {
                     // Open Protocol Setup submenu (RxSetup)
                     ctrl.state = MenuState::RxSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
-                7 => {
+                6 => {
                     // Open Telemetry Setup submenu
                     ctrl.state = MenuState::TelemSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
-                8 => {
+                7 => {
                     // Open Vario Setup submenu
                     ctrl.state = MenuState::VarioSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
-                9 => {
+                8 => {
                     storage.active_model = ModelConfig::default_for_index(active_idx);
                     storage::save_active_model(storage);
                     buzzer.play_tone_pattern(2200, 80, 50, 2);
@@ -350,46 +330,7 @@ pub fn update_setup(
                     buzzer.click();
                 }
             }
-            3 => {
-                // Timer duration editing mode
-                let cur = storage.active_model.timer_secs;
-                if keys.up && cur <= 3570 {
-                    storage.active_model.timer_secs = cur + 30;
-                    buzzer.play_tone(2200, 20);
-                } else if keys.down && cur >= 30 {
-                    storage.active_model.timer_secs = cur - 30;
-                    buzzer.play_tone(2200, 20);
-                }
-                if keys.ok || keys.cancel {
-                    ctrl.editing = false;
-                    storage::save_active_model(storage);
-                    buzzer.click();
-                }
-            }
             4 => {
-                // Timer trigger editing mode (with switch auto-detection)
-                if let Some(sw) = keys.sw_change {
-                    let ts = sw + 3; // 1..14 maps to 4..17
-                    if storage.is_timer_source_available(ts) {
-                        storage.active_model.timer_source = ts;
-                        buzzer.play_tone(2400, 40);
-                    }
-                } else if keys.up {
-                    storage.active_model.timer_source =
-                        storage.next_available_timer_source(storage.active_model.timer_source);
-                    buzzer.play_tone(2200, 20);
-                } else if keys.down {
-                    storage.active_model.timer_source =
-                        storage.prev_available_timer_source(storage.active_model.timer_source);
-                    buzzer.play_tone(2200, 20);
-                }
-                if keys.ok || keys.cancel {
-                    ctrl.editing = false;
-                    storage::save_active_model(storage);
-                    buzzer.click();
-                }
-            }
-            5 => {
                 // Model duplicate target selection
                 if keys.up {
                     ctrl.sub_idx = (ctrl.sub_idx + 1) % NUM_MODELS;
@@ -464,7 +405,7 @@ pub fn update_vario_setup(
     if !ctrl.editing {
         if keys.cancel {
             ctrl.state = MenuState::ModelSetup;
-            ctrl.selected_item = 8;
+            ctrl.selected_item = 7;
             ctrl.scroll_offset = 4;
             buzzer.click();
             return;
@@ -619,6 +560,274 @@ pub fn update_vario_setup(
 
     if ctrl.editing {
         widgets::draw_footer(lcd, "[OK] Done   [UP/DN] Switch");
+    } else {
+        widgets::draw_footer(lcd, "[OK] Edit/Cycle    [ESC] Back");
+    }
+}
+
+/// Interactive 4-Timer Configuration Screen.
+///
+/// Features:
+/// - Timer Select: T1, T2, T3, T4
+/// - Target duration: 00:00 (Count-Up) .. 60:00 (Countdown) in 30s steps
+/// - Mode: Level (Run while active) vs Latch (Start/Stop switches)
+/// - Start Sw: OFF, THs, THt, ALWAYS, SA^..SWMv (with live switch flick detection)
+/// - Stop Sw: NONE, SA^..SWMv (with live switch flick detection)
+/// - Reset Sw: NONE, SA^..SWMv (with live switch flick detection)
+/// - Beeps: ON / OFF
+/// - [Reset Timer] action
+#[inline(never)]
+pub fn update_timer_setup(
+    ctrl: &mut MenuController,
+    lcd: &mut St7567,
+    keys: &NavKeys,
+    storage: &mut RadioStorage,
+    buzzer: &mut Buzzer,
+) {
+    const FIELD_COUNT: usize = 8;
+    let timer_idx = ctrl.sub_idx.min(3);
+    let mut cfg = storage.active_model.timer_config(timer_idx);
+
+    if keys.cancel {
+        if ctrl.editing {
+            ctrl.editing = false;
+            storage.active_model.set_timer_config(timer_idx, cfg);
+            storage::save_active_model(storage);
+            buzzer.click();
+        } else {
+            ctrl.state = MenuState::ModelSetup;
+            ctrl.selected_item = 3;
+            ctrl.scroll_offset = 0;
+            storage::save_active_model(storage);
+            buzzer.click();
+            return;
+        }
+    }
+
+    if !ctrl.editing {
+        widgets::navigate_4slot_list(
+            &mut ctrl.selected_item,
+            &mut ctrl.scroll_offset,
+            FIELD_COUNT,
+            keys.up,
+            keys.down,
+            buzzer,
+        );
+
+        if keys.ok {
+            match ctrl.selected_item {
+                0 => {
+                    // Timer Selector: cycle T1 -> T2 -> T3 -> T4 -> T1
+                    ctrl.sub_idx = (ctrl.sub_idx + 1) % 4;
+                    buzzer.click();
+                }
+                1 => {
+                    // Target duration edit
+                    ctrl.editing = true;
+                    buzzer.click();
+                }
+                2 => {
+                    // Toggle latch mode vs level mode
+                    let is_latched = cfg.is_latch_mode();
+                    cfg.set_latch_mode(!is_latched);
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    storage::save_active_model(storage);
+                    buzzer.click();
+                }
+                3 => {
+                    // Start Switch edit
+                    ctrl.editing = true;
+                    buzzer.click();
+                }
+                4 => {
+                    // Stop Switch edit
+                    ctrl.editing = true;
+                    buzzer.click();
+                }
+                5 => {
+                    // Reset Switch edit
+                    ctrl.editing = true;
+                    buzzer.click();
+                }
+                6 => {
+                    // Toggle audio beeps
+                    let beeps = cfg.has_audio_beeps();
+                    cfg.set_audio_beeps(!beeps);
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    storage::save_active_model(storage);
+                    buzzer.click();
+                }
+                7 => {
+                    // Manual reset action
+                    buzzer.play_tone(2400, 100);
+                    ctrl.waiting_release = true;
+                }
+                _ => {}
+            }
+        }
+    } else {
+        match ctrl.selected_item {
+            1 => {
+                // Target duration edit in 30-sec increments
+                if keys.up && cfg.secs <= 3570 {
+                    cfg.secs += 30;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down && cfg.secs >= 30 {
+                    cfg.secs -= 30;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                }
+                if keys.ok {
+                    ctrl.editing = false;
+                    storage::save_active_model(storage);
+                    buzzer.click();
+                }
+            }
+            3 => {
+                // Start switch selection with switch flick detection
+                if let Some(sw) = keys.sw_change {
+                    let ts = sw + 3; // 1..28 maps to 4..31
+                    cfg.start_src = ts;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2400, 40);
+                } else if keys.up {
+                    cfg.start_src = (cfg.start_src + 1) % 32;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    cfg.start_src = if cfg.start_src == 0 { 31 } else { cfg.start_src - 1 };
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                }
+                if keys.ok {
+                    ctrl.editing = false;
+                    storage::save_active_model(storage);
+                    buzzer.click();
+                }
+            }
+            4 => {
+                // Stop switch selection with switch flick detection
+                if let Some(sw) = keys.sw_change {
+                    cfg.stop_src = sw;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2400, 40);
+                } else if keys.up {
+                    cfg.stop_src = (cfg.stop_src + 1) % 29;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    cfg.stop_src = if cfg.stop_src == 0 { 28 } else { cfg.stop_src - 1 };
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                }
+                if keys.ok {
+                    ctrl.editing = false;
+                    storage::save_active_model(storage);
+                    buzzer.click();
+                }
+            }
+            5 => {
+                // Reset switch selection with switch flick detection
+                if let Some(sw) = keys.sw_change {
+                    cfg.reset_src = sw;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2400, 40);
+                } else if keys.up {
+                    cfg.reset_src = (cfg.reset_src + 1) % 29;
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    cfg.reset_src = if cfg.reset_src == 0 { 28 } else { cfg.reset_src - 1 };
+                    storage.active_model.set_timer_config(timer_idx, cfg);
+                    buzzer.play_tone(2200, 20);
+                }
+                if keys.ok {
+                    ctrl.editing = false;
+                    storage::save_active_model(storage);
+                    buzzer.click();
+                }
+            }
+            _ => {
+                ctrl.editing = false;
+            }
+        }
+    }
+
+    let mut header_buf = *b"TIMER 1 SETUP   ";
+    header_buf[6] = b'1' + timer_idx as u8;
+    widgets::draw_header(lcd, ascii_as_str(&header_buf));
+
+    for slot in 0..4 {
+        let idx = ctrl.scroll_offset + slot;
+        if idx >= FIELD_COUNT {
+            break;
+        }
+
+        let is_sel = idx == ctrl.selected_item;
+        match idx {
+            0 => {
+                let mut sel_buf = *b"TIMER 1";
+                sel_buf[6] = b'1' + timer_idx as u8;
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Select:", Some(ascii_as_str(&sel_buf)));
+            }
+            1 => {
+                let mut t_buf = [0u8; 8];
+                let t_str = if cfg.secs == 0 {
+                    "00:00 (UP)"
+                } else {
+                    format_timer(cfg.secs, false, &mut t_buf)
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Target:", Some(t_str));
+            }
+            2 => {
+                let mode_str = if cfg.is_latch_mode() {
+                    "LATCH (St/Sp)"
+                } else {
+                    "LEVEL (Run/Stop)"
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Trigger:", Some(mode_str));
+            }
+            3 => {
+                let trig_str = match cfg.start_src {
+                    0 => "OFF",
+                    1 => "THs (Thr>5%)",
+                    2 => "THt (Latched)",
+                    3 => "ALWAYS ON",
+                    s if (4..=31).contains(&s) => crate::ui::format::SWITCH_COND_NAMES[(s - 3) as usize],
+                    _ => "OFF",
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Start Sw:", Some(trig_str));
+            }
+            4 => {
+                let stop_str = if cfg.stop_src == 0 {
+                    "NONE"
+                } else {
+                    crate::ui::format::SWITCH_COND_NAMES[cfg.stop_src as usize]
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Stop Sw:", Some(stop_str));
+            }
+            5 => {
+                let rst_str = if cfg.reset_src == 0 {
+                    "NONE"
+                } else {
+                    crate::ui::format::SWITCH_COND_NAMES[cfg.reset_src as usize]
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Reset Sw:", Some(rst_str));
+            }
+            6 => {
+                let beep_str = if cfg.has_audio_beeps() { "ON" } else { "OFF" };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Beeps:", Some(beep_str));
+            }
+            7 => {
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Action:", Some("[Reset Timer]"));
+            }
+            _ => {}
+        }
+    }
+
+    if ctrl.editing {
+        widgets::draw_footer(lcd, "[OK] Save   [UP/DN] Value");
     } else {
         widgets::draw_footer(lcd, "[OK] Edit/Cycle    [ESC] Back");
     }

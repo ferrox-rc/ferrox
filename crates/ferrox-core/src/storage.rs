@@ -498,7 +498,11 @@ pub struct ModelConfig {
     pub gvars: [i16; 5],   // 352..362: Global Variables GV1..GV5 (-1000..+1000)
     pub telem_slots: [u8; 4], // 362..366: Configurable telemetry dashboard sensor slots (1..4)
     pub dsm_sub_proto: u8, // 366: Spektrum DSM sub-protocol (0: DSMX-11, 1: DSMX-22, 2: DSM2-11, 3: DSM2-22)
-    pub _pad_gvar: u8,     // 367..368: Align to 4-byte word boundary
+    pub timer1_stop_src: u8, // 367: Timer 1 Stop switch (0: None, 1..=28: switch conditions)
+    pub timer1_reset_src: u8, // 368: Timer 1 Reset switch (0: None, 1..=28: switch conditions)
+    pub timer1_flags: u8, // 369: Timer 1 bitflags (bit 0: latch, bit 1: arm reset, bit 2: audio)
+    pub timers_ext: [crate::timer::TimerConfig; 3], // 370..388: Independent Timer 2, 3, 4 configs (3 * 6 = 18 bytes)
+    pub _pad_timers: [u8; 4], // 388..392: 4-byte word boundary alignment (Total: 392 bytes)
 }
 
 impl ModelConfig {
@@ -551,8 +555,61 @@ impl ModelConfig {
             gvars: [0; 5],
             telem_slots: [0, 1, 2, 3],
             dsm_sub_proto: 0,
-            _pad_gvar: 0,
+            timer1_stop_src: 0,
+            timer1_reset_src: 0,
+            timer1_flags: crate::timer::TimerConfig::FLAG_AUDIO_BEEPS,
+            timers_ext: [
+                crate::timer::TimerConfig::disabled(),
+                crate::timer::TimerConfig::disabled(),
+                crate::timer::TimerConfig::disabled(),
+            ],
+            _pad_timers: [0; 4],
         }
+    }
+
+    /// Extract complete TimerConfig for Timer 1..4 (index 0..3).
+    #[inline]
+    pub fn timer_config(&self, idx: usize) -> crate::timer::TimerConfig {
+        match idx {
+            0 => crate::timer::TimerConfig {
+                secs: self.timer_secs,
+                start_src: self.timer_source,
+                stop_src: self.timer1_stop_src,
+                reset_src: self.timer1_reset_src,
+                flags: self.timer1_flags,
+            },
+            1..=3 => self.timers_ext[idx - 1],
+            _ => crate::timer::TimerConfig::disabled(),
+        }
+    }
+
+    /// Set TimerConfig for Timer 1..4 (index 0..3).
+    #[inline]
+    pub fn set_timer_config(&mut self, idx: usize, cfg: crate::timer::TimerConfig) {
+        match idx {
+            0 => {
+                self.timer_secs = cfg.secs;
+                self.timer_source = cfg.start_src;
+                self.timer1_stop_src = cfg.stop_src;
+                self.timer1_reset_src = cfg.reset_src;
+                self.timer1_flags = cfg.flags;
+            }
+            1..=3 => {
+                self.timers_ext[idx - 1] = cfg;
+            }
+            _ => {}
+        }
+    }
+
+    /// Build array of all 4 TimerConfigs.
+    #[inline]
+    pub fn all_timer_configs(&self) -> [crate::timer::TimerConfig; 4] {
+        [
+            self.timer_config(0),
+            self.timer_config(1),
+            self.timer_config(2),
+            self.timer_config(3),
+        ]
     }
 
     #[inline(always)]
@@ -1128,11 +1185,37 @@ impl RadioStorage {
         if m.crsf_arm_mode > 1 {
             m.crsf_arm_mode = 0;
         }
-        if m.timer_source > 17 {
+        if m.timer_source > 31 {
             m.timer_source = 0;
         }
         if m.timer_secs > 3600 {
             m.timer_secs = 0;
+        }
+        if m.timer1_stop_src > 28 {
+            m.timer1_stop_src = 0;
+        }
+        if m.timer1_reset_src > 28 {
+            m.timer1_reset_src = 0;
+        }
+        if m.timer1_flags > 0x07 {
+            m.timer1_flags = crate::timer::TimerConfig::FLAG_AUDIO_BEEPS;
+        }
+        for timer in m.timers_ext.iter_mut() {
+            if timer.secs > 3600 {
+                timer.secs = 0;
+            }
+            if timer.start_src > 31 {
+                timer.start_src = 0;
+            }
+            if timer.stop_src > 28 {
+                timer.stop_src = 0;
+            }
+            if timer.reset_src > 28 {
+                timer.reset_src = 0;
+            }
+            if timer.flags > 0x07 {
+                timer.flags = crate::timer::TimerConfig::FLAG_AUDIO_BEEPS;
+            }
         }
         if m.rf_power > 3 {
             m.rf_power = 0;
@@ -1185,8 +1268,8 @@ impl RadioStorage {
 
 const _: () = assert!(core::mem::size_of::<RadioConfig>() == 148);
 const _: () = assert!(core::mem::size_of::<MixLine>() == 8);
-const _: () = assert!(core::mem::size_of::<ModelConfig>() == 368);
-const _: () = assert!(core::mem::size_of::<RadioStorage>() == 516);
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 392);
+const _: () = assert!(core::mem::size_of::<RadioStorage>() == 540);
 
 static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 
@@ -1539,9 +1622,9 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
             return Ok(());
         }
 
-        // Check if this is a ModelConfig request and the slot holds legacy 348 or 364 bytes
+        // Check if this is a ModelConfig request and the slot holds legacy 348, 364, or 368 bytes
         if expected_size == core::mem::size_of::<ModelConfig>()
-            && (hdr.len == 348 || hdr.len == 364)
+            && (hdr.len == 348 || hdr.len == 364 || hdr.len == 368)
             && hdr.magic == SLOT_MAGIC
             && hdr.flags == 0
         {
@@ -1554,7 +1637,20 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
             }
             let mut model =
                 unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) };
-            model.telem_slots = [0, 1, 2, 3];
+            if hdr.len <= 364 {
+                model.telem_slots = [0, 1, 2, 3];
+            }
+            if hdr.len <= 368 {
+                model.timer1_stop_src = 0;
+                model.timer1_reset_src = 0;
+                model.timer1_flags = crate::timer::TimerConfig::FLAG_AUDIO_BEEPS;
+                model.timers_ext = [
+                    crate::timer::TimerConfig::disabled(),
+                    crate::timer::TimerConfig::disabled(),
+                    crate::timer::TimerConfig::disabled(),
+                ];
+                model._pad_timers = [0; 4];
+            }
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     &model as *const ModelConfig as *const T,
@@ -1868,9 +1964,9 @@ mod tests {
 
     #[test]
     fn test_model_config_size_and_rf_power() {
-        assert_eq!(core::mem::size_of::<ModelConfig>(), 368);
+        assert_eq!(core::mem::size_of::<ModelConfig>(), 392);
         assert_eq!(core::mem::size_of::<RadioConfig>(), 148);
-        assert_eq!(core::mem::size_of::<RadioStorage>(), 516);
+        assert_eq!(core::mem::size_of::<RadioStorage>(), 540);
 
         let default_m = ModelConfig::default_for_index(0);
         assert_eq!(default_m.rf_power, 0);
@@ -1887,6 +1983,16 @@ mod tests {
         storage.active_model.vario_sink_deadband = 99;
         storage.active_model.vario_sink_mode = 99;
         storage.active_model.vario_motor_mute = 99;
+        storage.active_model.timer1_stop_src = 99;
+        storage.active_model.timer1_reset_src = 99;
+        storage.active_model.timer1_flags = 0xFF;
+        storage.active_model.timers_ext[0] = crate::timer::TimerConfig {
+            secs: 9999,
+            start_src: 99,
+            stop_src: 99,
+            reset_src: 99,
+            flags: 0xFF,
+        };
         storage.sanitize();
         assert_eq!(storage.active_model.rf_power, 0);
         assert_eq!(storage.active_model.vario_switch, 0);
@@ -1894,6 +2000,14 @@ mod tests {
         assert_eq!(storage.active_model.vario_sink_deadband, 5);
         assert_eq!(storage.active_model.vario_sink_mode, 1);
         assert_eq!(storage.active_model.vario_motor_mute, 1);
+        assert_eq!(storage.active_model.timer1_stop_src, 0);
+        assert_eq!(storage.active_model.timer1_reset_src, 0);
+        assert_eq!(storage.active_model.timer1_flags, crate::timer::TimerConfig::FLAG_AUDIO_BEEPS);
+        assert_eq!(storage.active_model.timers_ext[0].secs, 0);
+        assert_eq!(storage.active_model.timers_ext[0].start_src, 0);
+        assert_eq!(storage.active_model.timers_ext[0].stop_src, 0);
+        assert_eq!(storage.active_model.timers_ext[0].reset_src, 0);
+        assert_eq!(storage.active_model.timers_ext[0].flags, crate::timer::TimerConfig::FLAG_AUDIO_BEEPS);
     }
 
     #[test]

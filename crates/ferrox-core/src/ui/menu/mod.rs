@@ -34,6 +34,7 @@ pub enum MenuState {
     InputSetup,
     TelemSetup,
     VarioSetup,
+    TimerSetup,
     RxSetup,
     CrsfSetup,
     DsmSetup,
@@ -383,6 +384,9 @@ impl MenuController {
             }
             MenuState::VarioSetup => {
                 screens::model::update_vario_setup(self, lcd, &nav_keys, storage, buzzer);
+            }
+            MenuState::TimerSetup => {
+                screens::model::update_timer_setup(self, lcd, &nav_keys, storage, buzzer);
             }
             MenuState::RxSetup => {
                 screens::setup::update_rx_setup(self, lcd, &nav_keys, storage, buzzer);
@@ -1070,9 +1074,9 @@ mod tests {
         let mut lcd = St7567::new();
         let mut storage = RadioStorage::default_factory();
 
-        // 1. Enter ModelSetup, select item 8 (Vario)
+        // 1. Enter ModelSetup, select item 7 (Vario)
         ctrl.state = MenuState::ModelSetup;
-        ctrl.selected_item = 8;
+        ctrl.selected_item = 7;
         ctrl.scroll_offset = 4;
 
         let mut nav = NavKeys {
@@ -1143,7 +1147,7 @@ mod tests {
         nav.cancel = true;
         screens::model::update_vario_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert_eq!(ctrl.state, MenuState::ModelSetup);
-        assert_eq!(ctrl.selected_item, 8);
+        assert_eq!(ctrl.selected_item, 7);
         assert_eq!(ctrl.scroll_offset, 4);
     }
 }
