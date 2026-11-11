@@ -103,6 +103,9 @@ pub trait Qx7FamilyProfile: Copy + Clone + 'static {
     const AUX_NAMES: &'static [&'static str];
     const ADAPTIVE_CH_NAMES: &'static [&'static str];
     const AUX_SOURCES: &'static [u8];
+
+    const DISPLAY_WIDTH: usize = 128;
+    const DISPLAY_HEIGHT: usize = 64;
 }
 
 macro_rules! impl_qx7_board_profile {
@@ -121,6 +124,9 @@ macro_rules! impl_qx7_board_profile {
             const CLI_PAUSE_PROMPT: &'static [u8] = <$spec as Qx7FamilyProfile>::CLI_PAUSE_PROMPT;
             const STATUS_BANNER: &'static [u8] = <$spec as Qx7FamilyProfile>::STATUS_BANNER;
             const CRSF_UART_STATUS: &'static [u8] = b"Protocol: CRSF / ExpressLRS (Internal UART active)\r\n";
+
+            const DISPLAY_WIDTH: usize = <$spec as Qx7FamilyProfile>::DISPLAY_WIDTH;
+            const DISPLAY_HEIGHT: usize = <$spec as Qx7FamilyProfile>::DISPLAY_HEIGHT;
 
             const EXT_ADC_COUNT: usize = 0;
             const DEFAULT_SB_MODE: AdcInputMode = <$spec as Qx7FamilyProfile>::DEFAULT_SB_MODE;

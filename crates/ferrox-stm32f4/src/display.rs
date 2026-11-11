@@ -1,5 +1,4 @@
 use core::marker::PhantomData;
-use ferrox_core::display::st7567::WIDTH;
 use ferrox_core::hal::DisplayBus;
 use stm32f4::stm32f407 as pac;
 
@@ -182,14 +181,15 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
 
     fn flush(&mut self, framebuffer: &[u8]) {
         let col_offset: u8 = if H::LCD_HORIZ_INVERT { 4 } else { 0 };
+        let cols_per_page = framebuffer.len() / 8;
 
         for page in 0..8 {
             self.write_cmd(0x10 | (col_offset >> 4));
             self.write_cmd(0xB0 | page as u8);
             self.write_cmd(col_offset & 0x0F);
 
-            let page_offset = page * WIDTH;
-            for x in 0..WIDTH {
+            let page_offset = page * cols_per_page;
+            for x in 0..cols_per_page {
                 self.write_byte(framebuffer[page_offset + x], true);
             }
         }

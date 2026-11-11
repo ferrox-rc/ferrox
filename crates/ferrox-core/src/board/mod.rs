@@ -238,6 +238,8 @@ pub trait BoardProfile: Copy + Clone + 'static {
     const MAX_AUX_SRC: u8;
 
     // UI & Peripheral Capabilities
+    const DISPLAY_WIDTH: usize = 128;
+    const DISPLAY_HEIGHT: usize = 64;
     const HAS_JOG_WHEELS: bool;
     const HAS_ROTARY_ENCODER: bool;
     const HAS_TOUCH: bool;
@@ -458,24 +460,32 @@ impl BoardIdleHook for DefaultIdleState {
 
 
 
+pub mod at9spro;
 pub mod boxer;
 pub mod i6s;
 pub mod i6x;
 pub mod pocket;
 pub mod qx7;
 pub mod qx7_family;
+pub mod t12;
 pub mod tprov2;
 pub mod tx12;
+pub mod x9d;
+pub mod x9e;
 pub mod zorro;
 
+pub use at9spro::At9sProSpec;
 pub use boxer::BoxerSpec;
 pub use i6s::I6sSpec;
 pub use i6x::I6xSpec;
 pub use pocket::PocketSpec;
 pub use qx7::Qx7Spec;
 pub use qx7_family::{Qx7FamilyProfile, Qx7IdleState};
+pub use t12::T12Spec;
 pub use tprov2::TProV2Spec;
 pub use tx12::Tx12Spec;
+pub use x9d::X9dSpec;
+pub use x9e::X9eSpec;
 pub use zorro::ZorroSpec;
 
 // ============================================================================
@@ -506,6 +516,18 @@ pub type ActiveBoard = Qx7Spec;
 #[cfg(feature = "board-tprov2")]
 pub type ActiveBoard = TProV2Spec;
 
+#[cfg(feature = "board-t12")]
+pub type ActiveBoard = T12Spec;
+
+#[cfg(feature = "board-x9d")]
+pub type ActiveBoard = X9dSpec;
+
+#[cfg(feature = "board-x9e")]
+pub type ActiveBoard = X9eSpec;
+
+#[cfg(feature = "board-at9spro")]
+pub type ActiveBoard = At9sProSpec;
+
 #[cfg(not(any(
     feature = "board-i6s",
     feature = "board-i6x",
@@ -514,7 +536,11 @@ pub type ActiveBoard = TProV2Spec;
     feature = "board-zorro",
     feature = "board-tx12",
     feature = "board-qx7",
-    feature = "board-tprov2"
+    feature = "board-tprov2",
+    feature = "board-t12",
+    feature = "board-x9d",
+    feature = "board-x9e",
+    feature = "board-at9spro"
 )))]
 pub type ActiveBoard = I6xSpec;
 

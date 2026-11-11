@@ -18,9 +18,11 @@ pub fn register_display_bus(bus: &'static mut dyn DisplayBus) {
     }
 }
 
-pub const WIDTH: usize = 128;
-pub const HEIGHT: usize = 64;
-pub const BUFFER_SIZE: usize = WIDTH * (HEIGHT / 8); // 1024 bytes
+use crate::board::{ActiveBoard, BoardProfile};
+
+pub const WIDTH: usize = ActiveBoard::DISPLAY_WIDTH;
+pub const HEIGHT: usize = ActiveBoard::DISPLAY_HEIGHT;
+pub const BUFFER_SIZE: usize = WIDTH * (HEIGHT / 8);
 
 /// ST7567 LCD Driver with 1024-byte internal framebuffer.
 pub struct St7567 {

@@ -3,17 +3,26 @@ use ferrox_core::hal::StorageBus;
 use stm32f4::stm32f407 as pac;
 
 use crate::descriptor::{PinDef, PocketHal, Qx7HalDescriptor};
+use crate::sdcard::{
+    SpiSdCard, FERROX_STORAGE_SECTOR_BASE, FERROX_TELEM_SECTOR_BASE, SD_SECTOR_SIZE,
+};
 
 const EEPROM_ADDR: u8 = 0x51; // 7-bit I2C address for M24256 on Q X7 family
 const PAGE_SIZE: usize = 64;
 
 pub struct PocketEepromI2cBus<H: Qx7HalDescriptor = PocketHal> {
+    using_sd: bool,
+    sd_card: SpiSdCard<H>,
+    active_telem_sector: u32,
     _phantom: PhantomData<H>,
 }
 
 impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
     pub const fn new() -> Self {
         Self {
+            using_sd: false,
+            sd_card: SpiSdCard::new(),
+            active_telem_sector: FERROX_TELEM_SECTOR_BASE,
             _phantom: PhantomData,
         }
     }
@@ -111,16 +120,8 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
         }
         false
     }
-}
 
-impl<H: Qx7HalDescriptor> Default for PocketEepromI2cBus<H> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
-    fn init(&mut self) -> bool {
+    fn init_i2c(&mut self) -> bool {
         let rcc = unsafe { &*pac::RCC::ptr() };
         let i2c1 = unsafe { &*pac::I2C1::ptr() };
 
@@ -175,7 +176,7 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
         self.poll_ack()
     }
 
-    fn read(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {
+    fn read_i2c(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {
         let i2c1 = unsafe { &*pac::I2C1::ptr() };
 
         self.wait_while_busy();
@@ -232,7 +233,7 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
         Ok(())
     }
 
-    fn write(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
+    fn write_i2c(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
         let mut cur_addr = addr;
         let mut offset = 0;
         let total = buf.len();
@@ -265,6 +266,106 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
             offset += chunk_size;
         }
 
+        Ok(())
+    }
+
+    fn read_sd(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {
+        let mut cur_addr = addr as usize;
+        let mut offset = 0;
+        let total = buf.len();
+        let mut sector_buf = [0u8; SD_SECTOR_SIZE];
+
+        while offset < total {
+            let sector_idx = FERROX_STORAGE_SECTOR_BASE + (cur_addr / SD_SECTOR_SIZE) as u32;
+            let sector_offset = cur_addr % SD_SECTOR_SIZE;
+            let bytes_in_sector = SD_SECTOR_SIZE - sector_offset;
+            let chunk_size = bytes_in_sector.min(total - offset);
+
+            self.sd_card.read_sector(sector_idx, &mut sector_buf)?;
+            buf[offset..offset + chunk_size]
+                .copy_from_slice(&sector_buf[sector_offset..sector_offset + chunk_size]);
+
+            cur_addr += chunk_size;
+            offset += chunk_size;
+        }
+        Ok(())
+    }
+
+    fn write_sd(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
+        let mut cur_addr = addr as usize;
+        let mut offset = 0;
+        let total = buf.len();
+        let mut sector_buf = [0u8; SD_SECTOR_SIZE];
+
+        while offset < total {
+            let sector_idx = FERROX_STORAGE_SECTOR_BASE + (cur_addr / SD_SECTOR_SIZE) as u32;
+            let sector_offset = cur_addr % SD_SECTOR_SIZE;
+            let bytes_in_sector = SD_SECTOR_SIZE - sector_offset;
+            let chunk_size = bytes_in_sector.min(total - offset);
+
+            // If updating partial sector, read previous sector contents first
+            if chunk_size < SD_SECTOR_SIZE {
+                let _ = self.sd_card.read_sector(sector_idx, &mut sector_buf);
+            }
+
+            sector_buf[sector_offset..sector_offset + chunk_size]
+                .copy_from_slice(&buf[offset..offset + chunk_size]);
+            self.sd_card.write_sector(sector_idx, &sector_buf)?;
+
+            cur_addr += chunk_size;
+            offset += chunk_size;
+        }
+        Ok(())
+    }
+}
+
+impl<H: Qx7HalDescriptor> Default for PocketEepromI2cBus<H> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
+    fn init(&mut self) -> bool {
+        // 1. Probe I2C1 EEPROM first (FrSky QX7 / X9D+ with onboard M24256)
+        if self.init_i2c() {
+            self.using_sd = false;
+            return true;
+        }
+
+        // 2. Fall back to SPI2 SD card (RadioMaster Pocket, Boxer, Zorro, TX12 MKII)
+        if self.sd_card.init() {
+            self.using_sd = true;
+            self.active_telem_sector = FERROX_TELEM_SECTOR_BASE;
+            return true;
+        }
+
+        // 3. No hardware storage found (bench testing with SD card removed)
+        self.using_sd = false;
+        false
+    }
+
+    fn read(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {
+        if self.using_sd {
+            self.read_sd(addr, buf)
+        } else {
+            self.read_i2c(addr, buf)
+        }
+    }
+
+    fn write(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
+        if self.using_sd {
+            self.write_sd(addr, buf)
+        } else {
+            self.write_i2c(addr, buf)
+        }
+    }
+
+    fn append_telemetry_sector(&mut self, sector: &[u8; 512]) -> Result<(), ()> {
+        if self.using_sd {
+            self.sd_card.write_sector(self.active_telem_sector, sector)?;
+            self.active_telem_sector = self.active_telem_sector.wrapping_add(1);
+        }
         Ok(())
     }
 }

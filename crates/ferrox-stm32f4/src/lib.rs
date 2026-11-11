@@ -10,6 +10,7 @@ pub mod descriptor;
 pub mod display;
 pub mod keys;
 pub mod power;
+pub mod sdcard;
 pub mod storage;
 pub mod time;
 pub mod trainer;
@@ -25,6 +26,7 @@ pub use descriptor::*;
 pub use display::St7567SpiBus;
 pub use keys::{PocketKeyDriver, Qx7KeyDriver};
 pub use power::Stm32f4PowerDriver;
+pub use sdcard::SpiSdCard;
 pub use storage::PocketEepromI2cBus;
 pub use trainer::Stm32f4TrainerDriver;
 pub use uart::PocketSerialPort;
@@ -74,6 +76,10 @@ define_qx7_context!(create_zorro_context, ZorroHal);
 define_qx7_context!(create_tx12_context, Tx12Hal);
 define_qx7_context!(create_qx7_context, Qx7Hal);
 define_qx7_context!(create_tprov2_context, TProV2Hal);
+define_qx7_context!(create_t12_context, T12Hal);
+define_qx7_context!(create_x9d_context, X9dHal);
+define_qx7_context!(create_x9e_context, X9eHal);
+define_qx7_context!(create_at9spro_context, At9sProHal);
 
 /// Create PlatformContext for the active board target feature.
 pub fn create_active_context() -> ferrox_core::hal::PlatformContext<'static> {
@@ -87,12 +93,24 @@ pub fn create_active_context() -> ferrox_core::hal::PlatformContext<'static> {
     return create_qx7_context();
     #[cfg(feature = "board-tprov2")]
     return create_tprov2_context();
+    #[cfg(feature = "board-t12")]
+    return create_t12_context();
+    #[cfg(feature = "board-x9d")]
+    return create_x9d_context();
+    #[cfg(feature = "board-x9e")]
+    return create_x9e_context();
+    #[cfg(feature = "board-at9spro")]
+    return create_at9spro_context();
     #[cfg(not(any(
         feature = "board-boxer",
         feature = "board-zorro",
         feature = "board-tx12",
         feature = "board-qx7",
-        feature = "board-tprov2"
+        feature = "board-tprov2",
+        feature = "board-t12",
+        feature = "board-x9d",
+        feature = "board-x9e",
+        feature = "board-at9spro"
     )))]
     create_pocket_context()
 }

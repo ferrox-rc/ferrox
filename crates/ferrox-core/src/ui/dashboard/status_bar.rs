@@ -151,5 +151,5 @@ pub fn render(
     }
 
     // Header divider line (y = 11)
-    lcd.draw_hline(0, 11, 128, true);
+    lcd.draw_hline(0, 11, crate::display::st7567::WIDTH as u32, true);
 }

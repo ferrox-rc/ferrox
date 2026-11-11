@@ -199,6 +199,13 @@ pub trait Qx7HalDescriptor: 'static {
     const EEPROM_SDA: PinDef = PinDef::new(Port::B, 9);
     const EEPROM_WP: PinDef = PinDef::new(Port::D, 10);
 
+    /// MicroSD card SPI2 pins.
+    const SD_CS: PinDef = PinDef::new(Port::B, 12);
+    const SD_SCK: PinDef = PinDef::new(Port::B, 13);
+    const SD_MISO: PinDef = PinDef::new(Port::B, 14);
+    const SD_MOSI: PinDef = PinDef::new(Port::B, 15);
+    const SD_DETECT: PinDef = PinDef::new(Port::D, 9);
+
     /// Rotary encoder secondary pin (PE10 on RM, PE11 on QX7/Jumper).
     const ROTENC_PIN_B: u8 = 10;
     const ROTENC_INVERT: bool = true;
@@ -386,4 +393,86 @@ impl Qx7HalDescriptor for TProV2Hal {
     const LED_STATUS: PinDef = PinDef::new(Port::B, 1);
     const INT_RF_PWR: PinDef = PinDef::new(Port::C, 6);
     const INT_RF_BOOTCMD: Option<PinDef> = None;
+}
+
+/// Jumper T12 HAL Descriptor.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct T12Hal;
+
+impl Qx7HalDescriptor for T12Hal {
+    const STICK_INVERT: [bool; 4] = [false, true, false, true];
+    const S1_INVERT: bool = false;
+    const S2_INVERT: bool = false;
+    const LCD_VERT_INVERT: bool = true;
+    const LCD_HORIZ_INVERT: bool = false;
+    const SW_SE: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 14));
+    const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
+}
+
+/// FrSky Taranis X9D+ HAL Descriptor.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct X9dHal;
+
+impl Qx7HalDescriptor for X9dHal {
+    const STICK_INVERT: [bool; 4] = [true, false, false, true];
+    const S1_INVERT: bool = false;
+    const S2_INVERT: bool = false;
+    const LCD_VERT_INVERT: bool = false;
+    const LCD_HORIZ_INVERT: bool = false;
+    const SW_SE: SwitchDef = SwitchDef::ThreePos {
+        high: PinDef::new(Port::E, 14),
+        low: PinDef::new(Port::E, 7),
+    };
+    const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
+    const SW_SG: SwitchDef = SwitchDef::ThreePos {
+        high: PinDef::new(Port::E, 2),
+        low: PinDef::new(Port::E, 0),
+    };
+    const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
+}
+
+/// FrSky Taranis X9E Tray Radio HAL Descriptor.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct X9eHal;
+
+impl Qx7HalDescriptor for X9eHal {
+    const STICK_INVERT: [bool; 4] = [true, false, false, true];
+    const S1_INVERT: bool = false;
+    const S2_INVERT: bool = false;
+    const LCD_VERT_INVERT: bool = false;
+    const LCD_HORIZ_INVERT: bool = false;
+    const SW_SE: SwitchDef = SwitchDef::ThreePos {
+        high: PinDef::new(Port::E, 14),
+        low: PinDef::new(Port::E, 7),
+    };
+    const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
+    const SW_SG: SwitchDef = SwitchDef::ThreePos {
+        high: PinDef::new(Port::E, 2),
+        low: PinDef::new(Port::E, 0),
+    };
+    const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
+}
+
+/// RadioLink AT9S Pro HAL Descriptor.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct At9sProHal;
+
+impl Qx7HalDescriptor for At9sProHal {
+    const STICK_INVERT: [bool; 4] = [false, true, false, true];
+    const S1_INVERT: bool = false;
+    const S2_INVERT: bool = false;
+    const LCD_VERT_INVERT: bool = false;
+    const LCD_HORIZ_INVERT: bool = false;
+    const ROTENC_PIN_B: u8 = 11;
+    const ROTENC_INVERT: bool = false;
+    const SW_SE: SwitchDef = SwitchDef::ThreePos {
+        high: PinDef::new(Port::E, 14),
+        low: PinDef::new(Port::E, 7),
+    };
+    const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
+    const SW_SG: SwitchDef = SwitchDef::ThreePos {
+        high: PinDef::new(Port::E, 2),
+        low: PinDef::new(Port::E, 0),
+    };
+    const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
 }

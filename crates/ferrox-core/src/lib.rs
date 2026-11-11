@@ -19,9 +19,13 @@ compile_error!("Multiple board features cannot be enabled simultaneously (board-
     feature = "board-tx12",
     feature = "board-qx7",
     feature = "board-tprov2",
+    feature = "board-t12",
+    feature = "board-x9d",
+    feature = "board-x9e",
+    feature = "board-at9spro",
     test
 )))]
-compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, board-pocket, board-boxer, board-zorro, board-tx12, board-qx7, or board-tprov2).");
+compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, board-pocket, board-boxer, board-zorro, board-tx12, board-qx7, board-tprov2, board-t12, board-x9d, board-x9e, or board-at9spro).");
 
 pub mod board;
 pub use board::{ActiveBoard, BoardProfile};
@@ -49,6 +53,8 @@ pub mod storage;
 pub mod time;
 pub mod trainer;
 pub mod trim;
+pub mod telemetry_log;
+pub use telemetry_log::{FlightLogFrame, TelemetryLogger};
 pub mod ui;
 pub use ui::menu;
 pub mod usb;

@@ -38,6 +38,9 @@ pub trait DisplayBus {
 
     /// Set backlight brightness level (0..100%).
     fn set_backlight_level(&mut self, pct: u8);
+
+    /// Flush a 4-bit indexed framebuffer expanded via a 16-entry RGB565 look-up table.
+    fn flush_indexed_rgb565(&mut self, _fb_4bpp: &[u8], _palette: &[u16; 16]) {}
 }
 
 /// Dummy display bus for tests.
@@ -63,6 +66,12 @@ pub trait StorageBus {
     /// Write a slice of bytes to non-volatile storage.
     #[allow(clippy::result_unit_err)]
     fn write(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()>;
+
+    /// Optional append hook for streaming a 512-byte telemetry sector (e.g. to SD card).
+    #[allow(clippy::result_unit_err)]
+    fn append_telemetry_sector(&mut self, _sector: &[u8; 512]) -> Result<(), ()> {
+        Ok(())
+    }
 }
 
 /// Dummy no-op storage bus for tests and simulated environments.
