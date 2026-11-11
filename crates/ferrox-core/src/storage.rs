@@ -1034,7 +1034,7 @@ impl RadioStorage {
             }
         }
         for mode in self.radio.adc_modes.iter_mut() {
-            if *mode > 6 {
+            if *mode > 7 {
                 *mode = 0; // Default
             }
         }
@@ -1043,8 +1043,11 @@ impl RadioStorage {
                 *slot = 22; // OFF
             }
         }
-        if self.radio.trainer_config > 3 {
+        if self.radio.trainer_config > 7 {
             self.radio.trainer_config = 0;
+        } else if (self.radio.trainer_config & 0x06) == 0x06 {
+            // PPM In and DSM SAT In are mutually exclusive
+            self.radio.trainer_config &= !0x04;
         }
 
         let m = &mut self.active_model;
@@ -1056,8 +1059,11 @@ impl RadioStorage {
         if m.model_type > 4 {
             m.model_type = 0;
         }
-        if m.rf_protocol > 1 {
-            m.rf_protocol = 0;
+        if m.rf_protocol > 3 {
+            m.rf_protocol = crate::board::ActiveBoard::DEFAULT_PROTOCOL as u8;
+        }
+        if m.dsm_sub_proto > 3 {
+            m.dsm_sub_proto = 0;
         }
         if m.crsf_baud > 4 {
             m.crsf_baud = 2;
@@ -1995,9 +2001,51 @@ mod tests {
         assert_eq!(radio.trainer_config, 2);
 
         let mut storage = RadioStorage::default_factory();
+        storage.radio.set_dsm_sat_in_enabled(true);
+        storage.radio.set_ppm_out_enabled(true);
+        assert_eq!(storage.radio.trainer_config, 5);
+        storage.sanitize();
+        assert_eq!(storage.radio.trainer_config, 5);
+
+        // Mutually exclusive PPM In + DSM SAT bits clear DSM SAT
+        storage.radio.trainer_config = 7;
+        storage.sanitize();
+        assert_eq!(storage.radio.trainer_config, 3);
+
         storage.radio.trainer_config = 99;
         storage.sanitize();
         assert_eq!(storage.radio.trainer_config, 0);
+    }
+
+    #[test]
+    fn test_sanitize_preserves_instant_trim_and_rf_protocols() {
+        let mut storage = RadioStorage::default_factory();
+
+        // AdcInputMode::InstantTrim = 7 must survive sanitize; invalid values (>7) reset to Default (0)
+        storage.radio.adc_modes[0] = AdcInputMode::InstantTrim as u8;
+        storage.radio.adc_modes[1] = 8;
+        storage.sanitize();
+        assert_eq!(storage.radio.adc_modes[0], AdcInputMode::InstantTrim as u8);
+        assert_eq!(storage.radio.adc_modes[1], 0);
+
+        // RfProtocol variants Cc2500 (2) and Dsm (3) + dsm_sub_proto (0..=3) must survive sanitize
+        for proto in [0u8, 1, 2, 3] {
+            storage.active_model.rf_protocol = proto;
+            storage.active_model.dsm_sub_proto = proto;
+            storage.sanitize();
+            assert_eq!(storage.active_model.rf_protocol, proto);
+            assert_eq!(storage.active_model.dsm_sub_proto, proto);
+        }
+
+        // Out-of-range protocol / sub-protocol reset safely
+        storage.active_model.rf_protocol = 99;
+        storage.active_model.dsm_sub_proto = 99;
+        storage.sanitize();
+        assert_eq!(
+            storage.active_model.rf_protocol,
+            crate::board::ActiveBoard::DEFAULT_PROTOCOL as u8
+        );
+        assert_eq!(storage.active_model.dsm_sub_proto, 0);
     }
 
     #[test]
