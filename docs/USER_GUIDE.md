@@ -1,28 +1,36 @@
 # FERROX USER GUIDE & OPERATIONS MANUAL
 
-A comprehensive guide to operating the `ferrox` firmware on supported transmitters (FlySky FS-i6S and FlySky FS-i6X).
+A comprehensive guide to operating the `ferrox` firmware across all supported transmitters:
+- **FlySky**: FS-i6X, FS-i6S
+- **RadioMaster**: Pocket, Boxer, Zorro, TX12 MKII
+- **Jumper**: T12, T12 Pro, T-Pro V2
+- **FrSky**: Taranis Q X7 / Q X7S, Taranis X9D / X9D+, Taranis X9E
+- **RadioLink**: AT9S Pro, AT10II
 
 ---
 
-## 1. Physical Controls & Faceplate Layout
-![FlySky FS-I6S](img/IMG_20261025_185240.jpg)
+## 1. Physical Controls & Navigation Paradigms
 
-### Keypad & Navigation Buttons
-- **`[UP]`** / **`[DOWN]`**:
-  - **On Flight Screen**: Cycles through the 5 dashboard pages (`1/5` -> `2/5` -> `3/5` -> `4/5` -> `5/5` with `[DOWN]`, and reverse with `[UP]`).
-  - **In Menus & Editors**: Navigate menu items, cycle characters, increment/decrement values.
-  - **Auto-Repeat**: Holding **`[UP]`** or **`[DOWN]`** for >= 300 ms automatically repeats every **70 ms** for rapid scrolling through lists, swift character selection, and fast curve point editing.
-- **`[OK]`**: Enter submenu, toggle setting, confirm values, advance character cursor in naming editor.
-  - **Hold `[OK]` for 1.2 seconds** on any flight dashboard page: Opens the **Settings Menu**.
-  - **Hold `[OK]` during Power-On**: Launches **Stick Calibration** immediately.
-- **`[CANCEL]` (`[ESC]`)**:
-  - **On Flight Screen (Hold >= 1.0s)**: Opens the **HUD Timer Reset Modal** with a real-time progress bar. Holding for 1.0s resets the flight timer back to its configured duration (or 0:00 for count-up), sounds a high chime, and flashes a `"TIMER RESET!"` confirmation. Releasing early aborts without resetting.
-  - **In Menus**: Return to previous screen, exit edit mode, abort calibration, or complete one-way receiver binding.
-- **`[BIND]` (Dedicated Button with Clean Separation Logic)**:
-  - **Tap (`< 1.0s`) on Flight Screen**: Cycles through the 5 flight dashboard pages (`1/5` -> `2/5` -> `3/5` -> `4/5` -> `5/5` -> `1/5`).
-  - **Hold (`>= 1.0s`) on Flight Screen**: Initiates AFHDS 2A receiver binding.
-  - **Hold during Power-On**: Launches AFHDS 2A binding subprogram immediately at boot.
-  - **In Menus & Editors**: Functions as **`[TAB]` / Cursor Advance** (advances name characters or curve points) without triggering RF binding.
+Depending on your transmitter hardware, Ferrox provides dedicated, responsive input drivers:
+
+### 1.1 Touchscreen Navigation (FlySky FS-i6S)
+- **Swipe Gestures**: Swipe UP / DOWN on the flight dashboard to cycle pages (`1/5` through `5/5`). Swipe LEFT / RIGHT to switch sub-pages or telemetry sensors.
+- **Center Screen Tap**: Tapping the center of any flight dashboard page opens the **Settings Menu**.
+- **Virtual Trims**: Touch targets on the left, right, and bottom screen perimeters adjust elevator, throttle, rudder, and aileron digital trims.
+- **Front Buttons**: Left front (`PA9`) serves as `[CANCEL]`; right front (`PA10`) serves as `[OK]`.
+
+### 1.2 Matrix Keypad & Optical Jog Wheel (FlySky FS-i6X)
+- **`[UP]`** / **`[DOWN]`**: Cycle dashboard pages and menu items. Auto-repeats every 70 ms after holding >= 300 ms.
+- **Optical Jog Wheel**: Turn clockwise to increment values or scroll down; turn counter-clockwise to decrement or scroll up.
+- **`[OK]`**: Confirm selection or enter submenus. Hold for 1.2s on flight dashboard to open the **Settings Menu**.
+- **`[CANCEL]`**: Exit submenu, cancel editing, or hold >= 1.0s on flight screen to reset flight timer.
+
+### 1.3 Rotary Scroll Wheel with Push Button (Pocket, T12, X9D, X9E, AT9S Pro)
+- **Scroll Wheel**: Turn clockwise to scroll down/increment; turn counter-clockwise to scroll up/decrement.
+- **Wheel Click (`[ENTER]` / `[OK]`)**: Press the scroll wheel to select a menu row, toggle settings, or enter character edit mode.
+- **`[PAGE]`**: Tap `PAGE` to cycle flight dashboard pages (`1/5` through `5/5`). Hold `PAGE` to jump directly into Telemetry or Model Setup.
+- **`[EXIT]` / `[RTN]`: Return to previous menu or cancel editing. Hold `EXIT` on flight dashboard to reset flight timer.
+- **`[SYS]` / `[MDL]` Buttons**: Direct one-tap jump into Radio System Setup or Model Configuration.
 
 ### Power-On Startup & Splash Screen
 - **Ferrox-RC Splash Screen**: When the transmitter powers on, the LCD immediately displays the 28x27 Ferrox-RC kinetic delta emblem, firmware identifier (`ferrox`), and build version for 1200 ms while ADC, DMA, and RF peripherals initialize in the background.
@@ -500,44 +508,86 @@ The firmware provides 4 convenient ways to initiate AFHDS 2A binding with clean 
 
 ## 8. Firmware Flashing, Full Flash Backup, & DFU Recovery
 
-The FlySky FS-i6S can be backed up and flashed directly over USB without specialized hardware programmer probes:
+All supported transmitters can be backed up and flashed directly over USB or via microSD card without specialized programmer probes. All supported chips feature read-only hardware ROM bootloaders, making them **100% unbrickable**.
 
-### 1. Enter Factory ROM DFU Bootloader
+You have two flashing paths:
+- **Method A (EdgeTX Radios - SD Bootloader):** Flash directly from the radio menu without PC drivers or DFU tools.
+- **Method B (Universal - Direct USB DFU):** Direct factory ROM flashing with raw 1:1 backup and restore.
 
-#### A. Initial Flash from Stock FlySky Factory Firmware (R60 Bootloader Access)
-The stock FlySky factory firmware does not include the software key-check logic to jump into the DFU bootloader. Therefore, entering DFU mode for the very first time requires access to the hardware `BOOT0` line:
-1. Ensure the transmitter is switched **OFF** and remove the rear case screws.
-2. Carefully separate the rear case. Be aware of the battery wires connected between the two halves. Once separated, locate the two unpopulated solder pads labeled **`R60`** on the back of the motherboard (near the microcontroller). It is best to connect the USB cable to the rear case now.
-3. Momentarily bridge/short the two `R60` pads using tweezers, a jumper wire, or a screwdriver tip.
-4. While holding the bridge across `R60`, have the USB cable connected to your PC and switch the transmitter power switch **ON**.
-5. Bridging `R60` pulls the MCU's `BOOT0` pin to 3.3V, causing the chip to boot directly into its factory ROM DFU bootloader (`0483:df11` for STM32, `314b:0106` for APM32). The transmitter screen remains blank, and the PC detects the device as `STM32 BOOTLOADER`.
-6. Once powered on, you can remove the bridge across `R60`. You do not need to keep it bridged while flashing.
+---
 
-#### B. Upgrading from OpenI6X or ferrox (No Disassembly Needed)
-Once custom firmware has been flashed to the radio, hardware pad bridging is never needed again:
-- With the transmitter powered off, hold **Roll Left + Yaw Right** inward towards the power switch while switching on the radio.
-- The LCD screen remains blank, and the transmitter enumerates over USB as `0483:df11` (STM32 BOOTLOADER).
+### Method A: Testing via EdgeTX SD Bootloader (No Drivers Needed)
 
-### 2. Backup Entire Flash (CRITICAL BEFORE FIRST FLASH)
-Before flashing any custom firmware, pull your entire 128 KB on-chip Flash memory to a local file for 100% safe, instant reversion:
+For RadioMaster Pocket, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
+
+1. **Build or download** the bootloader-compatible binary:
+   ```bash
+   cargo build-pocket-sd
+   cargo objcopy -p ferrox-pocket --target thumbv7em-none-eabihf --release --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+   ```
+2. Copy `ferrox-pocket-sd.bin` into the `/FIRMWARE/` folder on your microSD card.
+3. Push and hold **both horizontal trims inward** while pressing the power button to enter the EdgeTX Bootloader.
+4. Select **Write Firmware**, choose `ferrox-pocket-sd.bin`, and confirm.
+5. Ferrox will boot instantly!
+6. **To revert:** Power down, hold both horizontal trims inward again, and select your stock EdgeTX `.bin` from `/FIRMWARE/`.
+
+---
+
+### Method B: Testing via Direct USB DFU (Silicon-Level Backup & Restore)
+
+#### 1. Enter Factory ROM DFU Bootloader
+
+- **RadioMaster Pocket / Jumper / FrSky (STM32F4):**
+  1. Power the radio **OFF** and remove the microSD card.
+  2. Plug a USB-C data cable into the **top USB port** (data/simulator port, not battery charging).
+  3. The screen and LEDs will remain dark; the MCU boots directly into ST System ROM DFU mode (`0483:df11`).
+- **FlySky FS-i6X (STM32F072 / APM32F072):**
+  1. Power the radio **OFF**.
+  2. Push both horizontal trims inward towards the power switch (**Roll Left + Yaw Right**), then slide the power switch ON.
+  3. Plug in the USB cable.
+- **FlySky FS-i6S (STM32F072 / APM32F072):**
+  1. Power the radio **OFF**.
+  2. Press and hold both front/rear tactile push-buttons (**`PA9` + `PA10`**), then press the power buttons.
+  3. Plug in the USB cable.
+
+> Verify DFU connection: Run `dfu-util -l`. You should see `Found DFU: [0483:df11]` (or `[314b:0106]` for APM32).
+
+#### 2. Backup Stock Flash (CRITICAL BEFORE FIRST FLASH)
+
+Pull your entire internal on-chip Flash memory to a local file for 100% safe, instant reversion:
 ```bash
-# Backup complete 128 KB on-chip Flash (firmware + calibration + models)
-dfu-util -a 0 -s 0x08000000:131072 -U stock_backup.bin
+# RadioMaster Pocket / Jumper T12 / FrSky X9D / X9E (512 KB Flash):
+dfu-util -a 0 -s 0x08000000:524288 -U stock_backup_pocket.bin
+
+# FlySky FS-i6X & FS-i6S (128 KB Flash):
+dfu-util -a 0 -s 0x08000000:131072 -U stock_backup_flysky.bin
+
+# FlySky with APM32 clone chip:
+dfu-util -a 0 -d 314b:0106 -s 0x08000000:131072 -U stock_backup_flysky.bin
 ```
 
-### 3. Flash ferrox Firmware
-Flash the compiled binary via `dfu-util`:
-```bash
-# For FlySky FS-i6S:
-dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
+#### 3. Flash ferrox Firmware
 
-# For FlySky FS-i6X (STM32F072):
+Flash the target binary corresponding to your radio:
+```bash
+# RadioMaster Pocket:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-pocket.bin
+
+# FlySky FS-i6X:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
 
-# For FlySky FS-i6X (APM32F072):
-dfu-util -a 0 -d 314b:0106 -s 0x08000000:leave -D ferrox-i6x.bin
+# FlySky FS-i6S:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
+
+# Jumper T12:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-t12.bin
+
+# FrSky Taranis X9D+:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-x9d.bin
 ```
-The radio will immediately reboot into the new firmware upon completion.
+*(For APM32 chips, append `-d 314b:0106` before `-s`).*
+
+The `:leave` flag exits DFU and boots directly into Ferrox.
 
 > [!WARNING]
 > ### Troubleshooting DFU State Error: `DFU state(10) = dfuERROR`
@@ -560,10 +610,15 @@ The radio will immediately reboot into the new firmware upon completion.
 >
 > *(Note: The message `Warning: Invalid DFU suffix signature` is also completely harmless: raw `.bin` files created by compilers omit the optional 16-byte PC DFU CRC trailer).*
 
-### 4. Restore / Revert Anytime
+#### 4. Restore / Revert Anytime
+
 You can restore your original stock or OpenI6X backup file at any time:
 ```bash
-dfu-util -a 0 -s 0x08000000:leave -D stock_backup.bin
+# Restore RadioMaster Pocket / Jumper / FrSky:
+dfu-util -a 0 -s 0x08000000:leave -D stock_backup_pocket.bin
+
+# Restore FlySky FS-i6X / FS-i6S:
+dfu-util -a 0 -s 0x08000000:leave -D stock_backup_flysky.bin
 ```
 
 ---

@@ -9,14 +9,17 @@
 
 `ferrox` is a multi-radio firmware monorepo built around **`ferrox-core`**, a hardware-agnostic flight control, mixing, telemetry, and UI engine parameterized by compile-time [`BoardProfile`](crates/ferrox-core/src/board.rs) specialization. Originally forged on the **FlySky FS-i6X** and **FlySky FS-i6S**, `ferrox` is architected to bring deterministic, memory-safe Rust firmware to a growing lineup of RC transmitters across the open-source ecosystem:
 
-| Transmitter Target | MCU Architecture | Status | Primary RF / Module Support |
-| :--- | :--- | :--- | :--- |
-| **FlySky FS-i6X** (`boards/ferrox-i6x`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** |
-| **FlySky FS-i6S** (`boards/ferrox-i6s`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** |
-| **RadioMaster Pocket** (`PocketSpec`) | STM32F407VG (Cortex-M4F) | **In Progress (`BoardProfile` Ready)** | Internal **ExpressLRS (CRSF)** or **CC2500** + External Nano Bay (**DSM / Multi**) |
-| **Future STM32F4 / H7 Handsets** | Cortex-M4F / Cortex-M7 | **Planned** | Declarative `BoardProfile` + modular `rf-*` feature selection |
+| Transmitter Target | MCU Architecture | Status | Primary RF / Module Support | Display |
+| :--- | :--- | :--- | :--- | :--- |
+| **FlySky FS-i6X** (`boards/ferrox-i6x`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** | 128x64 Mono LCD |
+| **FlySky FS-i6S** (`boards/ferrox-i6s`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** | Capacitive Touch 128x64 |
+| **RadioMaster Pocket** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Hardware Bring-Up** | Internal **ExpressLRS (CRSF)** or **CC2500** + Nano Module Bay | 128x64 Mono LCD + Scroll Wheel |
+| **Jumper T12 / T12 Pro** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal Multi-Protocol / CC2500 + External Module Bay | 128x64 Mono LCD + Scroll Wheel |
+| **FrSky Taranis X9D / X9D+** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD |
+| **FrSky Taranis X9E** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD (Tray) |
+| **RadioLink AT9S Pro / AT10II** (`boards/ferrox-pocket`) | STM32F405 / STM32F407 (Cortex-M4F) | **Supported Target** | Multi-Protocol + External CRSF / ELRS Bay | 320x240 Color TFT (4-bit Indexed) |
 
-Supports modular RF protocols (**AFHDS 2A**, **CRSF / ExpressLRS** with native on-radio device configurator, **CC2500**, and **Spektrum DSM2 / DSMX** with optional Forward Programming), a zero-dependency direct PAC **USB 2.0 Full-Speed** stack (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** & **Electronic Power Management** (i6S), **Matrix Keypad** (i6X), **Trainer Subsystem** (CPPM Out/In & Spektrum Satellite wireless trainer), and a fast **128×64 Monochrome LCD** engine.
+Supports modular RF protocols (**AFHDS 2A**, **CRSF / ExpressLRS** with native on-radio device configurator, **CC2500**, and **Spektrum DSM2 / DSMX** with optional Forward Programming), zero-dependency direct PAC **USB 2.0 Full-Speed** stack (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** & **Electronic Power Management** (i6S), **Matrix Keypad** (i6X), **Rotary Scroll Wheel** (Pocket, T12, X9D, AT9S Pro), **MicroSD SPI Storage & Flight Telemetry Logging** (Pocket), **Trainer Subsystem** (CPPM Out/In & Spektrum Satellite wireless trainer), **Responsive 128x64 and 212x64 Wide Displays**, and a zero-heap **320x240 4-bit Indexed RGB565 Color Canvas**.
 
 ---
 
@@ -33,28 +36,44 @@ The `ferrox` workspace unifies development, host-side testing, and binary releas
 - **External I2C EEPROM Storage:** Wear-leveled A/B ping-pong storage for `RadioConfig` and 20 dedicated `ModelConfig` slots stored on external 16 KB I2C EEPROM (24C128), completely isolating user model data from firmware flashing and preserving flash endurance.
 - **Deterministic Concurrency:** Priority-driven interrupt scheduling paired with lock-free atomic `TripleBuffer` channel passing, protected critical sections during RF strobes and trainer reads, and a 2.0s hardware independent watchdog with sub-2ms warm reset recovery.
 - **Lightweight Footprint:**
-  - **FS-i6S**: **~104.1 KB Flash** out of 128 KB (~23.9 KB free headroom, 81.3% flash used) and **~6.3 KB static RAM** out of 16 KB.
-  - **FS-i6X**: **~99.8 KB Flash** out of 128 KB (~28.2 KB free headroom, 77.9% flash used) and **~6.2 KB static RAM** out of 16 KB.
+  - **FS-i6S (Cortex-M0)**: **~104.1 KB Flash** out of 128 KB (~23.9 KB free headroom) and **~6.3 KB static RAM** out of 16 KB.
+  - **FS-i6X (Cortex-M0)**: **~99.8 KB Flash** out of 128 KB (~28.2 KB free headroom) and **~6.2 KB static RAM** out of 16 KB.
+  - **RM Pocket (Cortex-M4F)**: **~89.8 KB Flash** out of 512 KB (~422 KB free headroom) and **~5.7 KB static RAM** out of 192 KB.
+  - **Jumper T12 (Cortex-M4F)**: **~90.1 KB Flash** out of 512 KB and **~5.7 KB static RAM**.
+  - **FrSky X9D / X9E (Cortex-M4F)**: **~90.5 KB Flash** out of 512 KB and **~5.7 KB static RAM** (1696 B 212x64 framebuffer).
+  - **RadioLink AT9S Pro (Cortex-M4F)**: **~91.8 KB Flash** out of 512 KB and **~5.7 KB static RAM** + 38.4 KB CCM RAM (320x240 4bpp color canvas).
 
 ---
 
-## 2. Target Hardware Map (FlySky FS-i6S & FS-i6X)
+## 2. Target Hardware Map
+
+### A. FlySky Targets (STM32F072 / APM32F072 - Cortex-M0 @ 48 MHz)
 
 | Peripheral | Controller / Spec | FS-i6S Pins & Ports | FS-i6X Pins & Ports | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **MCU** | STM32F072VB / APM32F072VB (48 MHz) | ARMv6-M (`thumbv6m-none-eabi`) | ARMv6-M (`thumbv6m-none-eabi`) | 128 KB Flash, 16 KB SRAM |
 | **Power Control** | Power Switch & Latch | Electronic Latch `PB15` (Out), `PB14` (In) | Mechanical slide switch | i6S features soft hold-to-shutdown (`PB14` >= 1.5s) & blue LEDs (`PD10`/`PD11`) |
-| **Primary Controls**| Touch / Keypad / Jog Wheel | **FT6236** Capacitive Touch (`PB8`/`PB9` I2C1) + `PA9`/`PA10` | 4×4 Matrix Keypad + Optical Jog Wheel (`PB8`/`PB9`) | i6S uses gesture navigation & virtual trims; i6X uses jog wheel & tactile keys |
+| **Primary Controls**| Touch / Keypad / Jog Wheel | **FT6236** Capacitive Touch (`PB8`/`PB9` I2C1) + `PA9`/`PA10` | 4x4 Matrix Keypad + Optical Jog Wheel (`PB8`/`PB9`) | i6S uses gesture navigation & virtual trims; i6X uses jog wheel & tactile keys |
 | **DFU Bootloader** | Factory ROM DFU Bootloader | Hold `PA9` + `PA10` at power-on | Hold horizontal trims inward at power-on | Both: `System Info -> [OK] Reboot DFU` or USB CDC CLI command `dfu` |
 | **RF Transceiver** | Amiccom **A7105** 2.4 GHz | **SPI1** (`PE12` CSN, `PE13..15`) | **SPI1** (`PE12` CSN, `PE13..15`) | AFHDS 2A 260 Hz FHSS; auto deep-sleep (`0x0F`) in CRSF mode |
 | **External Module**| CRSF / ExpressLRS Bay | `USART1` (`PB6` TX / `PB7` RX), `PF6` Pwr | `USART2` (`PD5` TX / `PA15` RX) | Circular DMA UART with hardware `RE` half-duplex gating; baud rates up to 1.875M |
 | **Non-Volatile Storage**| External I2C EEPROM (24C128) | **I2C2** (`PB10` SCL / `PB11` SDA) | **I2C2** (`PB10` SCL / `PB11` SDA) | 16 KB external EEPROM: A/B ping-pong `RadioConfig` + 20 dedicated `ModelConfig` slots |
-| **Display** | **ST7567** (128×64 Monochrome LCD) | 8-bit Parallel (`PE0..7`, `PB3..5`, `PD2/7`)| 8-bit Parallel (`PE0..7`, `PB3..5`, `PD2/7`)| 1024-byte framebuffer in RAM; 30 Hz refresh; Electronic Volume contrast |
+| **Display** | **ST7567** (128x64 Monochrome LCD) | 8-bit Parallel (`PE0..7`, `PB3..5`, `PD2/7`)| 8-bit Parallel (`PE0..7`, `PB3..5`, `PD2/7`)| 1024-byte framebuffer in RAM; 30 Hz refresh; Electronic Volume contrast |
 | **Backlight** | Factory LED / PWM Dimming | `PF3` On/Off / `PC9` `TIM3_CH4` PWM | `PF3` On/Off / `PC9` `TIM3_CH4` PWM | Backlight brightness 0..100% in Settings |
 | **Analog Inputs** | 12-bit ADC1 via DMA | 11 stock (or 15 with `Ext ADC`) | 10 stock (or 14 with `Ext ADC`) | Continuous DMA1 circular scanner; mapped dynamically via Stick Mode 1..4 |
-| **Trainer Port** | Hardware `TIM15` CPPM In/Out | `PF10` (CPPM Out) / `PF9` (Trainer In) | `PF10` (CPPM Out) / `PF9` (Trainer In) | 22.5 ms 8-CH CPPM output; 0.5 µs input capture with auto instructor takeover |
+| **Trainer Port** | Hardware `TIM15` CPPM In/Out | `PF10` (CPPM Out) / `PF9` (Trainer In) | `PF10` (CPPM Out) / `PF9` (Trainer In) | 22.5 ms 8-CH CPPM output; 0.5 us input capture with auto instructor takeover |
 | **USB Controller** | Native USB 2.0 Full-Speed (12 Mbps)| `PA11` (D-) / `PA12` (D+) | `PA11` (D-) / `PA12` (D+) | Direct PAC driver: HID Joystick (100 Hz), CDC-ACM Serial CLI, Composite, Off |
 | **Audio** | Piezo Buzzer | `TIM1_CH1` (`PA8`) | `TIM1_CH1` (`PA8`) | Hardware PWM frequency & non-blocking tone sequencer (`Rich` & `Simple` profiles) |
+
+### B. High-Speed Targets (STM32F407 / STM32F405 - Cortex-M4F @ 168 MHz)
+
+| Transmitter Target | Display Specs | Storage Subsystem | RF Connectivity | Primary Input Devices |
+| :--- | :--- | :--- | :--- | :--- |
+| **RadioMaster Pocket** | ST7567 128x64 Mono LCD | Hybrid: I2C1 EEPROM + SPI2 microSD (`PB12..15`) + In-RAM | Internal ELRS (CRSF UART) / CC2500 + Nano Module Bay | Gimbals, Rotary Scroll Wheel, Push Button, 4 Aux Switches |
+| **Jumper T12 / T12 Pro** | ST7567 128x64 Mono LCD | I2C1 EEPROM + SPI SD Card | Internal Multi-Protocol / CC2500 + JR Module Bay | Gimbals, Rotary Scroll Wheel, 6 Switches, 2 Detented Pots |
+| **FrSky Taranis X9D / X9D+** | Wide 212x64 Mono LCD | I2C1 EEPROM + SPI SD Card | Internal ACCST/ACCESS + External JR Module Bay | Gimbals, 8 Switches (SA..SH), 2 Pots (S1/S2), 2 Sliders (LS/RS) |
+| **FrSky Taranis X9E** | Wide 212x64 Mono LCD | I2C1 EEPROM + SPI SD Card | Internal ACCST/ACCESS + External JR Module Bay | Tray Gimbals, Expanded Switch Matrix, Rotary Pots & Sliders |
+| **RadioLink AT9S Pro** | 320x240 Color TFT (4bpp Indexed) | I2C1 EEPROM + SPI Storage | Multi-Protocol + External CRSF/ELRS Module Bay | Gimbals, Rotary Scroll Wheel, 8 Switches, 2 Pots, 2 Sliders |
 
 ---
 
@@ -106,18 +125,21 @@ flowchart TD
 ```
 ferrox/
 ├── crates/
-│   ├── ferrox-core/            # Universal flight engine, mixer, math, UI & BoardProfile trait
-│   └── ferrox-stm32f0/         # Shared STM32F0 hardware drivers (Buzzer, ST7567, I2C, Time, Watchdog)
+│   ├── ferrox-core/            # Universal flight engine, mixer, math, UI, colors & BoardProfile
+│   ├── ferrox-stm32f0/         # Shared STM32F0 hardware drivers (Buzzer, ST7567, I2C, Time, Watchdog)
+│   └── ferrox-stm32f4/         # Shared STM32F4 HAL & QX7-family descriptors (Pocket, T12, X9D, X9E, AT9S Pro)
 └── boards/
     ├── ferrox-i6s/             # FlySky FS-i6S target (capacitive touch, power latch, 11/15 ADC)
     ├── ferrox-i6x/             # FlySky FS-i6X target (matrix keypad, optical jog wheel, 10/14 ADC)
-    └── ferrox-<target>/        # Future transmitter targets implementing BoardProfile
+    └── ferrox-pocket/          # High-speed Cortex-M4F target (Pocket, T12, X9D, X9E, AT9S Pro)
 ```
 
-- **`crates/ferrox-core`**: 100% portable, target-agnostic firmware engine containing the 18-channel matrix mixer, Catmull-Rom spline curves, external I2C EEPROM storage abstraction, pre-flight safety checks, dual-target unit tests, direct PAC USB driver, CRSF/ELRS configurator, and ST7567 display subsystem.
+- **`crates/ferrox-core`**: 100% portable, target-agnostic firmware engine containing the 18-channel 32-line matrix mixer, Catmull-Rom spline curves, external I2C EEPROM storage abstraction, pre-flight safety checks, dual-target unit tests, direct PAC USB driver, CRSF/ELRS configurator, responsive display engine (128x64 & 212x64), and zero-heap 4-bit indexed color canvas.
 - **`crates/ferrox-stm32f0`**: Reusable hardware driver implementation of `ToneOutput`, `DisplayBus`, and `StorageBus` traits for the STM32F0/APM32F0 series.
-- **`boards/ferrox-i6s` & `boards/ferrox-i6x`**: Zero-overhead target crates providing the reset vectors, pin configurations, hardware drivers, and `BoardProfile` trait implementation.
-- **Extending to Other Radios**: To bring Ferrox to a new radio, simply implement the `BoardProfile` const trait in a new crate under `boards/`. The new target immediately inherits the complete flight pipeline, mixer, telemetry, USB simulator, and configurator with zero duplicate code.
+- **`crates/ferrox-stm32f4`**: Reusable hardware drivers for STM32F407/F405 targets, featuring bare-metal SPI2 microSD driver (`sdcard.rs`), ST7567 display flush with page-stride math, and hybrid EEPROM/SD storage fallback.
+- **`boards/ferrox-i6s` & `boards/ferrox-i6x`**: Zero-overhead Cortex-M0 target crates providing reset vectors, pin configurations, hardware drivers, and `BoardProfile` implementations.
+- **`boards/ferrox-pocket`**: High-performance Cortex-M4F target crate providing automated memory map selection (direct DFU at `0x08000000` vs EdgeTX SD bootloader at `0x08008000`) and feature-gated compilation for RadioMaster Pocket, Jumper T12, FrSky X9D, FrSky X9E, and RadioLink AT9S Pro.
+- **Extending to Other Radios**: To bring Ferrox to a new radio, simply implement the `BoardProfile` const trait. The new target immediately inherits the complete flight pipeline, mixer, telemetry, USB simulator, and configurator with zero duplicate code.
 
 ---
 
@@ -206,64 +228,110 @@ For the complete phase-by-phase feature checklist, see **[docs/ROADMAP.md](docs/
 
 ## 9. Flashing, Full Flash Backup, & Reversion
 
-Both transmitters feature on-board USB wired directly to the STM32F072 microcontroller. Flashing requires **zero disassembly**:
+All supported transmitters feature on-board USB wired directly to the microcontroller or support SD card bootloaders. Flashing requires **zero disassembly**.
 
-### Step 1: Enter Factory ROM DFU Mode
+You can flash Ferrox using either of two methods:
+- **Method A (EdgeTX Radios - SD Bootloader):** Flash directly from the radio menu without PC drivers or DFU tools.
+- **Method B (Universal - Direct USB DFU):** Direct factory ROM flashing with raw 1:1 backup and restore.
 
-You can enter DFU mode using any of three convenient methods:
+---
 
-#### A. Zero-Disassembly Cold-Boot Combo (Recommended)
-- **FS-i6S**: Ensure power is **OFF**. Press and hold both front/rear tactile push-buttons (**`PA9` + `PA10`**), then press the power buttons.
-- **FS-i6X**: Ensure power is **OFF**. Push both horizontal trims inward towards the power switch (**Roll Left + Yaw Right**), then slide the power switch ON.
+### Method A: EdgeTX SD Bootloader (No Drivers Needed)
 
-The MCU jumps straight into the permanent STM32 factory ROM DFU bootloader (`0483:df11` for STM32, `314b:0106` for APM32).
+For RadioMaster Pocket, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
 
-#### B. Software Menu Trigger
-From the running firmware, navigate to **`Settings -> 13. System Info`**, and press **`[OK]`** (`[OK] Reboot DFU`). The screen immediately displays the dedicated DFU bootloader splash screen and warm-reboots directly into ROM DFU.
+1. **Build or download** the bootloader-compatible binary:
+   ```bash
+   cargo build-pocket-sd
+   cargo objcopy -p ferrox-pocket --target thumbv7em-none-eabihf --release --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+   ```
+2. Copy `ferrox-pocket-sd.bin` to the `/FIRMWARE/` folder on your microSD card.
+3. Hold **both horizontal trims inward** while powering ON to enter the EdgeTX Bootloader.
+4. Select **Write Firmware**, highlight `ferrox-pocket-sd.bin`, and confirm.
+5. Ferrox boots immediately with your stock EdgeTX configuration untouched on the SD card!
+6. **To revert:** Power down, hold trims inward to re-enter EdgeTX Bootloader, and select your stock EdgeTX `.bin`.
 
-#### C. USB Serial CLI Command
-When connected via USB CDC serial (`SERIAL` or `COMPOSITE` mode), simply send `dfu` or `reboot bootloader` in the terminal.
+---
 
-### Step 2: Backup Entire Flash Memory (Recommended Before First Flash)
-Before flashing custom firmware, pull your complete 128 KB on-chip Flash memory directly to a local backup file:
+### Method B: Direct USB DFU (Silicon-Level Backup & Restore)
+
+#### Step 1: Enter Factory ROM DFU Mode
+
+- **RadioMaster Pocket / Jumper / FrSky (STM32F4):**
+  1. Power the radio **OFF** and remove the microSD card.
+  2. Plug a USB-C data cable into the **top USB port** (data/simulator port, not battery charging).
+  3. The screen and LEDs will remain dark; the MCU boots directly into ST System ROM DFU mode (`0483:df11`).
+- **FlySky FS-i6X (STM32F072 / APM32F072):**
+  1. Power the radio **OFF**.
+  2. Push both horizontal trims inward towards the power switch (**Roll Left + Yaw Right**), then slide the power switch ON.
+- **FlySky FS-i6S (STM32F072 / APM32F072):**
+  1. Power the radio **OFF**.
+  2. Press and hold both front/rear tactile push-buttons (**`PA9` + `PA10`**), then press the power buttons.
+
+> Verify DFU connection: Run `dfu-util -l`. You should see `Found DFU: [0483:df11]` (or `[314b:0106]` for APM32).
+
+#### Step 2: Backup Stock Flash (DO NOT SKIP)
+
+Pull your complete internal on-chip Flash memory directly to a local backup file:
 ```bash
-dfu-util -a 0 -s 0x08000000:131072 -U stock_backup.bin
+# RadioMaster Pocket / Jumper T12 / FrSky X9D / X9E (512 KB Flash):
+dfu-util -a 0 -s 0x08000000:524288 -U stock_backup_pocket.bin
+
+# FlySky FS-i6X & FS-i6S (128 KB Flash):
+dfu-util -a 0 -s 0x08000000:131072 -U stock_backup_flysky.bin
+
+# FlySky with APM32 clone chip:
+dfu-util -a 0 -d 314b:0106 -s 0x08000000:131072 -U stock_backup_flysky.bin
 ```
 
-### Step 3: Build & Flash ferrox
+#### Step 3: Build & Flash ferrox
 
 Build release binaries using the built-in Cargo workspace aliases:
 ```bash
-# Build for FlySky FS-i6S:
+# FlySky Targets:
 cargo build-i6s
-cargo objcopy -p ferrox-i6s --release -- -O binary ferrox-i6s.bin
-
-# Build for FlySky FS-i6X:
 cargo build-i6x
-cargo objcopy -p ferrox-i6x --release -- -O binary ferrox-i6x.bin
+
+# Cortex-M4F Targets:
+cargo build-pocket      # RM Pocket direct DFU
+cargo build-pocket-sd   # RM Pocket EdgeTX SD bootloader
+cargo build-t12         # Jumper T12
+cargo build-x9d         # FrSky Taranis X9D / X9D+
+cargo build-x9e         # FrSky Taranis X9E
+cargo build-at9spro     # RadioLink AT9S Pro
 ```
-*(Requires `cargo-binutils`: `cargo install cargo-binutils && rustup component add llvm-tools`).*
 
 Flash the compiled binary via USB DFU:
 ```bash
-# Flash FS-i6S (STM32F072):
+# Flash RadioMaster Pocket:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-pocket.bin
+
+# Flash FlySky FS-i6X:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
+
+# Flash FlySky FS-i6S:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
 
-# Flash FS-i6S (APM32F072):
-dfu-util -a 0 -d 314b:0106 -s 0x08000000:leave -D ferrox-i6s.bin
+# Flash Jumper T12:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-t12.bin
 
-# Flash FS-i6X (STM32F072):
-dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
+# Flash FrSky Taranis X9D:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-x9d.bin
 ```
 
 > [!TIP]
 > **DFU Error State (`DFU state(10) = dfuERROR`)?**
 > If `dfu-util` reports `Device's firmware is corrupt. It cannot return to run-time operations`, run `dfu-util -a 0 -e` to send a `DFU_CLRSTATUS` reset. Always include `:leave` on `-s 0x08000000:leave` so the bootloader exits cleanly.
 
-### Step 4: Revert to Stock Anytime
-Because the hardware DFU bootloader is stored in permanent, read-only system ROM by STMicroelectronics, the transmitter is **unbrickable**. You can restore your full flash backup at any time:
+#### Step 4: Revert to Stock Anytime
+
+Because the hardware DFU bootloader is stored in permanent, read-only system ROM by STMicroelectronics, all radios are **100% unbrickable**. Restore your full flash backup at any time:
 ```bash
-dfu-util -a 0 -s 0x08000000:leave -D stock_backup.bin
+# Restore RadioMaster Pocket / Jumper / FrSky:
+dfu-util -a 0 -s 0x08000000:leave -D stock_backup_pocket.bin
+
+# Restore FlySky FS-i6X / FS-i6S:
+dfu-util -a 0 -s 0x08000000:leave -D stock_backup_flysky.bin
 ```
 
 ---
@@ -276,15 +344,27 @@ This project was built through a **human-directed, AI-assisted development workf
 To guarantee mathematical correctness and protocol compliance across all target boards without requiring physical hardware:
 - **Host Unit Test Execution**:
   ```bash
-  # Run all 180 unit tests across the workspace:
-  cargo test-all
-
-  # Or test individual board configurations:
-  cargo test-host-i6s
-  cargo test-host-i6x
+  # Test key board targets:
+  cargo test -p ferrox-core --lib --features board-i6x --target x86_64-unknown-linux-gnu -- --test-threads=1
+  cargo test -p ferrox-core --lib --features board-pocket --target x86_64-unknown-linux-gnu -- --test-threads=1
+  cargo test -p ferrox-core --lib --features board-t12 --target x86_64-unknown-linux-gnu -- --test-threads=1
+  cargo test -p ferrox-core --lib --features board-x9d --target x86_64-unknown-linux-gnu -- --test-threads=1
+  cargo test -p ferrox-core --lib --features board-x9e --target x86_64-unknown-linux-gnu -- --test-threads=1
+  cargo test -p ferrox-core --lib --features board-at9spro --target x86_64-unknown-linux-gnu -- --test-threads=1
   ```
-- **Peripheral & Timing Decoupling**: Peripheral drivers in `crates/ferrox-core/src/hw/` use `#[cfg(test)]` mocks to simulate serial UART FIFO queues, touch coordinates, and advance virtual time deterministically.
-- **Physical Hardware Validation**: Every subsystem (DMA ADC scanning, FT6236 capacitive touchscreen, electronic power latch, optical jog wheel, A7105 SPI/RF state machine, ST7567 LCD, zero-dependency direct PAC USB HID/CDC, circular DMA CRSF/ELRS engine, TIM15 PPM In/Out, and external EEPROM) has been verified on physical hardware.
+- **Target Cross-Compilation Verification**:
+  ```bash
+  cargo build-i6s
+  cargo build-i6x
+  cargo build-pocket
+  cargo build-pocket-sd
+  cargo build-t12
+  cargo build-x9d
+  cargo build-x9e
+  cargo build-at9spro
+  ```
+- **Peripheral & Timing Decoupling**: Peripheral drivers use `#[cfg(test)]` mocks to simulate serial UART FIFO queues, touch coordinates, and advance virtual time deterministically.
+- **Physical Hardware Validation**: Every subsystem (DMA ADC scanning, FT6236 capacitive touch, electronic power latch, optical jog wheel, rotary scroll wheels, A7105 SPI/RF state machine, ST7567 LCD, zero-dependency direct PAC USB HID/CDC, circular DMA CRSF/ELRS engine, TIM15 PPM In/Out, SPI2 SD card block storage, and external EEPROM) has been validated on hardware.
 
 ---
 

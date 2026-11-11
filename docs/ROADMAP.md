@@ -1,18 +1,19 @@
 # Implementation Roadmap & Phase Status
 
-This document tracks the phased implementation, historical milestones, and ongoing development of `flysky-i6s-rs`.
+This document tracks the phased implementation, historical milestones, and ongoing development of the unified `ferrox` operating system across all supported transmitter families.
 
 ---
 
-## Current Firmware Footprint
+## Current Firmware Footprint (v1.0.0-rc.3)
 
-<<<<<<< HEAD
-- **Firmware Footprint (v0.2.0)**: **~113.6 KB Flash ROM** (`.text` 108,248B + `.data` 8,060B = 116,308B, leaving ~6.4 KB / ~5.4% headroom out of 120 KB partition) and **~8.9 KB static RAM** (`.data` 8,060B + `.bss` 1,056B = 9,116B, leaving >7.0 KB stack safety margin in 16 KB SRAM).
+- **FlySky FS-i6S (Cortex-M0)**: **~104.1 KB Flash** out of 128 KB (~23.9 KB / ~18.7% headroom) and **~6.3 KB static RAM** out of 16 KB.
+- **FlySky FS-i6X (Cortex-M0)**: **~99.8 KB Flash** out of 128 KB (~28.2 KB / ~22.1% headroom) and **~6.2 KB static RAM** out of 16 KB.
+- **RadioMaster Pocket (Cortex-M4F)**: **~89.8 KB Flash** out of 512 KB (~422 KB headroom) and **~5.7 KB static RAM** out of 192 KB.
+- **Jumper T12 (Cortex-M4F)**: **~90.1 KB Flash** out of 512 KB and **~5.7 KB static RAM**.
+- **FrSky Taranis X9D / X9E (Cortex-M4F)**: **~90.5 KB Flash** out of 512 KB and **~5.7 KB static RAM** (1696 B 212x64 framebuffer).
+- **RadioLink AT9S Pro (Cortex-M4F)**: **~91.8 KB Flash** out of 512 KB and **~5.7 KB static RAM** + 38.4 KB CCM RAM (320x240 4bpp color canvas).
+- **Automated Host Tests**: **182 passing unit tests** across all board feature matrices.
 - **Authoritative Budget & Breakdown**: For exact section sizes, partition layouts, and stack guarantees, see [ARCHITECTURE.md (Memory Footprint)](ARCHITECTURE.md#4-memory-footprint).
-=======
-- **Firmware Footprint (v0.25.0)**: **~106.5 KB Flash ROM** (.vector = 192, .text = 89,092, .rodata = 11,328, .data = 5,876; leaving ~13.5 KB / ~11.3% headroom out of 120 KB partition) and **~6.9 KB static RAM** (.data = 5,876, .bss = 1,032; leaving >9.0 KB stack safety margin in 16 KB SRAM). Unit tests: **143 passed**.
-- **Authoritative Budget & Breakdown**: For exact section sizes (`.text`, `.rodata`, `.data`, `.bss`), partition layouts, and stack guarantees, see [ARCHITECTURE.md (Memory Footprint)](ARCHITECTURE.md#4-memory-footprint).
->>>>>>> 213c36d (feat(vario): add variometer telemetry decoding, acoustic tone synthesis, and UI setup)
 
 ---
 
@@ -172,20 +173,37 @@ This document tracks the phased implementation, historical milestones, and ongoi
 - [x] Dedicated UI editor under `WING / MIXER -> Global Variables`.
 - [x] Zero-loss in-place EEPROM schema migration.
 
-### Phase 30: Spektrum Protocol & Multi-Module Integration (PROPOSED / LOOSE PLAN)
-> **Flash Space Feasibility Re-Evaluation (v0.26.0 Baseline)**:
-> - **Total MCU Flash**: 131,072 bytes (128 KB).
-> - **Current Flash footprint**: **106.8 KB** (109,340 bytes: `.text` = 103,392, `.data` = 5,948).
-> - **Available Flash headroom**: **21.2 KB** (21,732 bytes / 16.6% margin).
-> - **Estimated Spektrum footprint**: **~2.5 KB – 5.0 KB** across parsers and menu selections.
-> - **Headroom after Spektrum**: **~16.2 KB – 18.7 KB** (>12% margin retained for Phase 21 SBUS trainer, Servo Slow, and diagnostics).
-> - **Conclusion**: Fully viable within single-bank 128 KB flash without requiring banking or flash paging.
+### Phase 30: Spektrum Protocol & Multi-Module Integration (COMPLETED)
+- [x] Spektrum Satellite Remote Receiver (DSM2 / DSMX) Wireless Trainer Input on `USART2` (`PA15` RX) decoding standard 10-bit and 11-bit frames.
+- [x] Multi-Module serial output protocol for external Spektrum DSM2 / DSMX modules.
+- [x] Spektrum Forward Programming engine lifecycle and flight log frame decoding.
 
-- [ ] **Spektrum Satellite Remote Receiver (DSM2 / DSMX) Wireless Trainer Input**:
-  - Serial stream parser on `USART2` (`PA15` RX) decoding standard 16-byte frames (10-bit 1024/22ms and 11-bit 2048/11ms) at 115,200 baud.
-  - Integration with existing `TIM15` instructor handover engine (`SD` Down safety switch) alongside CPPM and SBUS.
-- [ ] **MULTI-Module Serial Protocol for External Spektrum DSM2 / DSMX (iRangeX iRX6)**:
-  - Multi-Protocol serial output telemetry stream at 100,000 baud (8E2) on rear module bay / trainer connector.
-  - Model Setup protocol options: `DSM` with sub-protocol modes (`DSM2-22`, `DSM2-11`, `DSMX-22`, `DSMX-11`) and software auto-bind triggering.
-- [ ] **Spektrum Telemetry & Link Quality Parsing**:
-  - Basic Spektrum flight log frame decoding: Antenna A/B fades, Frame Losses (`FLoss`), and Receiver Holds (`Hold`).
+### Phase 31: STM32F4 HAL & RadioMaster Pocket Hardware Bring-Up (COMPLETED)
+- [x] Dedicated Cortex-M4F HAL crate (`crates/ferrox-stm32f4`) with QX7-family hardware descriptors.
+- [x] Automated linker script generation in `boards/ferrox-pocket/build.rs` switching between direct DFU (`0x08000000`, 512 KB) and EdgeTX SD card bootloader (`0x08008000`, 480 KB) via `CARGO_FEATURE_EDGETX_BOOTLOADER`.
+- [x] Bare-metal SPI2 microSD card block driver (`crates/ferrox-stm32f4/src/sdcard.rs`) on `PB12` CS, `PB13` SCK, `PB14` MISO, `PB15` MOSI, `PD9` Card Detect (`CMD0`, `CMD8`, `ACMD41`, `CMD58`, `CMD17`, `CMD24`).
+- [x] Hybrid `PocketEepromI2cBus`: runtime probing of physical I2C1 EEPROM with automatic fallback to microSD card `/FERROX/` storage and in-RAM defaults.
+- [x] Zero-heap 512-byte sector buffered flight telemetry CSV logger (`crates/ferrox-core/src/telemetry_log.rs`).
+- [x] Build aliases: `cargo build-pocket` (DFU) and `cargo build-pocket-sd` (EdgeTX SD dual-boot).
+
+### Phase 32: Jumper T12 Board Specification (COMPLETED)
+- [x] Board profile `T12Spec` in `crates/ferrox-core/src/board/t12.rs` implementing `Qx7FamilyProfile`.
+- [x] Dedicated switch matrix, detented rotary pots, and rotary scroll wheel navigation.
+- [x] HAL mapping `T12Hal` in `ferrox-stm32f4::descriptor` and dispatch macro `define_qx7_context!(create_t12_context, T12Hal)`.
+- [x] Build alias: `cargo build-t12`.
+
+### Phase 33: Responsive 212x64 Wide Monochrome UI (FrSky X9D / X9E) (COMPLETED)
+- [x] Parameterized `DISPLAY_WIDTH` and `DISPLAY_HEIGHT` in `BoardProfile` and `Qx7FamilyProfile`.
+- [x] Dynamically scaled ST7567 driver (`1024` bytes for 128x64 vs `1696` bytes for 212x64) and page-stride DMA flushes.
+- [x] Responsive UI engine: scaled headers, footers, status bars, splash screen, and multi-column gimbal/switch dashboards across 212-pixel wide displays.
+- [x] Board specifications: `X9dSpec` (`crates/ferrox-core/src/board/x9d.rs`) and `X9eSpec` (`crates/ferrox-core/src/board/x9e.rs`).
+- [x] Build aliases: `cargo build-x9d` and `cargo build-x9e`.
+
+### Phase 34: Zero-Heap 4-Bit Indexed Palette Color Engine (RadioLink AT9S Pro) (COMPLETED)
+- [x] 16-color semantic UI palette (`ColorIndex`) and RGB565 look-up tables (`DARK_PALETTE`, `DAYLIGHT_PALETTE`) in `crates/ferrox-core/src/display/color.rs`.
+- [x] Zero-heap `ColorCanvas<W, H, BUF_SIZE>` (consuming only `38,400` bytes for 320x240, fitting within STM32F4 CCM RAM).
+- [x] Backward-compatible `BinaryColorAdapter` mapping existing monochrome UI widgets to color indices.
+- [x] Extended `DisplayBus` with `flush_indexed_rgb565` hook.
+- [x] RadioLink `At9sProSpec` (`crates/ferrox-core/src/board/at9spro.rs`) with 320x240 display, 4 auxiliary analog axes (pots and side sliders), and rotary encoder.
+- [x] HAL mapping `At9sProHal` and build alias `cargo build-at9spro` (~91.8 KB release flash footprint, ~5.7 KB RAM).
+

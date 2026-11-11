@@ -5,6 +5,32 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc3] - 2026-11-10
+
+### Added
+- **RadioMaster Pocket Hardware Bring-Up & EdgeTX SD Bootloader Dual-Boot**:
+  - Automated linker script generation in `boards/ferrox-pocket/build.rs` switching memory layout between direct DFU (`0x08000000`, 512 KB) and the stock EdgeTX SD card bootloader (`0x08008000`, 480 KB) via `CARGO_FEATURE_EDGETX_BOOTLOADER`.
+  - Bare-metal SPI2 microSD card block driver in `crates/ferrox-stm32f4/src/sdcard.rs` (`CMD0`, `CMD8`, `ACMD41`, `CMD58`, `CMD17`, `CMD24`) on `PB12` CS, `PB13` SCK, `PB14` MISO, `PB15` MOSI, `PD9` Card Detect.
+  - Hybrid storage fallback in `PocketEepromI2cBus`: probes physical I2C1 EEPROM -> falls back to SPI2 microSD `/FERROX/` -> in-RAM defaults.
+  - Zero-heap 512-byte sector buffered flight telemetry CSV logger (`crates/ferrox-core/src/telemetry_log.rs`).
+  - Added build aliases `cargo build-pocket` (direct DFU) and `cargo build-pocket-sd` (EdgeTX SD bootloader).
+- **Jumper T12 Board Specification**:
+  - Implemented `T12Spec` in `crates/ferrox-core/src/board/t12.rs` with `Qx7FamilyProfile`.
+  - Added `T12Hal` in `ferrox-stm32f4::descriptor` and dispatch macro in `ferrox-stm32f4::lib`.
+  - Added build alias `cargo build-t12`.
+- **Responsive 212x64 Wide Monochrome UI (FrSky Taranis X9D / X9E)**:
+  - Parameterized `DISPLAY_WIDTH` and `DISPLAY_HEIGHT` associated constants in `BoardProfile`.
+  - Scaled ST7567 driver to dynamically handle 128x64 (1024 B) and 212x64 (1696 B) framebuffers with page-stride math.
+  - Responsive header, footer, status bar, splash screen, and multi-column dashboard layouts.
+  - Implemented `X9dSpec` (`crates/ferrox-core/src/board/x9d.rs`) and `X9eSpec` (`crates/ferrox-core/src/board/x9e.rs`).
+  - Added build aliases `cargo build-x9d` and `cargo build-x9e`.
+- **Zero-Heap 4-Bit Indexed Palette Color Engine (RadioLink AT9S Pro)**:
+  - Implemented `ColorIndex` (16 semantic UI colors) and `ColorCanvas<W, H, BUF_SIZE>` (38,400 B for 320x240, fitting within STM32F4 CCM RAM).
+  - Added `DARK_PALETTE` and `DAYLIGHT_PALETTE` RGB565 look-up tables with `BinaryColorAdapter` for backward compatibility with existing monochrome drawing routines.
+  - Added `flush_indexed_rgb565` hook to `DisplayBus`.
+  - Implemented RadioLink `At9sProSpec` (`crates/ferrox-core/src/board/at9spro.rs`) and `At9sProHal`.
+  - Added build alias `cargo build-at9spro`.
+
 ## [1.0.0-rc2] - 2026-11-08
 
 ### Added

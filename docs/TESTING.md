@@ -55,25 +55,25 @@ test-host = "test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 ### Quick Commands
 
 ```bash
-# Run all host unit tests (sub-millisecond execution)
-cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`)
+# Run host unit tests across key board targets (182 unit tests in ~0.02s):
+cargo test -p ferrox-core --lib --features board-i6x --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-pocket --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-t12 --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-x9d --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-x9e --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-at9spro --target x86_64-unknown-linux-gnu -- --test-threads=1
 
-# Run only CRSF protocol and state machine tests
-cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`) crsf
-
-# Run only mixer and curve tests
-cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`) mixer
-cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`) curve
-
-# Run tests with unsuppressed console output
-cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`) -- --nocapture
+# Filter by module (e.g. color canvas, telemetry logger, mixer, crsf):
+cargo test -p ferrox-core --lib --features board-at9spro --target x86_64-unknown-linux-gnu display::color -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-pocket --target x86_64-unknown-linux-gnu telemetry_log -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-i6x --target x86_64-unknown-linux-gnu mixer -- --test-threads=1
 ```
 
 ### Why `--test-threads=1` is Mandatory
 
 In bare-metal embedded firmware, hardware peripherals and global runtime state are designed as **singletons** (e.g. `USART2` hardware registers, `CONFIG_ENGINE`, `TELEMETRY`, and mock FIFO buffers). 
 
-By default, Cargo runs test cases in parallel across all available host CPU cores. When multiple unit tests concurrently access or mutate these static structures, race conditions occur. By appending `-- --test-threads=1` to the `test-host` alias, test execution is strictly serialized, guaranteeing **100% deterministic, reproducible test runs**.
+By default, Cargo runs test cases in parallel across all available host CPU cores. When multiple unit tests concurrently access or mutate these static structures, race conditions occur. By appending `-- --test-threads=1` to the test command, test execution is strictly serialized, guaranteeing **100% deterministic, reproducible test runs**.
 
 ---
 
@@ -229,34 +229,34 @@ The test suite covers core flight, calculation, and protocol components:
 | :--- | :--- | :--- |
 | **`curve.rs`** | Throttle & Expo Curves | 5-point, 7-point, and 9-point linear identity, flat and inverted curves, Catmull-Rom cubic Hermite spline monotonicity, endpoint clamping (0..1000). |
 | **`trim.rs`** | Digital Trims | Linear trim steps (-125..+125), center-cross clicks, throttle trim safety options (linear trim vs bottom-half idle-only trim). |
-| **`mixer.rs`** | Flight Pipeline & Matrix Mixer | Linear and cubic exponential curves, channel reversing bitmask, Elevon/Delta and V-Tail mixing formulas, throw limits (1000..2000 µs), dynamic weight modulation, and 32-line matrix mixing modes (`ADD`, `MULT`, `REPLACE`). |
-| **`crsf/protocol.rs`** | CRSF Wire Serialization | 16-channel 11-bit packing/unpacking, FlySky pulse scaling (988..2012 µs -> 172..1811), CRC8-DVB validation against standard polynomials, telemetry payload parsing (Battery, Link Statistics). |
+| **`mixer.rs`** | Flight Pipeline & Matrix Mixer | Linear and cubic exponential curves, channel reversing bitmask, Elevon/Delta and V-Tail mixing formulas, throw limits (1000..2000 us), dynamic weight modulation, and 32-line matrix mixing modes (`ADD`, `MULT`, `REPLACE`). |
+| **`crsf/protocol.rs`** | CRSF Wire Serialization | 16-channel 11-bit packing/unpacking, FlySky pulse scaling (988..2012 us -> 172..1811), CRC8-DVB validation against standard polynomials, telemetry payload parsing (Battery, Link Statistics). |
 | **`crsf/mod.rs`** | ELRS Configurator & State Machine | Discovery handshake, parameter loading, multi-frame chunk reassembly, interactive command execution, silence timeout recovery, and real-world receiver trace validation. |
+| **`display/color.rs`** | 4-bit Indexed Color Canvas | Zero-heap 4bpp pixel packing, out-of-bounds clipping, RGB565 palette conversion (`DARK_PALETTE`, `DAYLIGHT_PALETTE`), and `BinaryColorAdapter` backward compatibility. |
+| **`display/st7567.rs`** | ST7567 Responsive Driver | In-tree 1bpp font rendering, horizontal/vertical lines, filled rectangles, and dynamic display dimension bounds (128x64 and 212x64). |
+| **`telemetry_log.rs`** | MicroSD Telemetry Logger | 512-byte raw sector buffering, CSV header format, field formatting, and multi-sector rollover with zero dynamic heap allocation. |
 
 ---
 
 ## 6. Pre-Commit Verification Workflow
 
-Every contribution, bug fix, or feature branch must pass the **Dual Verification Requirement** before merging into `dev` or `main`:
+Every contribution, bug fix, or feature branch must pass the **Multi-Architecture Verification Requirement** before merging into `dev` or `main`:
 
 ```bash
-# 1. Run all host unit tests (must pass 88/88 tests with 0 failures)
-cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`)
+# 1. Run all host unit tests (must pass 182/182 tests across board profiles)
+cargo test -p ferrox-core --lib --features board-i6x --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-pocket --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-t12 --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-x9d --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-at9spro --target x86_64-unknown-linux-gnu -- --test-threads=1
 
-# 2. Compile bare-metal firmware (must produce 0 warnings and 0 errors)
-cargo build --release --target thumbv6m-none-eabi
-
-# 3. (Optional) Check binary size and Flash budget (<120 KB partition limit)
-cargo size --release --target thumbv6m-none-eabi -- -A
+# 2. Compile bare-metal firmware across both architectures
+cargo build-i6s         # Cortex-M0 (thumbv6m-none-eabi)
+cargo build-i6x         # Cortex-M0 (thumbv6m-none-eabi)
+cargo build-pocket      # Cortex-M4F (thumbv7em-none-eabihf)
+cargo build-pocket-sd   # Cortex-M4F EdgeTX SD dual-boot
+cargo build-t12         # Cortex-M4F (thumbv7em-none-eabihf)
+cargo build-x9d         # Cortex-M4F 212x64 wide display
+cargo build-at9spro     # Cortex-M4F 320x240 color TFT
 ```
 
-### CI / CD Integration
-
-In continuous integration environments, both checks can be executed in sequence:
-```yaml
-- name: Run Host Unit Tests
-  run: cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`)
-
-- name: Build Bare-Metal Firmware
-  run: cargo build --release --target thumbv6m-none-eabi
-```
