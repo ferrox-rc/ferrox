@@ -518,16 +518,19 @@ You have two flashing paths:
 
 ### Method A: Testing via EdgeTX SD Bootloader (No Drivers Needed)
 
-For RadioMaster Pocket, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
+For RadioMaster Pocket, GX12, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
 
-1. **Build or download** the bootloader-compatible binary:
+1. **Build or download** the bootloader-compatible `-sd.bin` binary (`cargo objcopy` builds and extracts `.bin` in one step):
    ```bash
-   cargo build-pocket-sd
-   cargo objcopy -p ferrox-pocket --target thumbv7em-none-eabihf --release --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+   # RadioMaster Pocket:
+   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+
+   # Other EdgeTX STM32F4 targets (replace <board> with gx12, boxer, zorro, tx12, or t12):
+   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "<board>,edgetx-bootloader" -- -O binary ferrox-<board>-sd.bin
    ```
-2. Copy `ferrox-pocket-sd.bin` into the `/FIRMWARE/` folder on your microSD card.
+2. Copy `ferrox-<board>-sd.bin` into the `/FIRMWARE/` folder on your microSD card.
 3. Push and hold **both horizontal trims inward** while pressing the power button to enter the EdgeTX Bootloader.
-4. Select **Write Firmware**, choose `ferrox-pocket-sd.bin`, and confirm.
+4. Select **Write Firmware**, choose `ferrox-<board>-sd.bin`, and confirm.
 5. Ferrox will boot instantly!
 6. **To revert:** Power down, hold both horizontal trims inward again, and select your stock EdgeTX `.bin` from `/FIRMWARE/`.
 
@@ -566,9 +569,22 @@ dfu-util -a 0 -s 0x08000000:131072 -U stock_backup_flysky.bin
 dfu-util -a 0 -d 314b:0106 -s 0x08000000:131072 -U stock_backup_flysky.bin
 ```
 
-#### 3. Flash ferrox Firmware
+#### 3. Build & Flash ferrox Firmware
 
-Flash the target binary corresponding to your radio:
+If building from source instead of using a pre-built release `.bin`, note that `cargo build-*` outputs an ELF file. Use `cargo objcopy` (`cargo install cargo-binutils` with `rustup component add llvm-tools-preview`) to produce the raw `.bin` file required by `dfu-util`:
+```bash
+# RadioMaster Pocket (Direct DFU):
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
+
+# FlySky FS-i6X / FS-i6S:
+cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -O binary ferrox-i6x.bin
+cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi -- -O binary ferrox-i6s.bin
+
+# Other STM32F4 targets (e.g. t12, x9d, x9e, gx12):
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
+```
+
+Flash the `.bin` binary corresponding to your radio:
 ```bash
 # RadioMaster Pocket:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-pocket.bin

@@ -240,16 +240,19 @@ You can flash Ferrox using either of two methods:
 
 ### Method A: EdgeTX SD Bootloader (No Drivers Needed)
 
-For RadioMaster Pocket, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
+For RadioMaster Pocket, GX12, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
 
-1. **Build or download** the bootloader-compatible binary:
+1. **Build or download** the bootloader-compatible `-sd.bin` binary (`cargo objcopy` builds and extracts `.bin` in one step):
    ```bash
-   cargo build-pocket-sd
-   cargo objcopy -p ferrox-pocket --target thumbv7em-none-eabihf --release --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+   # RadioMaster Pocket:
+   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+
+   # Other EdgeTX STM32F4 targets (replace <board> with gx12, boxer, zorro, tx12, or t12):
+   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "<board>,edgetx-bootloader" -- -O binary ferrox-<board>-sd.bin
    ```
-2. Copy `ferrox-pocket-sd.bin` to the `/FIRMWARE/` folder on your microSD card.
+2. Copy `ferrox-<board>-sd.bin` to the `/FIRMWARE/` folder on your microSD card.
 3. Hold **both horizontal trims inward** while powering ON to enter the EdgeTX Bootloader.
-4. Select **Write Firmware**, highlight `ferrox-pocket-sd.bin`, and confirm.
+4. Select **Write Firmware**, highlight `ferrox-<board>-sd.bin`, and confirm.
 5. Ferrox boots immediately with your stock EdgeTX configuration untouched on the SD card!
 6. **To revert:** Power down, hold trims inward to re-enter EdgeTX Bootloader, and select your stock EdgeTX `.bin`.
 
@@ -286,25 +289,32 @@ dfu-util -a 0 -s 0x08000000:131072 -U stock_backup_flysky.bin
 dfu-util -a 0 -d 314b:0106 -s 0x08000000:131072 -U stock_backup_flysky.bin
 ```
 
-#### Step 3: Build & Flash ferrox
+#### Step 3: Build & Extract `.bin` Firmware
 
-Build release binaries using the built-in Cargo workspace aliases:
+`cargo build-*` compiles an ELF executable, while `dfu-util` and the EdgeTX SD bootloader require a raw `.bin` image. Install `cargo-binutils` and `llvm-tools-preview` once to enable single-step build + `.bin` extraction via `cargo objcopy`:
 ```bash
-# FlySky Targets:
-cargo build-i6s
-cargo build-i6x
-
-# Cortex-M4F Targets:
-cargo build-pocket      # RM Pocket direct DFU
-cargo build-pocket-sd   # RM Pocket EdgeTX SD bootloader
-cargo build-gx12        # RadioMaster GX12
-cargo build-t12         # Jumper T12
-cargo build-x9d         # FrSky Taranis X9D / X9D+
-cargo build-x9e         # FrSky Taranis X9E
-cargo build-at9spro     # RadioLink AT9S Pro
+rustup target add thumbv6m-none-eabi thumbv7em-none-eabihf
+rustup component add llvm-tools-preview
+cargo install cargo-binutils
 ```
 
-Flash the compiled binary via USB DFU:
+Build and convert your target binary to `.bin`:
+```bash
+# FlySky Targets:
+cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi -- -O binary ferrox-i6s.bin
+cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -O binary ferrox-i6x.bin
+
+# RadioMaster Pocket (direct DFU vs EdgeTX SD bootloader):
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+
+# Other Cortex-M4F Targets (replace <board> with gx12, boxer, zorro, tx12, qx7, tprov2, t12, x9d, x9e, or at9spro):
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
+```
+
+*(Workspace aliases `cargo build-i6s`, `cargo build-i6x`, `cargo build-pocket`, `cargo build-gx12`, `cargo build-t12`, `cargo build-x9d`, `cargo build-x9e`, and `cargo build-at9spro` are also available for quick ELF compilation or SWD flashing via `probe-rs`.)*
+
+Flash the extracted `.bin` file via USB DFU:
 ```bash
 # Flash RadioMaster Pocket:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-pocket.bin
