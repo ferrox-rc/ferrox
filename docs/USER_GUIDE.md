@@ -256,28 +256,40 @@ Hold **`[OK]` for 1.2 seconds** from any flight screen to open the Settings Menu
   - **Switch Auto-Detection**: Simply toggle the desired physical switch while editing to auto-detect and select it.
   - **Flight Safety & Acoustic Feedback**: Arming plays a rising tone chirp; disarming plays a falling tone chirp.
   - **Timer Integration**: Disarming pauses and unlatches the flight timer so the pilot can inspect total flight duration. Re-arming for the next flight automatically resets the timer back to its configured duration!
-- **Field 3: Timer Duration (`Timer:`)**:
-  - Configure the countdown timer in 30-second increments up to 60:00 (e.g. `05:00`), or set to `OFF` (0:00) to operate as a count-up stopwatch.
-- **Field 4: Timer Trigger (`T-Trig:`)**:
-  - Select the event that starts and runs the timer:
-    - **`OFF`**: Timer disabled.
-    - **`THs (RUN)`**: Throttle Switch mode: runs only while throttle stick > 5% (> -900), pauses when brought back to idle.
-    - **`THt (LTCH)`**: Throttle Trigger / Latched mode: starts counting when throttle stick first exceeds 5%, and continues running non-stop throughout zero-throttle glides or multirotor descents.
-    - **`ALWAYS ON`**: Continuous timer whenever the radio is powered on.
-    - **Switch Conditions (`SA^` through `SDv`, plus `SE^..SFv`)**: Runs while the specified switch condition is active.
-  - **Switch Auto-Detection**: Flipping any physical switch while editing `T-Trig` automatically sets that switch as the trigger.
-- **Field 5: Model Copy / Duplicate (`Copy -> Mxx`)**:
+- **Field 3: Timers (1..4) Setup (`Timers (1..4): [SETUP]`)**:
+  - Press **`[OK]`** to enter the dedicated **4-Timer Engine Setup Screen**:
+    - **`Timer:`**: Select active timer to configure (`TIMER 1` through `TIMER 4`). Each timer maintains its own target duration, trigger mode, run/stop/reset switches, and audio chime configuration.
+    - **`Target:`**: Configurable in 30-second increments up to 60:00 (e.g. `05:00`), or `00:00 (UP)` to operate as a count-up stopwatch. When a countdown target expires, the timer automatically shifts into overtime count-up (`+00:01`, `+00:02`).
+    - **`Mode:`**:
+      - **`LEVEL`**: Timer runs while the configured start condition is satisfied AND the stop switch is inactive.
+      - **`LATCH`**: Rising edge of the Start Switch latches the timer into running state; rising edge of the Stop Switch pauses it. Enables momentary buttons or separate switches to control run and pause independently.
+    - **`Start:`**: Trigger event that runs the timer:
+      - **`OFF`**: Timer disabled.
+      - **`THs (RUN)`**: Runs while throttle stick > 5% (> -900), pauses at idle.
+      - **`THt (LTCH)`**: Latches running the moment throttle stick first exceeds 5% and remains running throughout zero-throttle glides.
+      - **`ALWAYS`**: Continuous timer running whenever the model is armed or radio powered.
+      - **Switch Conditions (`SA^`..`SWMv`)**: Any physical switch position with live switch-flick auto-detection.
+    - **`Stop:`**: Optional independent Stop/Pause switch (`NONE` or `SA^`..`SWMv` with switch-flick auto-detection).
+    - **`Reset:`**: Optional dedicated Reset switch (`NONE` or `SA^`..`SWMv` with switch-flick auto-detection). Instantly resets the timer back to its target duration.
+    - **`Beeps:`**: Enable or disable audio countdown beeps (10s countdown, minute interval beeps, and expiry alarm).
+    - **`Action:`**: `[Reset]` action manually resets the selected timer.
+  - **Dashboard Reset Shortcuts**:
+    - Pressing an assigned Reset switch immediately resets the timer with a confirmation beep.
+    - Holding **`[CANCEL]` (`[ESC]`) for >= 1.0 second** from the main flight dashboard resets all active timers.
+    - Re-arming the model automatically resets timers with the arm reset flag enabled.
+- **Field 4: Model Copy / Duplicate (`Copy -> Mxx`)**:
   - Select a target model slot (`M01`..`M20`) and press **`[OK]`** to clone the current model's name, trims, curves, mixer lines, and protocol settings for safe experimentation.
-- **Field 6: Variometer Setup (`Vario: [SETUP]`)**:
+- **Field 5: Protocol Setup (`Protocol: [SETUP]`)**:
+  - Press **`[OK]`** to enter the RF protocol and receiver configuration screen (`AFHDS 2A`, `CRSF/ELRS`, `CC2500/MPM`, `Spektrum DSM`).
+- **Field 6: Telemetry Setup (`Telemetry: [SETUP]`)**:
+  - Press **`[OK]`** to customize the 2x2 telemetry sensor tiles on Page 5 of the dashboard.
+- **Field 7: Variometer Setup (`Vario: [SETUP]`)**:
   - Press **`[OK]`** to open the dedicated **Variometer Setup Screen (`VARIO SETUP`)** for acoustic soaring and thermal hunting feedback:
     - **`Switch:`**: Assigns an activation switch (`NONE`, `SA^`..`SFv`). Includes **Switch Auto-Detection** (simply flip the physical switch to assign).
     - **`Climb DB:`**: Climb deadband threshold in 0.1 m/s increments (`0.1m/s` to `1.5m/s`, default `0.2m/s`). Climb audio is muted below this vertical speed to eliminate atmospheric noise.
     - **`Sink DB:`**: Sink deadband threshold in 0.1 m/s increments (`0.5m/s` to `5.0m/s`, default `1.5m/s`).
     - **`Sink Mode:`**: Acoustic sink behavior (`BEEP` for periodic sink chirps, `CONT` for continuous low drone, or `SILENT` for lift-only soaring).
     - **`Motor Mute:`**: Automatically mutes vario audio whenever throttle stick exceeds 10% (`YES`/`NO`, default `YES`), ensuring quiet power climbs.
-    - **`[Test Tone]`**: Interactive live acoustic preview of climb pulses, deadband silence, and sink tones while in the setup menu.
-- **Field 7: Bind RX (`[OK Bind]`)**:
-  - Displays currently bound receiver ID (`Rx: XXXXXXXX`). Press **`[OK]`** to initiate receiver binding directly from Model Setup.
 - **Field 8: Reset Defaults (`[OK Defaults]`)**:
   - Press **`[OK]`** to restore default trims, standard channel directions, linear curves, and mixer parameters for this model slot.
 
