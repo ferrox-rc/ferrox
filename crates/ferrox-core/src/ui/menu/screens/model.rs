@@ -769,7 +769,7 @@ pub fn update_timer_setup(
             0 => {
                 let mut sel_buf = *b"TIMER 1";
                 sel_buf[6] = b'1' + timer_idx as u8;
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Select:", Some(ascii_as_str(&sel_buf)));
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Timer:", Some(ascii_as_str(&sel_buf)));
             }
             1 => {
                 let mut t_buf = [0u8; 8];
@@ -782,22 +782,22 @@ pub fn update_timer_setup(
             }
             2 => {
                 let mode_str = if cfg.is_latch_mode() {
-                    "LATCH (St/Sp)"
+                    "LATCH"
                 } else {
-                    "LEVEL (Run/Stop)"
+                    "LEVEL"
                 };
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Trigger:", Some(mode_str));
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Mode:", Some(mode_str));
             }
             3 => {
                 let trig_str = match cfg.start_src {
                     0 => "OFF",
-                    1 => "THs (Thr>5%)",
-                    2 => "THt (Latched)",
-                    3 => "ALWAYS ON",
+                    1 => "THs (RUN)",
+                    2 => "THt (LTCH)",
+                    3 => "ALWAYS",
                     s if (4..=31).contains(&s) => crate::ui::format::SWITCH_COND_NAMES[(s - 3) as usize],
                     _ => "OFF",
                 };
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Start Sw:", Some(trig_str));
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Start:", Some(trig_str));
             }
             4 => {
                 let stop_str = if cfg.stop_src == 0 {
@@ -805,7 +805,7 @@ pub fn update_timer_setup(
                 } else {
                     crate::ui::format::SWITCH_COND_NAMES[cfg.stop_src as usize]
                 };
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Stop Sw:", Some(stop_str));
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Stop:", Some(stop_str));
             }
             5 => {
                 let rst_str = if cfg.reset_src == 0 {
@@ -813,14 +813,14 @@ pub fn update_timer_setup(
                 } else {
                     crate::ui::format::SWITCH_COND_NAMES[cfg.reset_src as usize]
                 };
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Reset Sw:", Some(rst_str));
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Reset:", Some(rst_str));
             }
             6 => {
                 let beep_str = if cfg.has_audio_beeps() { "ON" } else { "OFF" };
                 widgets::draw_list_row_right(lcd, slot, is_sel, "Beeps:", Some(beep_str));
             }
             7 => {
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Action:", Some("[Reset Timer]"));
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Action:", Some("[Reset]"));
             }
             _ => {}
         }
