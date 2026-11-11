@@ -206,7 +206,7 @@ pub const SWITCH_COND_NAMES: [&str; 29] = [
 ];
 
 pub const MODE_NAMES: [&str; 3] = ["ADD (+)", "MULT (*)", "REPL (:=)"];
-pub const TEMPLATE_NAMES: [&str; 4] = ["NORMAL", "ELEVON/DELTA", "V-TAIL", "FLAPERON"];
+pub const TEMPLATE_NAMES: [&str; 5] = ["NORMAL", "ELEVON/DELTA", "V-TAIL", "FLAPERON", "FREEFORM"];
 pub const DR_SWITCH_NAMES: [&str; 7] = ["None", "SA", "SB", "SC", "SD", "SE", "SF"];
 pub const AXIS_NAMES: [&str; 3] = ["Roll", "Pitch", "Yaw"];
 

@@ -94,6 +94,7 @@ pub enum WingTailTemplate {
     Elevon = 1,
     VTail = 2,
     Flaperon = 3,
+    Freeform = 4,
 }
 
 impl WingTailTemplate {
@@ -102,6 +103,7 @@ impl WingTailTemplate {
             1 => Self::Elevon,
             2 => Self::VTail,
             3 => Self::Flaperon,
+            4 => Self::Freeform,
             _ => Self::Normal,
         }
     }
@@ -442,6 +444,16 @@ pub fn compute_channels(
             ch_vals[3] = cond_yaw as i32;
             ch_vals[5] = (right_r + flap / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
         }
+        WingTailTemplate::Freeform => {
+            // Freeform (released gimbals):
+            // Primary channels CH1..CH4 are decoupled from physical sticks
+            // and initialize to neutral 0 (1500 us). They are driven entirely
+            // by matrix mixer lines or auxiliary channel assignments.
+            ch_vals[0] = 0;
+            ch_vals[1] = 0;
+            ch_vals[2] = 0;
+            ch_vals[3] = 0;
+        }
     }
 
     // Populate Auxiliary Channels (CH5..CH18) from aux_channels mappings
@@ -524,12 +536,14 @@ pub fn compute_channels(
             .clamp(CHANNEL_MIN_US as i32, CHANNEL_MAX_US as i32) as u16;
     }
 
-    // Apply digital trims to primary flight channels
-    rf_chs[0] = TrimController::apply(rf_chs[0], trims.values.roll);
-    rf_chs[1] = TrimController::apply(rf_chs[1], trims.values.pitch);
-    rf_chs[2] =
-        TrimController::apply_throttle(rf_chs[2], trims.values.throttle, throttle_trim_mode);
-    rf_chs[3] = TrimController::apply(rf_chs[3], trims.values.yaw);
+    // Apply digital trims to primary flight channels if not in Freeform mode
+    if template != WingTailTemplate::Freeform {
+        rf_chs[0] = TrimController::apply(rf_chs[0], trims.values.roll);
+        rf_chs[1] = TrimController::apply(rf_chs[1], trims.values.pitch);
+        rf_chs[2] =
+            TrimController::apply_throttle(rf_chs[2], trims.values.throttle, throttle_trim_mode);
+        rf_chs[3] = TrimController::apply(rf_chs[3], trims.values.yaw);
+    }
 
     // Safety Interlocks & Throttle Lockout:
     // 1. Helicopter Throttle Hold: SA Down forces throttle channel to absolute idle (CHANNEL_MIN_US)
@@ -541,7 +555,7 @@ pub fn compute_channels(
         && model.arm_switch <= 28
         && !eval_arm_switch(model.arm_switch, switches);
 
-    if is_heli_hold || is_disarmed {
+    if (is_heli_hold || is_disarmed) && template != WingTailTemplate::Freeform {
         rf_chs[2] = CHANNEL_MIN_US;
     }
 
@@ -1355,5 +1369,54 @@ mod tests {
             chs_down[4], CHANNEL_MAX_US,
             "CH5 SA Down -> 2012 µs (+100%)"
         );
+    }
+
+    #[test]
+    fn test_compute_channels_freeform_released_gimbals() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = 4; // Freeform: decoupled gimbals
+        let pots = [0i16; 7];
+        let switches = Switches::default();
+        let trims = TrimController::default();
+
+        // With sticks fully deflected (+1000 roll, -1000 pitch, +1000 thr, -1000 yaw),
+        // all primary channels CH1..CH4 must remain at neutral center 1500 us because
+        // gimbals are released and no matrix mixes target them yet.
+        let chs = compute_channels(1000, -1000, 1000, -1000, &pots, &switches, &model, &trims, 0);
+        assert_eq!(chs[0], CHANNEL_CENTER_US, "CH1 must stay neutral when gimbals are released");
+        assert_eq!(chs[1], CHANNEL_CENTER_US, "CH2 must stay neutral when gimbals are released");
+        assert_eq!(chs[2], CHANNEL_CENTER_US, "CH3 must stay neutral when gimbals are released");
+        assert_eq!(chs[3], CHANNEL_CENTER_US, "CH4 must stay neutral when gimbals are released");
+
+        // Now configure a mix line targeting CH1 from Throttle stick (source 3), weight 100, mode ADD
+        model.mixes[0].target_ch = 1;
+        model.mixes[0].source = 3; // Throttle stick
+        model.mixes[0].weight = 100;
+        model.mixes[0].mode = 0; // ADD
+
+        // And configure a mix line targeting CH3 from Roll stick (source 1), weight 100, mode ADD
+        model.mixes[1].target_ch = 3;
+        model.mixes[1].source = 1; // Roll stick
+        model.mixes[1].weight = 100;
+        model.mixes[1].mode = 0; // ADD
+
+        // Also route Yaw stick (source 4) to CH5
+        model.mixes[2].target_ch = 5;
+        model.mixes[2].source = 4; // Yaw stick
+        model.mixes[2].weight = 100;
+        model.mixes[2].mode = 2; // REPLACE (:=)
+
+        // Stick inputs: Roll = -500, Pitch = 0, Throttle = 750 (+500 normalized), Yaw = +1000
+        let chs_mixed = compute_channels(-500, 0, 750, 1000, &pots, &switches, &model, &trims, 0);
+        // CH1 receives Throttle (+500 -> 1756 us)
+        assert_eq!(chs_mixed[0], 1756, "CH1 driven by Throttle stick via matrix mix");
+        // CH2 unassigned -> neutral 1500 us
+        assert_eq!(chs_mixed[1], CHANNEL_CENTER_US, "CH2 remains neutral");
+        // CH3 receives Roll (-500 -> 1244 us)
+        assert_eq!(chs_mixed[2], 1244, "CH3 driven by Roll stick via matrix mix");
+        // CH4 unassigned -> neutral 1500 us
+        assert_eq!(chs_mixed[3], CHANNEL_CENTER_US, "CH4 remains neutral");
+        // CH5 receives Yaw (+1000 -> 2012 us)
+        assert_eq!(chs_mixed[4], CHANNEL_MAX_US, "CH5 driven by Yaw stick via matrix mix");
     }
 }

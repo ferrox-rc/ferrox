@@ -192,16 +192,50 @@ pub fn format_channel_label<'a>(
         0 => match model.wing_tail_mix {
             1 => "L.ELV",
             3 => "L.AIL",
+            4 => {
+                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 1) {
+                    let src = m.source as usize;
+                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                } else {
+                    "None"
+                }
+            }
             _ => "AIL",
         },
         1 => match model.wing_tail_mix {
             1 => "R.ELV",
             2 => "L.VTL",
+            4 => {
+                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 2) {
+                    let src = m.source as usize;
+                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                } else {
+                    "None"
+                }
+            }
             _ => "ELE",
         },
-        2 => "THR",
+        2 => match model.wing_tail_mix {
+            4 => {
+                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 3) {
+                    let src = m.source as usize;
+                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                } else {
+                    "None"
+                }
+            }
+            _ => "THR",
+        },
         3 => match model.wing_tail_mix {
             2 => "R.VTL",
+            4 => {
+                if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 4) {
+                    let src = m.source as usize;
+                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                } else {
+                    "None"
+                }
+            }
             _ => "RUD",
         },
         5 if model.wing_tail_mix == 3 => "R.AIL",
@@ -334,5 +368,17 @@ mod tests {
         assert_eq!(format_channel_label(2, &model, &mut buf), "3:THR");
         assert_eq!(format_channel_label(3, &model, &mut buf), "4:RUD");
         assert_eq!(format_channel_label(5, &model, &mut buf), "6:R.AIL");
+
+        // Freeform (released gimbals)
+        model.wing_tail_mix = 4;
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:None");
+        assert_eq!(format_channel_label(1, &model, &mut buf), "2:None");
+        assert_eq!(format_channel_label(2, &model, &mut buf), "3:None");
+        assert_eq!(format_channel_label(3, &model, &mut buf), "4:None");
+
+        // Freeform with mix line driving CH1 from Throttle (source 3)
+        model.mixes[0].target_ch = 1;
+        model.mixes[0].source = 3;
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:Thr");
     }
 }

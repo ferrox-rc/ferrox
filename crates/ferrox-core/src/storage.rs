@@ -477,7 +477,7 @@ pub struct ModelConfig {
     pub rf_power: u8,     // 61: AFHDS 2A RF power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
     pub failsafe_thr: u16, // 62..64: Failsafe throttle pulse in µs (e.g. 1000)
     pub aux_channels: [u8; 14], // 64..78: Source for CH5..CH18
-    pub wing_tail_mix: u8, // 78: 0: Normal, 1: Elevon/Delta, 2: V-Tail, 3: Flaperon
+    pub wing_tail_mix: u8, // 78: 0: Normal, 1: Elevon/Delta, 2: V-Tail, 3: Flaperon, 4: Freeform
     pub template_diff: i8, // 79: Differential / mix ratio (-100..+100)
     pub mixes: [MixLine; NUM_MIX_LINES], // 80..336: 32 freeform mix rules (32 * 8 = 256 bytes)
     pub failsafe_mode: u8, // 336: 0: Hold last, 1: Custom pulses
@@ -1082,7 +1082,7 @@ impl RadioStorage {
         if m.dr_switch > 6 {
             m.dr_switch = 0;
         }
-        if m.wing_tail_mix > 3 {
+        if m.wing_tail_mix > 4 {
             m.wing_tail_mix = 0;
         }
         if m.template_diff < -100 || m.template_diff > 100 {
