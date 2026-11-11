@@ -171,7 +171,11 @@ impl FlightPipeline {
             #[cfg(feature = "rf-dsm")]
             crate::board::RfProtocol::Dsm => {
                 crsf::set_enabled(false, 0, false);
-                rf::set_silenced(sim_mode);
+                if ActiveBoard::HAS_INTERNAL_AFHDS2A {
+                    rf::set_silenced(true);
+                } else {
+                    rf::set_silenced(sim_mode);
+                }
                 if !sim_mode {
                     // DSM protocol over MULTI-Module UART or internal RF
                     let _sub_proto = active_model.dsm_sub_proto;
