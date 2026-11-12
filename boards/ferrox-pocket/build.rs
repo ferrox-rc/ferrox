@@ -46,4 +46,5 @@ _stack_start = ORIGIN(RAM) + LENGTH(RAM);
 
     println!("cargo:rustc-link-search={}", out.display());
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_EDGETX_BOOTLOADER");
 }
