@@ -7,5 +7,6 @@ pub mod main_menu;
 pub mod mixer;
 pub mod model;
 pub mod setup;
+pub mod soaring;
 #[cfg(feature = "dsm-fwd-prog")]
 pub mod dsm;

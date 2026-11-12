@@ -50,6 +50,7 @@ pub mod rf;
 pub mod runtime;
 pub use runtime::{BackgroundIdleManager, FlightPipeline, FlightSnapshot};
 pub mod safety;
+pub mod soaring;
 pub mod storage;
 pub mod time;
 pub mod timer;

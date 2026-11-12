@@ -35,6 +35,7 @@ pub enum MenuState {
     TelemSetup,
     VarioSetup,
     TimerSetup,
+    SoaringSetup,
     RxSetup,
     CrsfSetup,
     DsmSetup,
@@ -387,6 +388,9 @@ impl MenuController {
             }
             MenuState::TimerSetup => {
                 screens::model::update_timer_setup(self, lcd, &nav_keys, storage, buzzer);
+            }
+            MenuState::SoaringSetup => {
+                screens::soaring::update_soaring_setup(self, lcd, &nav_keys, storage, buzzer);
             }
             MenuState::RxSetup => {
                 screens::setup::update_rx_setup(self, lcd, &nav_keys, storage, buzzer);

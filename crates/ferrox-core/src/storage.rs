@@ -502,7 +502,8 @@ pub struct ModelConfig {
     pub timer1_reset_src: u8, // 368: Timer 1 Reset switch (0: None, 1..=28: switch conditions)
     pub timer1_flags: u8, // 369: Timer 1 bitflags (bit 0: latch, bit 1: arm reset, bit 2: audio)
     pub timers_ext: [crate::timer::TimerConfig; 3], // 370..388: Independent Timer 2, 3, 4 configs (3 * 6 = 18 bytes)
-    pub freeform_ch1_4: [u8; 4], // 388..392: Direct source assignments for CH1..CH4 in Freeform mode (Total: 392 bytes)
+    pub freeform_ch1_4: [u8; 4], // 388..392: Direct source assignments for CH1..CH4 in Freeform mode
+    pub soaring: crate::soaring::SoaringConfig, // 392..416: F5J / F3K Soaring competition & glider config (Total: 416 bytes)
 }
 
 impl ModelConfig {
@@ -564,6 +565,7 @@ impl ModelConfig {
                 crate::timer::TimerConfig::disabled(),
             ],
             freeform_ch1_4: [0; 4],
+            soaring: crate::soaring::SoaringConfig::default_factory(),
         }
     }
 
@@ -1289,6 +1291,7 @@ impl RadioStorage {
         if m.vario_motor_mute > 1 {
             m.vario_motor_mute = 1;
         }
+        m.soaring.sanitize();
     }
 
     /// Extract vario configuration for the active model.
@@ -1305,8 +1308,8 @@ impl RadioStorage {
 
 const _: () = assert!(core::mem::size_of::<RadioConfig>() == 148);
 const _: () = assert!(core::mem::size_of::<MixLine>() == 8);
-const _: () = assert!(core::mem::size_of::<ModelConfig>() == 392);
-const _: () = assert!(core::mem::size_of::<RadioStorage>() == 540);
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 416);
+const _: () = assert!(core::mem::size_of::<RadioStorage>() == 564);
 
 static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 
@@ -1862,9 +1865,9 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
             return Ok(());
         }
 
-        // Check if this is a ModelConfig request and the slot holds legacy 348, 364, or 368 bytes
+        // Check if this is a ModelConfig request and the slot holds legacy 348, 364, 368, or 392 bytes
         if expected_size == core::mem::size_of::<ModelConfig>()
-            && (hdr.len == 348 || hdr.len == 364 || hdr.len == 368)
+            && (hdr.len == 348 || hdr.len == 364 || hdr.len == 368 || hdr.len == 392)
             && hdr.magic == SLOT_MAGIC
             && hdr.flags == 0
         {
@@ -1899,6 +1902,9 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                     crate::timer::TimerConfig::disabled(),
                 ];
                 model.freeform_ch1_4 = [0; 4];
+            }
+            if hdr.len <= 392 {
+                model.soaring = crate::soaring::SoaringConfig::default_factory();
             }
             unsafe {
                 core::ptr::copy_nonoverlapping(
@@ -1999,6 +2005,7 @@ pub fn peek_model_name(slot_idx: usize) -> Option<[u8; 10]> {
             && hdr.len != 348
             && hdr.len != 364
             && hdr.len != 368
+            && hdr.len != 392
         {
             return None;
         }
@@ -2218,9 +2225,9 @@ mod tests {
 
     #[test]
     fn test_model_config_size_and_rf_power() {
-        assert_eq!(core::mem::size_of::<ModelConfig>(), 392);
+        assert_eq!(core::mem::size_of::<ModelConfig>(), 416);
         assert_eq!(core::mem::size_of::<RadioConfig>(), 148);
-        assert_eq!(core::mem::size_of::<RadioStorage>(), 540);
+        assert_eq!(core::mem::size_of::<RadioStorage>(), 564);
 
         let default_m = ModelConfig::default_for_index(0);
         assert_eq!(default_m.rf_power, 0);

@@ -299,6 +299,7 @@ pub struct BackgroundIdleManager {
     pub ok_hold_ms: u16,
     pub cancel_hold_ms: u16,
     pub timers: crate::timer::TimerBank,
+    pub f5j: crate::soaring::f5j::F5jEngine,
     pub timer_remaining_secs: u16,
     pub timer_elapsed_secs: u16,
     pub timer_ms_acc: u16,
@@ -352,6 +353,7 @@ impl BackgroundIdleManager {
             ok_hold_ms: 0,
             cancel_hold_ms: 0,
             timers: crate::timer::TimerBank::new(),
+            f5j: crate::soaring::f5j::F5jEngine::new(),
             timer_remaining_secs: 0,
             timer_elapsed_secs: 0,
             timer_ms_acc: 0,
@@ -681,6 +683,7 @@ impl BackgroundIdleManager {
         if self.prev_timer_model != active_idx {
             self.prev_timer_model = active_idx;
             self.timers.reset_all(&timer_configs);
+            self.f5j.reset_to_ready(flight.telem.alt_dm);
         }
 
         // Cooldown timer, toast duration, and key release guard for timer reset
@@ -697,6 +700,7 @@ impl BackgroundIdleManager {
         // Check for manual reset via assigned button or [CANCEL] held for >= 1.0s on flight dashboard
         if timer_reset_clicked && self.timer_reset_cooldown_ms == 0 {
             self.timers.reset_all(&timer_configs);
+            self.f5j.reset_to_ready(flight.telem.alt_dm);
             self.cancel_hold_ms = 0;
             self.cancel_waiting_release = true;
             self.timer_reset_toast_ms = 800;
@@ -710,6 +714,7 @@ impl BackgroundIdleManager {
             self.cancel_hold_ms = self.cancel_hold_ms.saturating_add(dt_ms);
             if self.cancel_hold_ms >= 1000 {
                 self.timers.reset_all(&timer_configs);
+                self.f5j.reset_to_ready(flight.telem.alt_dm);
                 self.cancel_hold_ms = 0;
                 self.cancel_waiting_release = true;
                 self.timer_reset_toast_ms = 800;
@@ -740,6 +745,8 @@ impl BackgroundIdleManager {
             flight.just_disarmed,
             buzzer,
         );
+
+        self.f5j.update(now, &flight.rf_chs, &flight.telem, &model.soaring, buzzer);
 
         // Keep legacy Timer 1 scalar fields in sync for telemetry/logging
         self.timer_remaining_secs = self.timers.timers[0].remaining_secs;
@@ -847,6 +854,7 @@ impl BackgroundIdleManager {
                 rf_ok,
                 flight.is_binding,
                 &flight.telem,
+                &self.f5j,
                 timer_str,
                 timer_expired,
                 buzzer,

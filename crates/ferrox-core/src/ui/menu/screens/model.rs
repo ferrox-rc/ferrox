@@ -178,6 +178,16 @@ fn render_setup_row(
             widgets::draw_list_row(lcd, slot, inverted, "Vario: [SETUP]", None, 0);
         }
         8 => {
+            widgets::draw_list_row(
+                lcd,
+                slot,
+                inverted,
+                "Soaring:",
+                Some(storage.active_model.soaring.discipline_enum().as_str()),
+                64,
+            );
+        }
+        9 => {
             widgets::draw_list_row(lcd, slot, inverted, "Reset: [OK Defaults]", None, 0);
         }
         _ => {}
@@ -193,7 +203,7 @@ pub fn update_setup(
     buzzer: &mut Buzzer,
 ) {
     let active_idx = storage.radio.active_model as usize;
-    const FIELD_COUNT: usize = 9;
+    const FIELD_COUNT: usize = 10;
 
     if !ctrl.editing {
         if keys.cancel {
@@ -266,6 +276,13 @@ pub fn update_setup(
                     buzzer.click();
                 }
                 8 => {
+                    // Open Soaring / F5J Setup submenu
+                    ctrl.state = MenuState::SoaringSetup;
+                    ctrl.selected_item = 0;
+                    ctrl.scroll_offset = 0;
+                    buzzer.click();
+                }
+                9 => {
                     storage.active_model = ModelConfig::default_for_index(active_idx);
                     storage::save_active_model(storage);
                     buzzer.play_tone_pattern(2200, 80, 50, 2);
