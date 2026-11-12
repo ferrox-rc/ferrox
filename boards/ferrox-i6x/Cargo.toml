@@ -17,7 +17,7 @@ bench = false
 
 [dependencies]
 ferrox-core = { path = "../../crates/ferrox-core", default-features = false, features = ["board-i6x"] }
-ferrox-stm32f0 = { path = "../../crates/ferrox-stm32f0" }
+ferrox-stm32f0 = { path = "../../crates/ferrox-stm32f0", default-features = false }
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
 stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072", "rt"] }
@@ -25,5 +25,5 @@ embedded-graphics = "0.8.1"
 
 [features]
 default = ["stm32"]
-stm32 = ["ferrox-core/stm32"]
-apm32 = ["ferrox-core/apm32"]
+stm32 = ["ferrox-core/stm32", "ferrox-stm32f0/stm32"]
+apm32 = ["ferrox-core/apm32", "ferrox-stm32f0/apm32"]

@@ -10,6 +10,23 @@
     clippy::unnecessary_map_or
 )]
 
+const _: () = {
+    let count = cfg!(feature = "board-pocket") as u8
+        + cfg!(feature = "board-boxer") as u8
+        + cfg!(feature = "board-zorro") as u8
+        + cfg!(feature = "board-tx12") as u8
+        + cfg!(feature = "board-qx7") as u8
+        + cfg!(feature = "board-tprov2") as u8
+        + cfg!(feature = "board-t12") as u8
+        + cfg!(feature = "board-x9d") as u8
+        + cfg!(feature = "board-x9e") as u8
+        + cfg!(feature = "board-at9spro") as u8
+        + cfg!(feature = "board-gx12") as u8;
+    if count > 1 {
+        panic!("Multiple board-* features enabled in ferrox-stm32f4; enable only one.");
+    }
+};
+
 pub mod adc;
 pub mod buzzer;
 pub mod chip;
@@ -43,10 +60,17 @@ pub use watchdog::{feed as watchdog_feed, start as watchdog_start, WatchdogManag
 macro_rules! define_qx7_context {
     ($fn_name:ident, $hal:ty) => {
         pub fn $fn_name() -> ferrox_core::hal::PlatformContext {
+            static INITIALIZED: core::sync::atomic::AtomicBool =
+                core::sync::atomic::AtomicBool::new(false);
+            assert!(
+                !INITIALIZED.swap(true, core::sync::atomic::Ordering::AcqRel),
+                "PlatformContext initialized more than once"
+            );
             static mut SYSTEM_DRIVER: $crate::Stm32f4SystemDriver = $crate::Stm32f4SystemDriver;
             static mut BUZZER: $crate::DacToneBuzzer = $crate::DacToneBuzzer;
             static mut DISPLAY: $crate::St7567SpiBus<$hal> = $crate::St7567SpiBus::new();
-            static mut STORAGE: $crate::PocketEepromI2cBus<$hal> = $crate::PocketEepromI2cBus::new();
+            static mut STORAGE: $crate::PocketEepromI2cBus<$hal> =
+                $crate::PocketEepromI2cBus::new();
             static mut TRAINER: $crate::Stm32f4TrainerDriver = $crate::Stm32f4TrainerDriver::new();
             static mut RF_BUS: ferrox_core::hal::NullRfBus = ferrox_core::hal::NullRfBus;
             static mut USB: ferrox_core::hal::NullUsbDriver = ferrox_core::hal::NullUsbDriver;
@@ -56,7 +80,10 @@ macro_rules! define_qx7_context {
             static mut POWER: $crate::Stm32f4PowerDriver<$hal> = $crate::Stm32f4PowerDriver::new();
 
             unsafe {
-                ferrox_core::watchdog::register_watchdog($crate::watchdog_start, $crate::watchdog_feed);
+                ferrox_core::watchdog::register_watchdog(
+                    $crate::watchdog_start,
+                    $crate::watchdog_feed,
+                );
                 ferrox_core::hal::PlatformContext {
                     system: &mut SYSTEM_DRIVER,
                     tone: &mut BUZZER,
