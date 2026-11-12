@@ -62,6 +62,32 @@ pub fn write_bytes(bytes: &[u8]) {
     }
 }
 
+/// True only when the registered driver can accept a frame without waiting.
+pub fn tx_idle() -> bool {
+    #[cfg(test)]
+    {
+        mock::tx_idle()
+    }
+    #[cfg(not(test))]
+    unsafe {
+        SERIAL_PORT.as_ref().is_some_and(|port| port.tx_idle())
+    }
+}
+
+/// Attempt an all-or-nothing, nonblocking frame transmission.
+pub fn try_write_bytes(bytes: &[u8]) -> bool {
+    #[cfg(test)]
+    {
+        mock::try_record_tx(bytes)
+    }
+    #[cfg(not(test))]
+    unsafe {
+        SERIAL_PORT
+            .as_mut()
+            .is_some_and(|port| port.try_write_bytes(bytes))
+    }
+}
+
 pub fn read_byte() -> Option<u8> {
     #[cfg(test)]
     {
@@ -78,11 +104,14 @@ pub fn read_byte() -> Option<u8> {
 #[cfg(test)]
 pub mod mock {
     extern crate std;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
     use std::vec::Vec;
 
     static RX_QUEUE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
     static TX_LOG: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+    static TX_BUSY: AtomicBool = AtomicBool::new(false);
+    static TX_ACCEPTING: AtomicBool = AtomicBool::new(true);
 
     pub fn push_rx_bytes(bytes: &[u8]) {
         let mut q = RX_QUEUE.lock().unwrap();
@@ -101,6 +130,31 @@ pub mod mock {
     pub fn record_tx(data: &[u8]) {
         let mut log = TX_LOG.lock().unwrap();
         log.push(data.to_vec());
+        TX_BUSY.store(true, Ordering::Relaxed);
+    }
+
+    pub fn tx_idle() -> bool {
+        !TX_BUSY.load(Ordering::Relaxed)
+    }
+
+    pub fn complete_tx() {
+        TX_BUSY.store(false, Ordering::Relaxed);
+    }
+
+    pub fn set_tx_accepting(accepting: bool) {
+        TX_ACCEPTING.store(accepting, Ordering::Relaxed);
+    }
+
+    pub fn try_record_tx(data: &[u8]) -> bool {
+        if data.is_empty()
+            || data.len() > 64
+            || !TX_ACCEPTING.load(Ordering::Relaxed)
+            || TX_BUSY.swap(true, Ordering::Relaxed)
+        {
+            return false;
+        }
+        TX_LOG.lock().unwrap().push(data.to_vec());
+        true
     }
 
     pub fn take_tx() -> Vec<Vec<u8>> {
@@ -115,5 +169,28 @@ pub mod mock {
     pub fn clear() {
         RX_QUEUE.lock().unwrap().clear();
         TX_LOG.lock().unwrap().clear();
+        TX_BUSY.store(false, Ordering::Relaxed);
+        TX_ACCEPTING.store(true, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multiswitch_nonblocking_send_rejects_busy_and_oversize_frames() {
+        mock::clear();
+        assert!(!try_write_bytes(&[]));
+        assert!(!try_write_bytes(&[0; 65]));
+        assert!(tx_idle());
+        assert!(try_write_bytes(&[1, 2, 3]));
+        assert!(!tx_idle());
+        assert!(!try_write_bytes(&[4, 5]));
+        assert_eq!(mock::take_tx(), [std::vec![1, 2, 3]]);
+        mock::complete_tx();
+        assert!(try_write_bytes(&[4, 5]));
+        assert_eq!(mock::take_tx(), [std::vec![4, 5]]);
+        mock::clear();
     }
 }

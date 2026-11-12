@@ -6,13 +6,19 @@ use crate::ui::format::{ascii_as_str, u16_to_dec_4};
 use crate::ui::widgets;
 
 #[inline(never)]
-pub fn render(lcd: &mut St7567, rf_chs: &[u16; NUM_CHANNELS], is_binding: bool, page_part: usize) {
+pub fn render(
+    lcd: &mut St7567,
+    rf_chs: &[u16; NUM_CHANNELS],
+    is_binding: bool,
+    page_part: usize,
+    page_count: usize,
+) {
     // page_part 0: CH 1..10 (Col 0: 1..5, Col 1: 6..10)
     // page_part 1: CH 11..18 (Col 0: 11..14, Col 1: 15..18)
-    let (footer_page, footer_title, base_ch, rows_per_col) = if page_part == 0 {
-        ("P2/5", "CH 1-10 MONITOR", 0, 5)
+    let (footer_title, base_ch, rows_per_col) = if page_part == 0 {
+        ("CH 1-10 MONITOR", 0, 5)
     } else {
-        ("P3/5", "CH 11-18 MONITOR", 10, 4)
+        ("CH 11-18 MONITOR", 10, 4)
     };
 
     for col in 0..2 {
@@ -60,6 +66,7 @@ pub fn render(lcd: &mut St7567, rf_chs: &[u16; NUM_CHANNELS], is_binding: bool, 
     if is_binding {
         widgets::draw_footer(lcd, "[ESC] Finish Bind");
     } else {
-        widgets::draw_footer_split(lcd, footer_page, footer_title);
+        let page_buf = crate::ui::format::dashboard_page_label(page_part + 1, page_count);
+        widgets::draw_footer_split(lcd, ascii_as_str(&page_buf), footer_title);
     }
 }

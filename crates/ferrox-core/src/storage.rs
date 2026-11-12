@@ -452,7 +452,7 @@ impl MixLine {
     }
 }
 
-/// Complete profile for an individual aircraft/model (exactly 348 bytes).
+/// Complete profile for an individual aircraft/model (572 bytes).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ModelConfig {
@@ -499,6 +499,9 @@ pub struct ModelConfig {
     pub telem_slots: [u8; 4], // 362..366: Configurable telemetry dashboard sensor slots (1..4)
     pub dsm_sub_proto: u8, // 366: Spektrum DSM sub-protocol (0: DSMX-11, 1: DSMX-22, 2: DSM2-11, 3: DSM2-22)
     pub _pad_gvar: u8,     // 367..368: Align to 4-byte word boundary
+    pub multiswitch_addresses: [i16; 4], // 368..376: -1: Off, 0..255: module address
+    pub multiswitch_labels: [[[u8; 6]; 8]; 4], // 376..568: Six-character function labels
+    pub multiswitch_momentary: [u8; 4], // 568..572: One momentary-mode bit per function
 }
 
 impl ModelConfig {
@@ -552,6 +555,18 @@ impl ModelConfig {
             telem_slots: [0, 1, 2, 3],
             dsm_sub_proto: 0,
             _pad_gvar: 0,
+            multiswitch_addresses: [
+                if crate::board::ActiveBoard::HAS_TOUCH {
+                    0
+                } else {
+                    -1
+                },
+                -1,
+                -1,
+                -1,
+            ],
+            multiswitch_labels: [[[0; 6]; 8]; 4],
+            multiswitch_momentary: [0; 4],
         }
     }
 
@@ -566,7 +581,7 @@ impl ModelConfig {
     }
 }
 
-/// Compact storage layout containing radio settings and active model (488 bytes).
+/// Compact storage layout containing radio settings and active model (720 bytes).
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct RadioStorage {
@@ -1163,6 +1178,20 @@ impl RadioStorage {
         if m.vario_motor_mute > 1 {
             m.vario_motor_mute = 1;
         }
+        for address in &mut m.multiswitch_addresses {
+            if !(0..=255).contains(address) {
+                *address = -1;
+            }
+        }
+        for page in &mut m.multiswitch_labels {
+            for label in page {
+                for byte in label {
+                    if *byte != 0 && !(b' '..=b'~').contains(byte) {
+                        *byte = b' ';
+                    }
+                }
+            }
+        }
     }
 
     /// Extract vario configuration for the active model.
@@ -1179,8 +1208,12 @@ impl RadioStorage {
 
 const _: () = assert!(core::mem::size_of::<RadioConfig>() == 148);
 const _: () = assert!(core::mem::size_of::<MixLine>() == 8);
-const _: () = assert!(core::mem::size_of::<ModelConfig>() == 368);
-const _: () = assert!(core::mem::size_of::<RadioStorage>() == 516);
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 572);
+const _: () = assert!(core::mem::offset_of!(ModelConfig, multiswitch_addresses) == 368);
+const _: () = assert!(core::mem::offset_of!(ModelConfig, multiswitch_labels) == 376);
+const _: () = assert!(core::mem::offset_of!(ModelConfig, multiswitch_momentary) == 568);
+const _: () = assert!(core::mem::size_of::<RadioStorage>() == 720);
+const _: () = assert!(HEADER_SIZE + core::mem::size_of::<ModelConfig>() <= MODEL_SLOT_SIZE);
 
 static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 
@@ -1477,8 +1510,48 @@ pub fn unpack_legacy_v1_model(v1: &LegacyModelConfigV1) -> ModelConfig {
     v2.servo_rate_hz = v1.servo_rate_hz;
     v2.rx_serial_proto = v1.rx_serial_proto;
     v2.crsf_half_duplex = v1.crsf_half_duplex;
+    v2.multiswitch_addresses = [-1; 4];
 
     v2
+}
+
+fn supported_model_len(len: usize) -> bool {
+    matches!(len, 128 | 348 | 364 | 368) || len == core::mem::size_of::<ModelConfig>()
+}
+
+fn decode_model_slot(hdr: &SlotHeader, payload: &[u8]) -> Result<ModelConfig, StorageError> {
+    hdr.is_valid(payload.len())?;
+    if !supported_model_len(payload.len()) {
+        return Err(StorageError::LengthMismatch(hdr.len));
+    }
+    if crc16(payload) != hdr.crc16 {
+        return Err(StorageError::CrcMismatch);
+    }
+    if payload.len() == 128 {
+        let legacy =
+            unsafe { core::ptr::read_unaligned(payload.as_ptr() as *const LegacyModelConfigV1) };
+        return Ok(unpack_legacy_v1_model(&legacy));
+    }
+    // Overlay only persisted bytes; appended fields retain factory defaults.
+    let mut model = ModelConfig::default_for_index(0);
+    unsafe {
+        if payload.len() < 368 {
+            // Older migrations zero-filled the missing legacy tail.
+            core::ptr::write_bytes(&mut model as *mut ModelConfig as *mut u8, 0, 368);
+        }
+        core::ptr::copy_nonoverlapping(
+            payload.as_ptr(),
+            &mut model as *mut ModelConfig as *mut u8,
+            payload.len(),
+        );
+    }
+    if payload.len() < 368 {
+        model.telem_slots = [0, 1, 2, 3];
+    }
+    if payload.len() < core::mem::size_of::<ModelConfig>() {
+        model.multiswitch_addresses = [-1; 4];
+    }
+    Ok(model)
 }
 
 /// Helper to read a raw C struct from an EEPROM slot with 8-byte framing and CRC16 verification.
@@ -1499,56 +1572,15 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
 
         let expected_size = core::mem::size_of::<T>();
 
-        // Check if this is a ModelConfig request and the slot holds legacy v1 (128 bytes)
+        // Validate the envelope before accepting any legacy model payload.
         if expected_size == core::mem::size_of::<ModelConfig>()
-            && hdr.len == 128
-            && hdr.magic == SLOT_MAGIC
-            && hdr.flags == 0
+            && supported_model_len(hdr.len as usize)
         {
-            // Read 128 bytes of legacy model
-            let mut v1 = core::mem::MaybeUninit::<LegacyModelConfigV1>::uninit();
-            let v1_bytes =
-                unsafe { core::slice::from_raw_parts_mut(v1.as_mut_ptr() as *mut u8, 128) };
-            EepromI2c::read(addr + HEADER_SIZE as u16, v1_bytes)?;
-
-            // Verify CRC-16 of legacy payload
-            let computed_crc = crc16(v1_bytes);
-            if computed_crc != hdr.crc16 {
-                return Err(StorageError::CrcMismatch);
-            }
-
-            let legacy_model = unsafe { v1.assume_init() };
-            let v2_model = unpack_legacy_v1_model(&legacy_model);
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    &v2_model as *const ModelConfig as *const T,
-                    dst as *mut T,
-                    1,
-                );
-            }
-
-            // In-place upgrade: re-save slot as v2 (368 bytes) with updated CRC-16 envelope
-            let _ = save_slot(addr, &v2_model);
-
-            return Ok(());
-        }
-
-        // Check if this is a ModelConfig request and the slot holds legacy 348 or 364 bytes
-        if expected_size == core::mem::size_of::<ModelConfig>()
-            && (hdr.len == 348 || hdr.len == 364)
-            && hdr.magic == SLOT_MAGIC
-            && hdr.flags == 0
-        {
-            let old_len = hdr.len as usize;
+            hdr.is_valid(hdr.len as usize)?;
+            let len = hdr.len as usize;
             let mut buf = [0u8; core::mem::size_of::<ModelConfig>()];
-            EepromI2c::read(addr + HEADER_SIZE as u16, &mut buf[..old_len])?;
-            let computed_crc = crc16(&buf[..old_len]);
-            if computed_crc != hdr.crc16 {
-                return Err(StorageError::CrcMismatch);
-            }
-            let mut model =
-                unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) };
-            model.telem_slots = [0, 1, 2, 3];
+            EepromI2c::read(addr + HEADER_SIZE as u16, &mut buf[..len])?;
+            let model = decode_model_slot(&hdr, &buf[..len])?;
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     &model as *const ModelConfig as *const T,
@@ -1556,7 +1588,9 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                     1,
                 );
             }
-            let _ = save_slot(addr, &model);
+            if len != expected_size {
+                let _ = save_slot(addr, &model);
+            }
             return Ok(());
         }
 
@@ -1640,10 +1674,10 @@ pub fn peek_model_name(slot_idx: usize) -> Option<[u8; 10]> {
         let hdr = SlotHeader::parse(unsafe {
             &*(buf[0..HEADER_SIZE].as_ptr() as *const [u8; HEADER_SIZE])
         });
-        if hdr.magic != SLOT_MAGIC || hdr.flags != 0 {
+        if hdr.is_valid(hdr.len as usize).is_err() {
             return None;
         }
-        if hdr.len != (core::mem::size_of::<ModelConfig>() as u16) && hdr.len != 128 {
+        if !supported_model_len(hdr.len as usize) {
             return None;
         }
 
@@ -1815,6 +1849,107 @@ pub fn load_saved_rx_id() -> Option<u32> {
 mod tests {
     use super::*;
 
+    fn model_header(payload: &[u8]) -> SlotHeader {
+        SlotHeader {
+            magic: SLOT_MAGIC,
+            version: SCHEMA_VERSION,
+            flags: 0,
+            len: payload.len() as u16,
+            crc16: crc16(payload),
+        }
+    }
+
+    #[test]
+    fn multiswitch_legacy_framed_models_preserve_prefix_and_defaults() {
+        let mut original = ModelConfig::default_for_index(7);
+        original.rx_id = 0x1234_5678;
+        original.gvars = [-300, 10, 20, 30, 40];
+        original.telem_slots = [3, 2, 1, 0];
+        original.dsm_sub_proto = 3;
+        original.multiswitch_addresses = [255, 42, -1, 0];
+        original.multiswitch_labels[2][7] = *b"LIGHT ";
+        original.multiswitch_momentary = [0x81, 0, 0xFF, 0];
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                &original as *const ModelConfig as *const u8,
+                core::mem::size_of::<ModelConfig>(),
+            )
+        };
+        for len in [348, 364, 368, 572] {
+            let payload = &bytes[..len];
+            let migrated = decode_model_slot(&model_header(payload), payload).unwrap();
+            assert_eq!(migrated.name, original.name);
+            assert_eq!(migrated.rx_id, original.rx_id);
+            assert_eq!(migrated.mixes, original.mixes);
+            if len >= 368 {
+                assert_eq!(migrated.gvars, original.gvars);
+                assert_eq!(migrated.telem_slots, original.telem_slots);
+                assert_eq!(migrated.dsm_sub_proto, 3);
+            } else {
+                assert_eq!(migrated.telem_slots, [0, 1, 2, 3]);
+                assert_eq!(migrated.dsm_sub_proto, 0);
+                if len == 348 {
+                    assert_eq!(migrated.vario_sink_mode, 0);
+                    assert_eq!(migrated.vario_motor_mute, 0);
+                    assert_eq!(migrated.gvars, [0; 5]);
+                }
+            }
+            if len < 572 {
+                assert_eq!(
+                    migrated.multiswitch_addresses,
+                    [-1; 4]
+                );
+                assert_eq!(migrated.multiswitch_labels, [[[0; 6]; 8]; 4]);
+                assert_eq!(migrated.multiswitch_momentary, [0; 4]);
+            } else {
+                assert_eq!(migrated, original);
+            }
+        }
+    }
+
+    #[test]
+    fn multiswitch_migration_checks_envelope_and_crc() {
+        let payload = [0u8; 368];
+        let mut header = model_header(&payload);
+        header.version += 1;
+        assert_eq!(
+            decode_model_slot(&header, &payload),
+            Err(StorageError::VersionMismatch(SCHEMA_VERSION + 1))
+        );
+        header = model_header(&payload);
+        header.flags = 0xFF;
+        assert_eq!(
+            decode_model_slot(&header, &payload),
+            Err(StorageError::EmptySlot)
+        );
+        header = model_header(&payload);
+        header.crc16 ^= 1;
+        assert_eq!(
+            decode_model_slot(&header, &payload),
+            Err(StorageError::CrcMismatch)
+        );
+        header = model_header(&payload);
+        assert_eq!(
+            decode_model_slot(&header, &payload[..364]),
+            Err(StorageError::LengthMismatch(368))
+        );
+    }
+
+    #[test]
+    fn multiswitch_sanitizes_addresses_and_labels() {
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.multiswitch_addresses = [-2, 0, 255, 256];
+        storage.active_model.multiswitch_labels[0][0] = [0, 0x1F, b'!', b'~', 0x7F, 0xFF];
+        storage.active_model.multiswitch_momentary = [0xFF; 4];
+        storage.sanitize();
+        assert_eq!(storage.active_model.multiswitch_addresses, [-1, 0, 255, -1]);
+        assert_eq!(
+            storage.active_model.multiswitch_labels[0][0],
+            [0, b' ', b'!', b'~', b' ', b' ']
+        );
+        assert_eq!(storage.active_model.multiswitch_momentary, [0xFF; 4]);
+    }
+
     #[test]
     fn test_adc_input_mode_detent() {
         assert_eq!(AdcInputMode::from_u8(0), AdcInputMode::Default);
@@ -1862,9 +1997,9 @@ mod tests {
 
     #[test]
     fn test_model_config_size_and_rf_power() {
-        assert_eq!(core::mem::size_of::<ModelConfig>(), 368);
+        assert_eq!(core::mem::size_of::<ModelConfig>(), 572);
         assert_eq!(core::mem::size_of::<RadioConfig>(), 148);
-        assert_eq!(core::mem::size_of::<RadioStorage>(), 516);
+        assert_eq!(core::mem::size_of::<RadioStorage>(), 720);
 
         let default_m = ModelConfig::default_for_index(0);
         assert_eq!(default_m.rf_power, 0);
@@ -1933,6 +2068,15 @@ mod tests {
             crsf_half_duplex: 1,
         };
         let v2 = unpack_legacy_v1_model(&v1);
+        let payload = unsafe {
+            core::slice::from_raw_parts(
+                &v1 as *const LegacyModelConfigV1 as *const u8,
+                core::mem::size_of::<LegacyModelConfigV1>(),
+            )
+        };
+        assert_eq!(decode_model_slot(&model_header(payload), payload), Ok(v2));
+        assert_eq!(v2.multiswitch_addresses, [-1; 4]);
+        assert_eq!(v2.multiswitch_momentary, [0; 4]);
         assert_eq!(&v2.name, b"PLANE 01  ");
         assert_eq!(v2.model_type, 1);
         assert_eq!(v2.rx_id, 0x1234_5678);

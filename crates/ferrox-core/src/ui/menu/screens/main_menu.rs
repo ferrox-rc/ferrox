@@ -84,6 +84,13 @@ pub fn update(
                 ctrl.selected_item = 0;
                 ctrl.scroll_offset = 0;
             }
+            #[cfg(feature = "multiswitch")]
+            MainMenuItem::MultiSwitch => {
+                ctrl.state = MenuState::MultiSwitchSetup;
+                ctrl.selected_item = 0;
+                ctrl.scroll_offset = 0;
+                ctrl.multiswitch_dirty = false;
+            }
             MainMenuItem::ChannelMonitor => {
                 ctrl.state = MenuState::ChannelMonitor;
                 ctrl.page_idx = 0;

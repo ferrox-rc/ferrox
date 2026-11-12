@@ -30,6 +30,12 @@ pub enum MenuState {
     AuxChannels,
     ChannelReverse,
     RadioSetup,
+    #[cfg(feature = "multiswitch")]
+    MultiSwitchSetup,
+    #[cfg(feature = "multiswitch")]
+    MultiSwitchPageSetup,
+    #[cfg(feature = "multiswitch")]
+    MultiSwitchButtonSetup,
     HardwareSetup,
     InputSetup,
     TelemSetup,
@@ -65,6 +71,8 @@ pub struct MenuController {
     pub sub_idx: usize,
     pub edit_val: i32,
     pub editing: bool,
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_dirty: bool,
     pub request_calibration: bool,
     pub request_bind: bool,
     prev_keys: u16,
@@ -98,6 +106,8 @@ impl MenuController {
             sub_idx: 0,
             edit_val: 0,
             editing: false,
+            #[cfg(feature = "multiswitch")]
+            multiswitch_dirty: false,
             request_calibration: false,
             request_bind: false,
             prev_keys: 0xFFFF,
@@ -371,6 +381,12 @@ impl MenuController {
             }
             MenuState::RadioSetup => {
                 screens::setup::update_radio_setup(self, lcd, &nav_keys, storage, trims, buzzer);
+            }
+            #[cfg(feature = "multiswitch")]
+            MenuState::MultiSwitchSetup
+            | MenuState::MultiSwitchPageSetup
+            | MenuState::MultiSwitchButtonSetup => {
+                screens::multiswitch::update(self, lcd, &nav_keys, storage, buzzer);
             }
             MenuState::HardwareSetup => {
                 screens::setup::update_hardware_setup(self, lcd, &nav_keys, storage, buzzer);

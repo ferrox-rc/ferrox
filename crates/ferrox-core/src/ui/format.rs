@@ -1,5 +1,9 @@
 //! Numeric and string formatters for zero-allocation menu display rendering.
 
+pub fn dashboard_page_label(page: usize, count: usize) -> [u8; 4] {
+    [b'P', b'1' + page as u8, b'/', b'0' + count as u8]
+}
+
 /// Convert a byte buffer known to contain only valid ASCII bytes to a &str without runtime UTF-8 validation overhead.
 ///
 /// # Safety

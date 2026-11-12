@@ -27,6 +27,7 @@ pub struct I6xSerialPort {
     active_high: bool,
     power_on: bool,
     half_duplex: bool,
+    enabled: bool,
 }
 
 impl I6xSerialPort {
@@ -35,6 +36,7 @@ impl I6xSerialPort {
             active_high: true,
             power_on: false,
             half_duplex: false,
+            enabled: false,
         }
     }
 
@@ -96,6 +98,7 @@ impl SerialPort for I6xSerialPort {
 
     fn set_uart_enabled(&mut self, enabled: bool, baud_idx: u8, half_duplex: bool) {
         self.half_duplex = half_duplex;
+        self.enabled = enabled;
         unsafe {
             let rcc = &*pac::RCC::ptr();
             let usart2 = &*pac::USART2::ptr();
@@ -199,19 +202,32 @@ impl SerialPort for I6xSerialPort {
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) {
-        if bytes.is_empty() || bytes.len() > TX_BUF_SIZE {
+        if !self.enabled || bytes.is_empty() || bytes.len() > TX_BUF_SIZE {
             return;
         }
 
-        unsafe {
+        let mut timeout = 20_000u32;
+        while I6X_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
+            timeout -= 1;
+        }
+        let _ = self.try_write_bytes(bytes);
+    }
+
+    fn tx_idle(&self) -> bool {
+        self.enabled && !I6X_TX_BUSY.load(Ordering::Acquire)
+    }
+
+    fn try_write_bytes(&mut self, bytes: &[u8]) -> bool {
+        if !self.enabled || bytes.is_empty() || bytes.len() > TX_BUF_SIZE {
+            return false;
+        }
+        cortex_m::interrupt::free(|_| unsafe {
+            if I6X_TX_BUSY.load(Ordering::Acquire) {
+                return false;
+            }
             let usart2 = &*pac::USART2::ptr();
             let dma = &*pac::DMA1::ptr();
-
-            let mut timeout = 20_000u32;
-            while I6X_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
-                timeout -= 1;
-            }
-
+            usart2.icr.write(|w| w.tccf().clear());
             I6X_TX_BUSY.store(true, Ordering::Release);
 
             if self.half_duplex {
@@ -226,7 +242,8 @@ impl SerialPort for I6xSerialPort {
             dma.ch7
                 .cr
                 .write(|w| w.bits(DMA_CCR_DIR | DMA_CCR_MINC | DMA_CCR_EN));
-        }
+            true
+        })
     }
 
     fn read_byte(&mut self) -> Option<u8> {
@@ -279,6 +296,7 @@ pub struct I6sSerialPort {
     active_high: bool,
     power_on: bool,
     half_duplex: bool,
+    enabled: bool,
 }
 
 impl I6sSerialPort {
@@ -287,6 +305,7 @@ impl I6sSerialPort {
             active_high: true,
             power_on: false,
             half_duplex: false,
+            enabled: false,
         }
     }
 
@@ -348,6 +367,7 @@ impl SerialPort for I6sSerialPort {
 
     fn set_uart_enabled(&mut self, enabled: bool, baud_idx: u8, half_duplex: bool) {
         self.half_duplex = half_duplex;
+        self.enabled = enabled;
         unsafe {
             let rcc = &*pac::RCC::ptr();
             let usart1 = &*pac::USART1::ptr();
@@ -431,19 +451,32 @@ impl SerialPort for I6sSerialPort {
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) {
-        if bytes.is_empty() || bytes.len() > TX_BUF_SIZE {
+        if !self.enabled || bytes.is_empty() || bytes.len() > TX_BUF_SIZE {
             return;
         }
 
-        unsafe {
+        let mut timeout = 20_000u32;
+        while I6S_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
+            timeout -= 1;
+        }
+        let _ = self.try_write_bytes(bytes);
+    }
+
+    fn tx_idle(&self) -> bool {
+        self.enabled && !I6S_TX_BUSY.load(Ordering::Acquire)
+    }
+
+    fn try_write_bytes(&mut self, bytes: &[u8]) -> bool {
+        if !self.enabled || bytes.is_empty() || bytes.len() > TX_BUF_SIZE {
+            return false;
+        }
+        cortex_m::interrupt::free(|_| unsafe {
+            if I6S_TX_BUSY.load(Ordering::Acquire) {
+                return false;
+            }
             let usart1 = &*pac::USART1::ptr();
             let dma = &*pac::DMA1::ptr();
-
-            let mut timeout = 20_000u32;
-            while I6S_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
-                timeout -= 1;
-            }
-
+            usart1.icr.write(|w| w.tccf().clear());
             I6S_TX_BUSY.store(true, Ordering::Release);
 
             if self.half_duplex {
@@ -458,7 +491,8 @@ impl SerialPort for I6sSerialPort {
             dma.ch2
                 .cr
                 .write(|w| w.bits(DMA_CCR_DIR | DMA_CCR_MINC | DMA_CCR_EN));
-        }
+            true
+        })
     }
 
     fn read_byte(&mut self) -> Option<u8> {

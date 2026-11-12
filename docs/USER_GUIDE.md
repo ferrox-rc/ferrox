@@ -33,12 +33,22 @@ A comprehensive guide to operating the `ferrox` firmware on supported transmitte
 
 ## 2. Multi-Page Flight Dashboard
 
-The main flight screen features 5 switchable display pages cycled by tapping **`[BIND]`** or pressing **`[UP]`** / **`[DOWN]`**. All 5 pages share a pixel-perfect uniform layout:
+The main flight screen features 5 base pages cycled by tapping **`[BIND]`** or pressing **`[UP]`** / **`[DOWN]`**. On FS-i6S with the optional `multiswitch` Cargo feature, configured MultiSwitch addresses add up to four pages (P6 through P9); the footer denominator reflects the actual page count. All pages share a uniform layout:
 - **Top Status Bar (`y = 0..10`)**: Displays active model type icon (12x12 MDI glyph), active model name, centered RF/telemetry status (`RF:OK`, `R:XX%`, `BIND`, `U:SIM`, `NO RF`), and right-aligned power indicator with steady filtered battery voltage (`X.YYV`) and procedural solid battery gauge (`[===]`).
 - **Top Divider (`y = 11`)**: Full-width horizontal line (`Line(0, 11) -> (127, 11)`).
 - **Content Area (`y = 12..54`)**: Page-specific controls, split channels, gauges, and telemetry.
 - **Bottom Divider (`y = 55`)**: Full-width horizontal line (`Line(0, 55) -> (127, 55)`).
 - **Footer Info Bar (`y = 56..63`)**: Small text (`FONT_4X6`) rendered at baseline 62 (`y = 57..62`) for maximum vertical clearance.
+
+### MultiSwitch Pages P6..P9 (FS-i6S)
+
+MultiSwitch is disabled at compile time by default. Build with `cargo build-i6s --features multiswitch` to include it; `cargo build-i6s` omits the menu, extra pages, touch controls, and Set4 transmission. The stored model fields and EEPROM layout are identical in both variants, so switching firmware preserves addresses, labels, and modes. The feature does not change the selected board.
+
+**Settings Menu -> MultiSwitch** configures four model-specific module slots. Each slot has an address (**OFF** or **0..255**) and eight functions with editable six-character labels and **TOGGLE** / **MOMENTARY** modes. Changes are saved when leaving the slot setup. Only enabled slots get dashboard pages, in slot order, without gaps. The factory default enables address 0 in the first slot; existing Rust models retain their settings and start with MultiSwitch disabled.
+
+Each page shows eight touch buttons in two rows. Tap a toggle button to latch/unlatch it; a momentary button stays on only while held inside its target. Leaving the target, releasing, changing page, or opening a menu releases momentary functions. Blank labels display function numbers 1..8; momentary buttons have a double border. Swipe to change pages, tap the status bar to advance, or hold the footer for 1.2 seconds to open Settings. Touching these buttons does not adjust virtual trims.
+
+MultiSwitch requires **CRSF / ELRS** and a compatible Set4 receiver/module. States are transmitted immediately after changes and refreshed every 100 ms per address, without replacing RC channel frames. AFHDS 2A and USB simulator mode display a warning and disable switch operation. Switch states are not saved and start off after reboot or a model change.
 
 ### Page 1/5: Primary Gimbals & Trims
 ```

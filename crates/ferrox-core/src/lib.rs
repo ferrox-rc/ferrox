@@ -31,6 +31,8 @@ pub mod power;
 pub mod touch;
 pub mod input;
 pub mod mixer;
+#[cfg(feature = "multiswitch")]
+pub mod multiswitch;
 pub mod rf;
 pub mod runtime;
 pub use runtime::{BackgroundIdleManager, FlightPipeline, FlightSnapshot};

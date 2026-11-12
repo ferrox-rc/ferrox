@@ -51,6 +51,7 @@ pub fn render(
     timer_str: Option<&str>,
     timer_expired: bool,
     blink_on: bool,
+    page_count: usize,
 ) {
     render_primary_sticks(lcd, state, storage, trims);
 
@@ -63,7 +64,15 @@ pub fn render(
         render_adaptive_layout(lcd, state, storage);
     }
 
-    render_footer(lcd, trims, is_binding, timer_str, timer_expired, blink_on);
+    render_footer(
+        lcd,
+        trims,
+        is_binding,
+        timer_str,
+        timer_expired,
+        blink_on,
+        page_count,
+    );
 }
 
 /// Render the 4 primary flight stick channels (Roll, Pitch, Throttle, Yaw) with gauges and percentages.
@@ -290,7 +299,10 @@ pub fn render_footer(
     timer_str: Option<&str>,
     timer_expired: bool,
     blink_on: bool,
+    page_count: usize,
 ) {
+    let page_buf = crate::ui::format::dashboard_page_label(0, page_count);
+    let page_label = crate::ui::format::ascii_as_str(&page_buf);
     if is_binding {
         widgets::draw_footer(lcd, "[ESC] Finish Bind");
     } else if trims.last_active != trim::ActiveTrim::None {
@@ -306,9 +318,9 @@ pub fn render_footer(
         widgets::draw_footer_split(lcd, trm_str, "Hold OK:Menu");
     } else if let Some(t_str) = timer_str {
         let invert_timer = timer_expired && blink_on;
-        widgets::draw_footer_three(lcd, "P1/5", t_str, "Hold OK:Menu", invert_timer);
+        widgets::draw_footer_three(lcd, page_label, t_str, "Hold OK:Menu", invert_timer);
     } else {
-        widgets::draw_footer_split(lcd, "P1/5", "Hold OK:Menu");
+        widgets::draw_footer_split(lcd, page_label, "Hold OK:Menu");
     }
 }
 

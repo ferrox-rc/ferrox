@@ -13,6 +13,7 @@ pub fn render(
     telem: &TelemetryData,
     is_binding: bool,
     now_ms: u32,
+    page_count: usize,
 ) {
     let active = storage.active_model();
     let is_crsf = active.rf_protocol == 1;
@@ -110,6 +111,7 @@ pub fn render(
     if is_binding {
         widgets::draw_footer(lcd, "[ESC] Finish Bind");
     } else {
-        widgets::draw_footer_split(lcd, "P4/5", "MODEL DASHBOARD");
+        let page_buf = crate::ui::format::dashboard_page_label(3, page_count);
+        widgets::draw_footer_split(lcd, ascii_as_str(&page_buf), "MODEL DASHBOARD");
     }
 }

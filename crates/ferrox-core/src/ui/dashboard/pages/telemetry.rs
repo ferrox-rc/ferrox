@@ -431,7 +431,10 @@ pub fn render(
     is_binding: bool,
     timer_str: Option<&str>,
     now_ms: u32,
+    page_count: usize,
 ) {
+    let page_buf = crate::ui::format::dashboard_page_label(4, page_count);
+    let page_label = crate::ui::format::ascii_as_str(&page_buf);
     let slots = storage.active_model.telem_slots;
     let is_custom = slots != [0, 1, 2, 3];
 
@@ -458,7 +461,7 @@ pub fn render(
         if is_binding {
             widgets::draw_footer(lcd, "[ESC] Finish Bind");
         } else {
-            widgets::draw_footer_split(lcd, "P5/5", "CUSTOM TELEM");
+            widgets::draw_footer_split(lcd, page_label, "CUSTOM TELEM");
         }
         return;
     }
@@ -534,7 +537,7 @@ pub fn render(
         draw_diag_stat(lcd, 92, 44, vbat_has && ct.rx_capacity_mah > 0, ascii_as_str(&cap_buf), "----", vbat_stale);
 
         // Standardized Footer
-        widgets::draw_footer_split(lcd, "P5/5", "CRSF LINK DIAG");
+        widgets::draw_footer_split(lcd, page_label, "CRSF LINK DIAG");
     } else {
         let (rxv_has, rxv_stale) =
             check_sensor_status(telem.last_rx_voltage_ms, now_ms, telem.connected);
@@ -594,7 +597,7 @@ pub fn render(
         if is_binding {
             widgets::draw_footer(lcd, "[ESC] Finish Bind");
         } else {
-            widgets::draw_footer_split(lcd, "P5/5", "TELEMETRY SENSORS");
+            widgets::draw_footer_split(lcd, page_label, "TELEMETRY SENSORS");
         }
     }
 }

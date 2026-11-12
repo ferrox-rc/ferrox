@@ -84,6 +84,28 @@ pub fn update_channels(
     }
 }
 
+/// Queue one due multiswitch command without delaying RC channel frames.
+///
+/// Call after `update_channels`; a due channel deadline or busy UART defers the
+/// command, and failed queue acceptance leaves the page pending for retry.
+#[cfg(feature = "multiswitch")]
+pub fn update_multiswitch(now_ms: u32, pages: &mut crate::multiswitch::Pages) {
+    unsafe {
+        if !CRSF_ENABLED || now_ms.wrapping_sub(LAST_TX_MS) >= 10 || !uart::tx_idle() {
+            return;
+        }
+    }
+    if let Some(slot) = pages.due(now_ms) {
+        let frame = protocol::build_set4(
+            pages.addresses[slot as usize] as u8,
+            pages.states[slot as usize].switches,
+        );
+        if uart::try_write_bytes(&frame) {
+            pages.sent(slot, now_ms);
+        }
+    }
+}
+
 pub const MAX_PARAMS: usize = 48;
 pub const MAX_FOLDER_ITEMS: usize = MAX_PARAMS;
 pub const MAX_ACTIVE_FOLDER_PARAMS: usize = MAX_PARAMS;
@@ -1514,6 +1536,61 @@ mod tests {
             TELEMETRY = CrsfTelemetry::new();
             uart::mock::clear();
         }
+    }
+
+    #[test]
+    #[cfg(feature = "multiswitch")]
+    fn multiswitch_queue_retry_channel_priority_and_repeat() {
+        reset_state();
+        let mut pages = crate::multiswitch::Pages::new();
+        pages.configure(&[0, 42, -1, -1], &[0; 4]);
+        unsafe {
+            CRSF_ENABLED = false;
+        }
+        update_multiswitch(5, &mut pages);
+        assert_eq!(uart::mock::tx_count(), 0);
+        assert_eq!(pages.due(5), Some(0));
+        unsafe {
+            CRSF_ENABLED = true;
+        }
+
+        // Even when the caller reverses update order, overdue channels win.
+        update_multiswitch(10, &mut pages);
+        assert_eq!(uart::mock::tx_count(), 0);
+        update_channels(10, &[1500; crate::mixer::NUM_CHANNELS], false, false);
+        update_multiswitch(10, &mut pages);
+        assert_eq!(uart::mock::tx_count(), 1);
+        assert_eq!(pages.due(10), Some(0));
+
+        uart::mock::complete_tx();
+        uart::mock::set_tx_accepting(false);
+        update_multiswitch(11, &mut pages);
+        assert!(pages.states[0].pending);
+        assert_eq!(pages.next_slot, 0);
+        uart::mock::set_tx_accepting(true);
+        update_multiswitch(11, &mut pages);
+        assert!(!pages.states[0].pending);
+        assert_eq!(pages.states[0].last_tx_ms, 11);
+        assert_eq!(pages.next_slot, 1);
+        update_multiswitch(11, &mut pages);
+        assert_eq!(uart::mock::tx_count(), 2);
+        uart::mock::complete_tx();
+        update_multiswitch(11, &mut pages);
+        let frames = uart::mock::take_tx();
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0][2], protocol::CRSF_FRAMETYPE_RC_CHANNELS_PACKED);
+        assert_eq!(frames[1], protocol::build_set4(0, 0));
+        assert_eq!(frames[2], protocol::build_set4(42, 0));
+
+        uart::mock::complete_tx();
+        update_channels(110, &[1500; crate::mixer::NUM_CHANNELS], false, false);
+        uart::mock::complete_tx();
+        update_multiswitch(110, &mut pages);
+        assert_eq!(uart::mock::tx_count(), 1);
+        update_multiswitch(111, &mut pages);
+        assert_eq!(uart::mock::tx_count(), 2);
+        assert_eq!(pages.states[0].last_tx_ms, 111);
+        uart::mock::clear();
     }
 
     unsafe fn add_test_param(

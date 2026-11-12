@@ -40,16 +40,19 @@ jobs:
       - name: Run clippy (-D warnings)
         run: |
           cargo clippy -p ferrox-i6s --target thumbv6m-none-eabi -- -D warnings
+          cargo clippy -p ferrox-i6s --features multiswitch --target thumbv6m-none-eabi -- -D warnings
           cargo clippy -p ferrox-i6x --target thumbv6m-none-eabi -- -D warnings
 
       - name: Run host unit tests
         run: |
           cargo test-host-i6s
           cargo test-host-i6x
+          cargo test -p ferrox-core --features board-i6s,multiswitch --lib --target x86_64-unknown-linux-gnu -- --test-threads=1
 
       - name: Build release binaries
         run: |
           cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi
+          cargo build --release -p ferrox-i6s --features multiswitch --target thumbv6m-none-eabi
           cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi
 
       - name: Install cargo-binutils

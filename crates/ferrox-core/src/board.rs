@@ -113,6 +113,8 @@ pub enum MainMenuItem {
     AuxChannels,
     ChannelReverse,
     RadioSetup,
+    #[cfg(feature = "multiswitch")]
+    MultiSwitch,
     ChannelMonitor,
     Calibration,
     DiagAnas,
@@ -131,6 +133,8 @@ impl MainMenuItem {
             Self::AuxChannels => "Aux Channels",
             Self::ChannelReverse => "Channel Reverse",
             Self::RadioSetup => "Radio Setup",
+            #[cfg(feature = "multiswitch")]
+            Self::MultiSwitch => "MultiSwitch",
             Self::ChannelMonitor => "Channel Monitor",
             Self::Calibration => "Calibration",
             Self::DiagAnas => "Analog Diag",
@@ -149,6 +153,8 @@ impl MainMenuItem {
             Self::AuxChannels => &glyphs::GLYPH_TOGGLE_SWITCH,
             Self::ChannelReverse => &glyphs::GLYPH_SWAP_VERTICAL,
             Self::RadioSetup => &glyphs::GLYPH_COG,
+            #[cfg(feature = "multiswitch")]
+            Self::MultiSwitch => &glyphs::GLYPH_TOGGLE_SWITCH,
             Self::ChannelMonitor => &glyphs::GLYPH_GAUGE,
             Self::Calibration => &glyphs::GLYPH_CROSSHAIRS_GPS,
             Self::DiagAnas => &glyphs::GLYPH_PULSE,
@@ -241,6 +247,7 @@ pub trait BoardProfile: Copy + Clone + 'static {
     const HAS_JOG_WHEELS: bool;
     const HAS_ROTARY_ENCODER: bool;
     const HAS_TOUCH: bool;
+    const HAS_MULTISWITCH: bool = Self::HAS_TOUCH && cfg!(feature = "multiswitch");
     const HAS_RGB_BACKLIGHT: bool;
     const HAS_REAR_AND_J4_SWITCHES: bool;
     const HAS_SOFT_POWER_LATCH: bool;
@@ -354,7 +361,11 @@ pub trait BoardProfile: Copy + Clone + 'static {
     fn init_board_keys(radio: &RadioConfig);
 
     /// Poll navigation keys from physical buttons and touch gestures.
-    fn poll_keys(storage: &RadioStorage, menu_active: bool) -> u16;
+    fn poll_keys(
+        storage: &RadioStorage,
+        menu_active: bool,
+        #[cfg(feature = "multiswitch")] multiswitch_momentary: Option<u8>,
+    ) -> u16;
 
     /// Update dynamic flight switches (e.g. rear buttons or J4 buttons).
     fn update_flight_switches(state: &mut InputState, storage: &RadioStorage, menu_active: bool);
@@ -416,6 +427,11 @@ pub trait BoardIdleHook: Default + 'static {
 
     /// Render board-specific overlay (e.g. shutdown progress modal).
     fn render_overlay(&self, lcd: &mut St7567);
+
+    #[cfg(feature = "multiswitch")]
+    fn overlay_active(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -465,6 +481,8 @@ impl BoardProfile for I6sSpec {
         MainMenuItem::AuxChannels,
         MainMenuItem::ChannelReverse,
         MainMenuItem::RadioSetup,
+        #[cfg(feature = "multiswitch")]
+        MainMenuItem::MultiSwitch,
         MainMenuItem::ChannelMonitor,
         MainMenuItem::Calibration,
         MainMenuItem::DiagAnas,
@@ -737,7 +755,15 @@ impl BoardProfile for I6sSpec {
     }
 
     #[inline]
-    fn poll_keys(storage: &RadioStorage, menu_active: bool) -> u16 {
+    fn poll_keys(
+        storage: &RadioStorage,
+        menu_active: bool,
+        #[cfg(feature = "multiswitch")] multiswitch_momentary: Option<u8>,
+    ) -> u16 {
+        #[cfg(feature = "multiswitch")]
+        if storage.radio.touch_disabled != 0 {
+            crate::touch::nav::clear_multiswitch_touch();
+        }
         let touch_sample =
             if storage.radio.touch_disabled == 0 && crate::touch::ft6236::is_touch_int_asserted() {
                 crate::touch::ft6236::read_touch()
@@ -752,6 +778,8 @@ impl BoardProfile for I6sSpec {
             storage.radio.rear_left_func,
             storage.radio.rear_right_func,
             storage.radio.throttle_trim != 0,
+            #[cfg(feature = "multiswitch")]
+            multiswitch_momentary,
         )
     }
 
@@ -1042,6 +1070,11 @@ impl BoardIdleHook for I6sIdleState {
                 lcd.fill_rect(29, 35, fill_w, 2, true);
             }
         }
+    }
+
+    #[cfg(feature = "multiswitch")]
+    fn overlay_active(&self) -> bool {
+        self.power_manager.shutdown_progress_pct() > 0
     }
 }
 
@@ -1350,7 +1383,11 @@ impl BoardProfile for I6xSpec {
     fn init_board_keys(_radio: &RadioConfig) {}
 
     #[inline]
-    fn poll_keys(_storage: &RadioStorage, _menu_active: bool) -> u16 {
+    fn poll_keys(
+        _storage: &RadioStorage,
+        _menu_active: bool,
+        #[cfg(feature = "multiswitch")] _multiswitch_momentary: Option<u8>,
+    ) -> u16 {
         crate::boot::scan_keys()
     }
 
@@ -1702,7 +1739,11 @@ impl BoardProfile for PocketSpec {
     fn init_board_keys(_radio: &RadioConfig) {}
 
     #[inline]
-    fn poll_keys(_storage: &RadioStorage, _menu_active: bool) -> u16 {
+    fn poll_keys(
+        _storage: &RadioStorage,
+        _menu_active: bool,
+        #[cfg(feature = "multiswitch")] _multiswitch_momentary: Option<u8>,
+    ) -> u16 {
         crate::boot::scan_keys()
     }
 

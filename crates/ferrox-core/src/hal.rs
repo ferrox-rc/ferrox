@@ -98,6 +98,16 @@ pub trait SerialPort {
     /// Write a slice of bytes to the transmit buffer/DMA.
     fn write_bytes(&mut self, bytes: &[u8]);
 
+    /// Whether a nonblocking transmit can start without waiting for another frame.
+    fn tx_idle(&self) -> bool {
+        false
+    }
+
+    /// Start a complete frame without blocking; false means no bytes were accepted.
+    fn try_write_bytes(&mut self, _bytes: &[u8]) -> bool {
+        false
+    }
+
     /// Read a single byte from the receive buffer, if available.
     fn read_byte(&mut self) -> Option<u8>;
 }

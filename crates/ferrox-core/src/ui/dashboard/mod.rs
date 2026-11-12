@@ -1,6 +1,6 @@
 //! Live Flight Dashboard subsystem for FlySky FS-i6X.
 //!
-//! Provides the primary 4-page flight display:
+//! Provides five flight pages and up to four configured MultiSwitch pages:
 //! - Page 0 (P1/5): Primary Gimbals, Trims, Switches, Pots
 //! - Page 1 (P2/5): 18-Channel Dual-Column Live Monitor
 //! - Page 2 (P3/5): 18-Channel Dual-Column Live Monitor cont.
@@ -10,6 +10,8 @@
 pub mod pages;
 pub mod status_bar;
 
+#[cfg(any(feature = "multiswitch", test))]
+use crate::board::{ActiveBoard, BoardProfile};
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::input::InputState;
@@ -19,6 +21,7 @@ use crate::trim::TrimController;
 
 pub struct DashboardController {
     pub page: usize,
+    pub page_count: usize,
     pub blink_phase: u8,
     pub vbat_alarm_timer: u32,
     pub rssi_alarm_timer: u32,
@@ -37,6 +40,7 @@ impl DashboardController {
     pub fn new() -> Self {
         Self {
             page: 0,
+            page_count: 5,
             blink_phase: 0,
             vbat_alarm_timer: 7000,
             rssi_alarm_timer: 0,
@@ -46,20 +50,46 @@ impl DashboardController {
         }
     }
 
+    pub fn configure(&mut self, storage: &RadioStorage) {
+        self.page_count = 5;
+        #[cfg(feature = "multiswitch")]
+        if ActiveBoard::HAS_MULTISWITCH {
+            self.page_count +=
+                crate::multiswitch::enabled_count(&storage.active_model().multiswitch_addresses);
+        }
+        #[cfg(not(feature = "multiswitch"))]
+        let _ = storage;
+        if self.page >= self.page_count {
+            self.page = 0;
+        }
+    }
+
+    #[cfg(feature = "multiswitch")]
+    pub fn multiswitch_slot(&self, storage: &RadioStorage) -> Option<usize> {
+        if !ActiveBoard::HAS_MULTISWITCH || self.page < 5 {
+            return None;
+        }
+        crate::multiswitch::slot_at(&storage.active_model().multiswitch_addresses, self.page - 5)
+    }
+
     /// Advance to the next dashboard page.
     pub fn next_page(&mut self, buzzer: &mut Buzzer) {
-        self.page = (self.page + 1) % 5;
+        self.page = (self.page + 1) % self.page_count;
         buzzer.play_tone(2200, 30);
     }
 
     /// Return to the previous dashboard page.
     #[allow(dead_code)]
     pub fn prev_page(&mut self, buzzer: &mut Buzzer) {
-        self.page = if self.page == 0 { 4 } else { self.page - 1 };
+        self.page = if self.page == 0 {
+            self.page_count - 1
+        } else {
+            self.page - 1
+        };
         buzzer.play_tone(2200, 30);
     }
 
-    /// Handle UP/DOWN key presses to cycle dashboard pages (0..3).
+    /// Handle UP/DOWN key presses to cycle configured dashboard pages.
     #[allow(dead_code)]
     pub fn handle_keys(&mut self, newly_pressed: u16, buzzer: &mut Buzzer) {
         if newly_pressed & (1 << 9) != 0 {
@@ -78,6 +108,7 @@ impl DashboardController {
         lcd: &mut St7567,
         state: &InputState,
         storage: &RadioStorage,
+        #[cfg(feature = "multiswitch")] multiswitch_states: &[u8; 4],
         trims: &TrimController,
         rf_chs: &[u16; crate::mixer::NUM_CHANNELS],
         rf_ok: bool,
@@ -88,6 +119,7 @@ impl DashboardController {
         buzzer: &mut Buzzer,
         now_ms: u32,
     ) {
+        self.configure(storage);
         lcd.clear_buffer();
 
         status_bar::render(
@@ -119,11 +151,12 @@ impl DashboardController {
                 timer_str,
                 timer_expired,
                 blink_on,
+                self.page_count,
             ),
-            1 => pages::channels::render(lcd, rf_chs, is_binding, 0),
-            2 => pages::channels::render(lcd, rf_chs, is_binding, 1),
-            3 => pages::model::render(lcd, storage, telem, is_binding, now_ms),
-            _ => {
+            1 => pages::channels::render(lcd, rf_chs, is_binding, 0, self.page_count),
+            2 => pages::channels::render(lcd, rf_chs, is_binding, 1, self.page_count),
+            3 => pages::model::render(lcd, storage, telem, is_binding, now_ms, self.page_count),
+            4 => {
                 let is_crsf = storage.active_model().rf_protocol == 1;
                 pages::telemetry::render(
                     lcd,
@@ -137,7 +170,22 @@ impl DashboardController {
                     is_binding,
                     timer_str,
                     now_ms,
+                    self.page_count,
                 );
+            }
+            _ =>
+            {
+                #[cfg(feature = "multiswitch")]
+                if let Some(slot) = self.multiswitch_slot(storage) {
+                    pages::multiswitch::render(
+                        lcd,
+                        storage,
+                        multiswitch_states[slot],
+                        slot,
+                        self.page,
+                        self.page_count,
+                    );
+                }
             }
         }
     }
@@ -146,6 +194,71 @@ impl DashboardController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multiswitch_pages_follow_enabled_addresses() {
+        let mut dash = DashboardController::new();
+        let mut storage = RadioStorage::default_factory();
+        let mut buzzer = Buzzer::new();
+        for count in 0..=4 {
+            storage.active_model.multiswitch_addresses = [-1; 4];
+            for slot in 0..count {
+                storage.active_model.multiswitch_addresses[slot] = slot as i16;
+            }
+            dash.configure(&storage);
+            let expected = 5 + if ActiveBoard::HAS_MULTISWITCH {
+                count
+            } else {
+                0
+            };
+            dash.page = 0;
+            dash.prev_page(&mut buzzer);
+            assert_eq!(dash.page, expected - 1);
+            dash.next_page(&mut buzzer);
+            assert_eq!(dash.page, 0);
+            for page in 1..expected {
+                dash.next_page(&mut buzzer);
+                assert_eq!(dash.page, page);
+            }
+            dash.next_page(&mut buzzer);
+            assert_eq!(dash.page, 0);
+        }
+        storage.active_model.multiswitch_addresses = [-1, 0, -1, 255];
+        dash.configure(&storage);
+        #[cfg(feature = "multiswitch")]
+        {
+            dash.page = 5;
+            assert_eq!(
+                dash.multiswitch_slot(&storage),
+                if ActiveBoard::HAS_MULTISWITCH {
+                    Some(1)
+                } else {
+                    None
+                }
+            );
+            dash.page = 6;
+            assert_eq!(
+                dash.multiswitch_slot(&storage),
+                if ActiveBoard::HAS_MULTISWITCH {
+                    Some(3)
+                } else {
+                    None
+                }
+            );
+        }
+        dash.page = 6;
+        storage.active_model.multiswitch_addresses = [-1; 4];
+        dash.configure(&storage);
+        assert_eq!(dash.page, 0);
+    }
+
+    #[test]
+    fn multiswitch_menu_matches_compiled_capability() {
+        let has_entry = ActiveBoard::MAIN_MENU_ITEMS
+            .iter()
+            .any(|item| item.title() == "MultiSwitch");
+        assert_eq!(has_entry, ActiveBoard::HAS_MULTISWITCH);
+    }
 
     #[test]
     fn test_dashboard_5page_cycling() {
@@ -199,6 +312,7 @@ mod tests {
             false,
             Some("05:32"),
             10000,
+            5,
         );
     }
 
@@ -224,12 +338,12 @@ mod tests {
 
         // Render at 2000ms: only 1000ms elapsed (< 2500ms) -> Live, no stale indicator
         pages::telemetry::render(
-            &mut lcd, &storage, false, &telem, 4000, 100, 4000, true, false, None, 2000,
+            &mut lcd, &storage, false, &telem, 4000, 100, 4000, true, false, None, 2000, 5,
         );
 
         // Render at 5000ms: 4000ms elapsed (>= 2500ms) -> Stale, displays last known values with *
         pages::telemetry::render(
-            &mut lcd, &storage, false, &telem, 4000, 100, 4000, true, false, None, 5000,
+            &mut lcd, &storage, false, &telem, 4000, 100, 4000, true, false, None, 5000, 5,
         );
     }
 
@@ -247,16 +361,15 @@ mod tests {
         };
 
         // Render at 2000ms: 1000ms elapsed (< 2500ms) -> Live, no stale indicator
-        pages::model::render(&mut lcd, &storage, &telem, false, 2000);
+        pages::model::render(&mut lcd, &storage, &telem, false, 2000, 5);
 
         // Render at 5000ms: 4000ms elapsed (>= 2500ms) -> Stale, displays last known values with *
-        pages::model::render(&mut lcd, &storage, &telem, false, 5000);
+        pages::model::render(&mut lcd, &storage, &telem, false, 5000, 5);
 
         // Also test CRSF mode (rf_protocol = 1)
         let mut storage_crsf = RadioStorage::default_factory();
         storage_crsf.active_model.rf_protocol = 1;
-        pages::model::render(&mut lcd, &storage_crsf, &telem, false, 2000);
-        pages::model::render(&mut lcd, &storage_crsf, &telem, false, 5000);
+        pages::model::render(&mut lcd, &storage_crsf, &telem, false, 2000, 5);
+        pages::model::render(&mut lcd, &storage_crsf, &telem, false, 5000, 5);
     }
 }
-

@@ -86,6 +86,45 @@ pub const CRSF_FRAME_MAX_SIZE: usize = 64;
 pub const CRSF_RC_FRAME_SIZE: usize = 26; // 1 (addr) + 1 (len) + 1 (type) + 22 (payload) + 1 (crc)
 pub const CRSF_RC_EXT_FRAME_SIZE: usize = 27; // 1 (addr) + 1 (len) + 1 (type) + 23 (payload) + 1 (crc)
 
+/// Set eight two-bit multiswitch functions (Set4 command).
+#[cfg(feature = "multiswitch")]
+pub fn build_set4(address: u8, switches: u8) -> [u8; 12] {
+    let mut state = 0u16;
+    for index in 0..8 {
+        if switches & (1 << index) != 0 {
+            state |= 1 << (2 * index);
+        }
+    }
+    let mut frame = [
+        CRSF_SYNC_BYTE,
+        10,
+        0x32,
+        CRSF_ADDRESS_BROADCAST,
+        CRSF_ADDRESS_RADIO_TRANSMITTER,
+        0xA1,
+        0x07,
+        address,
+        (state >> 8) as u8,
+        state as u8,
+        0,
+        0,
+    ];
+    let mut command_crc = 0u8;
+    for &byte in &frame[2..10] {
+        command_crc ^= byte;
+        for _ in 0..8 {
+            command_crc = if command_crc & 0x80 != 0 {
+                (command_crc << 1) ^ 0xBA
+            } else {
+                command_crc << 1
+            };
+        }
+    }
+    frame[10] = command_crc;
+    frame[11] = crc8(&frame[2..11]);
+    frame
+}
+
 pub const CRSF_CHANNELS_STATUS_ARMED: u8 = 0x01;
 pub const CRSF_CHANNELS_STATUS_ARMING_MODE_CH5: u8 = 0x02;
 
@@ -686,6 +725,28 @@ pub fn build_param_write_frame_multi(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(feature = "multiswitch")]
+    fn multiswitch_set4_crc_vectors_and_bit_order() {
+        assert_eq!(
+            build_set4(0, 0),
+            [0xC8, 10, 0x32, 0, 0xEA, 0xA1, 7, 0, 0, 0, 0x7E, 0xDE]
+        );
+        assert_eq!(
+            build_set4(255, 255),
+            [0xC8, 10, 0x32, 0, 0xEA, 0xA1, 7, 255, 0x55, 0x55, 0x90, 0xE7]
+        );
+        assert_eq!(
+            build_set4(42, 0x81),
+            [0xC8, 10, 0x32, 0, 0xEA, 0xA1, 7, 42, 0x40, 1, 0xC8, 0x7D]
+        );
+        for index in 0..8 {
+            let frame = build_set4(0, 1 << index);
+            assert_eq!(u16::from_be_bytes([frame[8], frame[9]]), 1 << (index * 2));
+            assert_eq!(frame[11], crc8(&frame[2..11]));
+        }
+    }
     use crate::mixer::CHANNEL_CENTER_US;
 
     #[test]

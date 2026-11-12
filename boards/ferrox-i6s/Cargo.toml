@@ -25,5 +25,6 @@ embedded-graphics = "0.8.1"
 
 [features]
 default = ["stm32"]
+multiswitch = ["ferrox-core/multiswitch"]
 stm32 = ["ferrox-core/stm32"]
 apm32 = ["ferrox-core/apm32"]
