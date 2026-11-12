@@ -1,8 +1,8 @@
 //! RadioMaster Pocket board specification.
 
-use crate::storage::AdcInputMode;
 use super::qx7_family::{impl_qx7_board_profile, Qx7FamilyProfile};
 use super::*;
+use crate::storage::AdcInputMode;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PocketSpec;
@@ -25,7 +25,8 @@ impl Qx7FamilyProfile for PocketSpec {
         " (",
         env!("GIT_HASH"),
         ")\r\n"
-    ).as_bytes();
+    )
+    .as_bytes();
 
     const HAS_S2_POT: bool = false;
     const DEFAULT_SA_MODE: AdcInputMode = AdcInputMode::TwoPos;
@@ -45,4 +46,3 @@ impl Qx7FamilyProfile for PocketSpec {
 }
 
 impl_qx7_board_profile!(PocketSpec);
-

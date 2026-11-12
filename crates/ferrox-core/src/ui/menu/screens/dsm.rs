@@ -78,7 +78,10 @@ pub fn update(ctrl: &mut MenuController, lcd: &mut St7567, keys: &NavKeys, buzze
                 }
             } else {
                 let sel = ctrl.selected_item;
-                let (min, max) = (engine.lines[sel].min_val as i32, engine.lines[sel].max_val as i32);
+                let (min, max) = (
+                    engine.lines[sel].min_val as i32,
+                    engine.lines[sel].max_val as i32,
+                );
                 if keys.up {
                     if max > min {
                         ctrl.edit_val = (ctrl.edit_val + 1).min(max);
@@ -154,13 +157,7 @@ pub fn update(ctrl: &mut MenuController, lcd: &mut St7567, keys: &NavKeys, buzze
                     Some(">")
                 };
 
-                widgets::draw_list_row_right(
-                    lcd,
-                    slot,
-                    is_sel,
-                    lbl,
-                    right_val,
-                );
+                widgets::draw_list_row_right(lcd, slot, is_sel, lbl, right_val);
             }
 
             widgets::draw_footer(

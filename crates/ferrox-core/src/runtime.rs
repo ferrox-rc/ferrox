@@ -10,10 +10,10 @@ use crate::board::{ActiveBoard, BoardIdleHook, BoardProfile};
 use crate::buzzer::Buzzer;
 use crate::calib::CalibWizard;
 use crate::crsf;
-#[cfg(feature = "rf-dsm")]
-use crate::dsm;
 use crate::curve;
 use crate::display::St7567;
+#[cfg(feature = "rf-dsm")]
+use crate::dsm;
 use crate::input::{self, InputState, SwitchPos};
 use crate::mixer::{self, SAFE_IDLE_CHANNELS};
 use crate::rf::{self, afhds2a::TelemetryData};
@@ -178,7 +178,8 @@ impl FlightPipeline {
                 dsm::set_bind_mode(rf::is_binding());
                 rf::set_silenced(true);
                 if dsm_active {
-                    let sub_proto = crate::board::DsmSubProtocol::from_u8(active_model.dsm_sub_proto);
+                    let sub_proto =
+                        crate::board::DsmSubProtocol::from_u8(active_model.dsm_sub_proto);
                     dsm::update_link(now, &rf_chs, sub_proto);
                     dsm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);
@@ -746,7 +747,8 @@ impl BackgroundIdleManager {
             buzzer,
         );
 
-        self.f5j.update(now, &flight.rf_chs, &flight.telem, &model.soaring, buzzer);
+        self.f5j
+            .update(now, &flight.rf_chs, &flight.telem, &model.soaring, buzzer);
 
         // Keep legacy Timer 1 scalar fields in sync for telemetry/logging
         self.timer_remaining_secs = self.timers.timers[0].remaining_secs;

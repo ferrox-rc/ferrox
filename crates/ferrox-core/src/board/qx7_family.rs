@@ -2,14 +2,14 @@
 
 #![allow(unused_imports)]
 
-use crate::buzzer::Buzzer;
-use crate::display::St7567;
-use crate::input::{InputState, SwitchPos};
-use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 use super::{
     draw_switch_slot_i6x, BoardIdleHook, BoardProfile, DiagPage, HardwareExtItem, MainMenuItem,
     RadioSetupItem, RfProtocol,
 };
+use crate::buzzer::Buzzer;
+use crate::display::St7567;
+use crate::input::{InputState, SwitchPos};
+use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 
 /// Shared background idle state for Q X7 family targets.
 /// Evaluates soft-power latch (`PD0`/`PD1`) shutdown timer and renders shutdown overlay.
@@ -113,17 +113,23 @@ macro_rules! impl_qx7_board_profile {
         impl BoardProfile for $spec {
             const MODEL_NAME: &'static str = <$spec as Qx7FamilyProfile>::MODEL_NAME;
             const FIRMWARE_ID: &'static str = <$spec as Qx7FamilyProfile>::FIRMWARE_ID;
-            const USB_PRODUCT_JOYSTICK: &'static str = <$spec as Qx7FamilyProfile>::USB_PRODUCT_JOYSTICK;
-            const USB_SERIAL_JOYSTICK: &'static str = <$spec as Qx7FamilyProfile>::USB_SERIAL_JOYSTICK;
-            const USB_PRODUCT_SERIAL: &'static str = <$spec as Qx7FamilyProfile>::USB_PRODUCT_SERIAL;
+            const USB_PRODUCT_JOYSTICK: &'static str =
+                <$spec as Qx7FamilyProfile>::USB_PRODUCT_JOYSTICK;
+            const USB_SERIAL_JOYSTICK: &'static str =
+                <$spec as Qx7FamilyProfile>::USB_SERIAL_JOYSTICK;
+            const USB_PRODUCT_SERIAL: &'static str =
+                <$spec as Qx7FamilyProfile>::USB_PRODUCT_SERIAL;
             const USB_SERIAL_SERIAL: &'static str = <$spec as Qx7FamilyProfile>::USB_SERIAL_SERIAL;
-            const USB_PRODUCT_COMPOSITE: &'static str = <$spec as Qx7FamilyProfile>::USB_PRODUCT_COMPOSITE;
-            const USB_SERIAL_COMPOSITE: &'static str = <$spec as Qx7FamilyProfile>::USB_SERIAL_COMPOSITE;
+            const USB_PRODUCT_COMPOSITE: &'static str =
+                <$spec as Qx7FamilyProfile>::USB_PRODUCT_COMPOSITE;
+            const USB_SERIAL_COMPOSITE: &'static str =
+                <$spec as Qx7FamilyProfile>::USB_SERIAL_COMPOSITE;
 
             const CLI_PROMPT: &'static [u8] = <$spec as Qx7FamilyProfile>::CLI_PROMPT;
             const CLI_PAUSE_PROMPT: &'static [u8] = <$spec as Qx7FamilyProfile>::CLI_PAUSE_PROMPT;
             const STATUS_BANNER: &'static [u8] = <$spec as Qx7FamilyProfile>::STATUS_BANNER;
-            const CRSF_UART_STATUS: &'static [u8] = b"Protocol: CRSF / ExpressLRS (Internal UART active)\r\n";
+            const CRSF_UART_STATUS: &'static [u8] =
+                b"Protocol: CRSF / ExpressLRS (Internal UART active)\r\n";
 
             const DISPLAY_WIDTH: usize = <$spec as Qx7FamilyProfile>::DISPLAY_WIDTH;
             const DISPLAY_HEIGHT: usize = <$spec as Qx7FamilyProfile>::DISPLAY_HEIGHT;
@@ -171,9 +177,7 @@ macro_rules! impl_qx7_board_profile {
                 RadioSetupItem::InputSetupSubmenu,
             ];
 
-            const HARDWARE_EXT_ITEMS: &'static [HardwareExtItem] = &[
-                HardwareExtItem::ExtModulePwr,
-            ];
+            const HARDWARE_EXT_ITEMS: &'static [HardwareExtItem] = &[HardwareExtItem::ExtModulePwr];
 
             const DIAG_PAGES: &'static [DiagPage] = &[
                 DiagPage::Analog1To6,
@@ -196,7 +200,8 @@ macro_rules! impl_qx7_board_profile {
             const DIAG_EXT_ADC_NAMES: &'static [&'static str] = &[];
 
             const AUX_NAMES: &'static [&'static str] = <$spec as Qx7FamilyProfile>::AUX_NAMES;
-            const ADAPTIVE_CH_NAMES: &'static [&'static str] = <$spec as Qx7FamilyProfile>::ADAPTIVE_CH_NAMES;
+            const ADAPTIVE_CH_NAMES: &'static [&'static str] =
+                <$spec as Qx7FamilyProfile>::ADAPTIVE_CH_NAMES;
             const AUX_SOURCES: &'static [u8] = <$spec as Qx7FamilyProfile>::AUX_SOURCES;
 
             const SUPPORTED_PROTOCOLS: &'static [RfProtocol] = &[
@@ -226,7 +231,7 @@ macro_rules! impl_qx7_board_profile {
 
             fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
                 match src {
-                    0..=4 => true, // None, Roll, Pitch, Thr, Yaw
+                    0..=4 => true,                       // None, Roll, Pitch, Thr, Yaw
                     5 => radio.get_adc_mode(4).is_pot(), // S1
                     6 => <$spec as Qx7FamilyProfile>::HAS_S2_POT && radio.get_adc_mode(5).is_pot(), // S2
                     7 => matches!(
@@ -245,7 +250,7 @@ macro_rules! impl_qx7_board_profile {
                         radio.get_adc_mode(3),
                         AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
                     ), // SD
-                    11 => true, // MAX constant
+                    11 => true,      // MAX constant
                     12..=15 => true, // CH1..CH4 primary flight channels
                     16..=29 => {
                         let ch_idx = (src - 12) as usize; // 4..17
@@ -256,7 +261,10 @@ macro_rules! impl_qx7_board_profile {
                         if model.aux_channels[aux_idx] != 0 {
                             return true;
                         }
-                        model.mixes.iter().any(|m| m.target_ch == (ch_idx + 1) as u8)
+                        model
+                            .mixes
+                            .iter()
+                            .any(|m| m.target_ch == (ch_idx + 1) as u8)
                     }
                     30 => true, // Thr+
                     31 => <$spec as Qx7FamilyProfile>::HAS_SE,
@@ -352,20 +360,57 @@ macro_rules! impl_qx7_board_profile {
                 SwitchPos,
             ) {
                 let (se_raw, sf_raw, sg_raw, sh_raw) = crate::boot::read_ext_switches();
-                let se = if <$spec as Qx7FamilyProfile>::HAS_SE { se_raw } else { SwitchPos::Up };
-                let sf = if <$spec as Qx7FamilyProfile>::HAS_SF { sf_raw } else { SwitchPos::Up };
-                let sg = if <$spec as Qx7FamilyProfile>::HAS_SG { sg_raw } else { SwitchPos::Up };
-                let sh = if <$spec as Qx7FamilyProfile>::HAS_SH { sh_raw } else { SwitchPos::Up };
-                (se, sf, sg, sh, SwitchPos::Up, SwitchPos::Up, SwitchPos::Up, SwitchPos::Up, SwitchPos::Up)
+                let se = if <$spec as Qx7FamilyProfile>::HAS_SE {
+                    se_raw
+                } else {
+                    SwitchPos::Up
+                };
+                let sf = if <$spec as Qx7FamilyProfile>::HAS_SF {
+                    sf_raw
+                } else {
+                    SwitchPos::Up
+                };
+                let sg = if <$spec as Qx7FamilyProfile>::HAS_SG {
+                    sg_raw
+                } else {
+                    SwitchPos::Up
+                };
+                let sh = if <$spec as Qx7FamilyProfile>::HAS_SH {
+                    sh_raw
+                } else {
+                    SwitchPos::Up
+                };
+                (
+                    se,
+                    sf,
+                    sg,
+                    sh,
+                    SwitchPos::Up,
+                    SwitchPos::Up,
+                    SwitchPos::Up,
+                    SwitchPos::Up,
+                    SwitchPos::Up,
+                )
             }
 
-            fn render_default_layout(lcd: &mut St7567, state: &InputState, _storage: &RadioStorage) {
+            fn render_default_layout(
+                lcd: &mut St7567,
+                state: &InputState,
+                _storage: &RadioStorage,
+            ) {
                 draw_switch_slot_i6x(lcd, 2, 9, "A", state.switches.sa);
                 draw_switch_slot_i6x(lcd, 20, 27, "B", state.switches.sb);
                 draw_switch_slot_i6x(lcd, 38, 45, "C", state.switches.sc);
                 draw_switch_slot_i6x(lcd, 56, 63, "D", state.switches.sd);
                 lcd.draw_str_4x6(74, 47, "VR", false);
-                crate::ui::widgets::draw_split_pot_bar(lcd, 84, 46, 42, state.pots.vr1, state.pots.vr2);
+                crate::ui::widgets::draw_split_pot_bar(
+                    lcd,
+                    84,
+                    46,
+                    42,
+                    state.pots.vr1,
+                    state.pots.vr2,
+                );
             }
 
             fn append_extra_switches(
@@ -401,6 +446,5 @@ macro_rules! impl_qx7_board_profile {
         }
     };
 }
-
 
 pub(crate) use impl_qx7_board_profile;

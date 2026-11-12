@@ -1,8 +1,8 @@
 //! Jumper T-Pro V2 board specification.
 
-use crate::storage::AdcInputMode;
 use super::qx7_family::{impl_qx7_board_profile, Qx7FamilyProfile};
 use super::*;
+use crate::storage::AdcInputMode;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct TProV2Spec;
@@ -25,7 +25,8 @@ impl Qx7FamilyProfile for TProV2Spec {
         " (",
         env!("GIT_HASH"),
         ")\r\n"
-    ).as_bytes();
+    )
+    .as_bytes();
 
     const HAS_S2_POT: bool = true;
     const DEFAULT_SA_MODE: AdcInputMode = AdcInputMode::ThreePos;
@@ -39,10 +40,12 @@ impl Qx7FamilyProfile for TProV2Spec {
     const HAS_SH: bool = true;
 
     const DIAG_SW_TITLE: &'static str = "SWITCHES (SA-SH)";
-    const AUX_NAMES: &'static [&'static str] = &["SA:", "SB:", "SC:", "SD:", "S1:", "S2:", "SE:", "SF:", "SG:", "SH:"];
-    const ADAPTIVE_CH_NAMES: &'static [&'static str] = &["A", "B", "C", "D", "1", "2", "E", "F", "G", "H"];
+    const AUX_NAMES: &'static [&'static str] = &[
+        "SA:", "SB:", "SC:", "SD:", "S1:", "S2:", "SE:", "SF:", "SG:", "SH:",
+    ];
+    const ADAPTIVE_CH_NAMES: &'static [&'static str] =
+        &["A", "B", "C", "D", "1", "2", "E", "F", "G", "H"];
     const AUX_SOURCES: &'static [u8] = &[0, 1, 2, 3, 4, 5, 31, 32, 33, 34];
 }
 
 impl_qx7_board_profile!(TProV2Spec);
-

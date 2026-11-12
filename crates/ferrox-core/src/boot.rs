@@ -121,8 +121,6 @@ pub fn test_set_j4_buttons(sg: bool, sh: bool) {
     TEST_J4_BUTTONS.store(val, core::sync::atomic::Ordering::Relaxed);
 }
 
-
-
 /// Check if the DFU bootloader key combination is held.
 pub fn is_dfu_requested(keys: u16) -> bool {
     #[cfg(feature = "board-i6s")]

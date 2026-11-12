@@ -61,7 +61,10 @@ mod tests {
         let mut lcd = St7567::new();
         draw_splash(&mut lcd);
         let non_zero = lcd.framebuffer().iter().any(|&b| b != 0);
-        assert!(non_zero, "Splash screen should render pixels into framebuffer");
+        assert!(
+            non_zero,
+            "Splash screen should render pixels into framebuffer"
+        );
     }
 
     #[test]
@@ -69,7 +72,9 @@ mod tests {
         let mut lcd = St7567::new();
         draw_bootloader(&mut lcd);
         let non_zero = lcd.framebuffer().iter().any(|&b| b != 0);
-        assert!(non_zero, "Bootloader screen should render pixels into framebuffer");
+        assert!(
+            non_zero,
+            "Bootloader screen should render pixels into framebuffer"
+        );
     }
 }
-

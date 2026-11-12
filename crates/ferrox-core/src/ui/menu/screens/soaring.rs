@@ -106,7 +106,8 @@ pub fn update_soaring_setup(
                     buzzer.click();
                 }
                 8 => {
-                    storage.active_model.soaring.flags ^= crate::soaring::SoaringConfig::FLAG_AUDIO_CUES;
+                    storage.active_model.soaring.flags ^=
+                        crate::soaring::SoaringConfig::FLAG_AUDIO_CUES;
                     storage::save_active_model(storage);
                     buzzer.click();
                 }

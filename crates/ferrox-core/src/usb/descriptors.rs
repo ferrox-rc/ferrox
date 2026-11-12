@@ -65,10 +65,30 @@ pub struct Layout {
 
 pub fn layout(mode: UsbMode) -> Layout {
     match mode {
-        UsbMode::Joystick => Layout { hid_if: 0, ctrl_if: 0, data_if: 0, count: 1 },
-        UsbMode::Serial => Layout { hid_if: 0, ctrl_if: 0, data_if: 1, count: 2 },
-        UsbMode::Composite => Layout { hid_if: 0, ctrl_if: 1, data_if: 2, count: 3 },
-        UsbMode::Off => Layout { hid_if: 0, ctrl_if: 0, data_if: 0, count: 0 },
+        UsbMode::Joystick => Layout {
+            hid_if: 0,
+            ctrl_if: 0,
+            data_if: 0,
+            count: 1,
+        },
+        UsbMode::Serial => Layout {
+            hid_if: 0,
+            ctrl_if: 0,
+            data_if: 1,
+            count: 2,
+        },
+        UsbMode::Composite => Layout {
+            hid_if: 0,
+            ctrl_if: 1,
+            data_if: 2,
+            count: 3,
+        },
+        UsbMode::Off => Layout {
+            hid_if: 0,
+            ctrl_if: 0,
+            data_if: 0,
+            count: 0,
+        },
     }
 }
 
@@ -93,7 +113,6 @@ impl<const N: usize> Default for DescriptorBuf<N> {
 }
 
 impl<const N: usize> DescriptorBuf<N> {
-
     pub fn push(&mut self, byte: u8) {
         if self.len < N {
             self.buf[self.len] = byte;

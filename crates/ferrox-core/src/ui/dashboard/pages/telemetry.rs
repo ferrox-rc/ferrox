@@ -102,7 +102,14 @@ fn render_sensor_tile(
             } else {
                 *b"----\0\0"
             };
-            render_tile(lcd, x, y, "RX BAT", ascii_as_str(&val[..4.max(val.iter().position(|&b| b == 0).unwrap_or(val.len()))]), is_stale);
+            render_tile(
+                lcd,
+                x,
+                y,
+                "RX BAT",
+                ascii_as_str(&val[..4.max(val.iter().position(|&b| b == 0).unwrap_or(val.len()))]),
+                is_stale,
+            );
         }
         1 => {
             if is_crsf {
@@ -168,7 +175,15 @@ fn render_sensor_tile(
         4 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_vbat_ms, now_ms, ct.connected);
             if is_crsf && has_data && ct.rx_capacity_mah > 0 {
-                let s = format_fixed(ct.rx_capacity_mah.min(99999) as i32, 0, 0, false, SignMode::None, "", &mut buf);
+                let s = format_fixed(
+                    ct.rx_capacity_mah.min(99999) as i32,
+                    0,
+                    0,
+                    false,
+                    SignMode::None,
+                    "",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "CAP mAh", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "CAP mAh", "0", false);
@@ -177,7 +192,15 @@ fn render_sensor_tile(
         5 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_link_ms, now_ms, ct.connected);
             if is_crsf && has_data && ct.tx_power_mw > 0 {
-                let s = format_fixed(ct.tx_power_mw as i32, 0, 0, false, SignMode::None, "", &mut buf);
+                let s = format_fixed(
+                    ct.tx_power_mw as i32,
+                    0,
+                    0,
+                    false,
+                    SignMode::None,
+                    "",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "PWR mW", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "PWR mW", "---", false);
@@ -186,7 +209,15 @@ fn render_sensor_tile(
         6 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_link_ms, now_ms, ct.connected);
             if is_crsf && has_data {
-                let s = format_fixed(ct.uplink_snr as i32, 0, 2, true, SignMode::Force, "dB", &mut buf);
+                let s = format_fixed(
+                    ct.uplink_snr as i32,
+                    0,
+                    2,
+                    true,
+                    SignMode::Force,
+                    "dB",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "SNR dB", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "SNR dB", "--dB", false);
@@ -204,18 +235,38 @@ fn render_sensor_tile(
         8 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_link_ms, now_ms, ct.connected);
             let s = if is_crsf && has_data {
-                if ct.active_antenna == 0 { "ANT 1" } else { "ANT 2" }
+                if ct.active_antenna == 0 {
+                    "ANT 1"
+                } else {
+                    "ANT 2"
+                }
             } else {
                 "ANT -"
             };
             render_tile(lcd, x, y, "ANTENNA", s, is_stale);
         }
         9 => {
-            let s = format_fixed(telem.packets_sent as i32, 0, 0, false, SignMode::None, "", &mut buf);
+            let s = format_fixed(
+                telem.packets_sent as i32,
+                0,
+                0,
+                false,
+                SignMode::None,
+                "",
+                &mut buf,
+            );
             render_tile(lcd, x, y, "PKTS TX", s, false);
         }
         10 => {
-            let s = format_fixed(telem.packets_received as i32, 0, 0, false, SignMode::None, "", &mut buf);
+            let s = format_fixed(
+                telem.packets_received as i32,
+                0,
+                0,
+                false,
+                SignMode::None,
+                "",
+                &mut buf,
+            );
             render_tile(lcd, x, y, "PKTS RX", s, false);
         }
         11 => {
@@ -234,7 +285,15 @@ fn render_sensor_tile(
             };
             let (has_data, is_stale) = check_sensor_status(last_ms, now_ms, connected);
             if has_data {
-                let s = format_fixed(telem.vspeed_cms as i32 / 10, 1, 0, false, SignMode::Force, "m/s", &mut buf);
+                let s = format_fixed(
+                    telem.vspeed_cms as i32 / 10,
+                    1,
+                    0,
+                    false,
+                    SignMode::Force,
+                    "m/s",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "VSPD", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "VSPD", "---m/s", false);
@@ -253,7 +312,15 @@ fn render_sensor_tile(
             };
             let (has_data, is_stale) = check_sensor_status(last_ms, now_ms, connected);
             if has_data {
-                let s = format_fixed(telem.alt_m as i32, 0, 0, false, SignMode::None, "m", &mut buf);
+                let s = format_fixed(
+                    telem.alt_m as i32,
+                    0,
+                    0,
+                    false,
+                    SignMode::None,
+                    "m",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "ALT", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "ALT", "---m", false);
@@ -323,7 +390,15 @@ fn render_sensor_tile(
             let rpm = if is_crsf { ct.rpm } else { telem.rpm };
             if has_data {
                 let s = if rpm >= 100_000 {
-                    format_fixed((rpm / 1000) as i32, 0, 0, false, SignMode::None, "k", &mut buf)
+                    format_fixed(
+                        (rpm / 1000) as i32,
+                        0,
+                        0,
+                        false,
+                        SignMode::None,
+                        "k",
+                        &mut buf,
+                    )
                 } else {
                     format_fixed(rpm as i32, 0, 0, false, SignMode::None, "", &mut buf)
                 };
@@ -359,7 +434,15 @@ fn render_sensor_tile(
         17 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_gps_ms, now_ms, ct.connected);
             if is_crsf && has_data {
-                let s = format_fixed((ct.gps_groundspeed_kmh_x10 / 10) as i32, 0, 0, false, SignMode::None, "kmh", &mut buf);
+                let s = format_fixed(
+                    (ct.gps_groundspeed_kmh_x10 / 10) as i32,
+                    0,
+                    0,
+                    false,
+                    SignMode::None,
+                    "kmh",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "GSPD", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "GSPD", "---km", false);
@@ -368,7 +451,15 @@ fn render_sensor_tile(
         18 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_gps_ms, now_ms, ct.connected);
             if is_crsf && has_data {
-                let s = format_fixed(ct.gps_satellites as i32, 0, 0, false, SignMode::None, "", &mut buf);
+                let s = format_fixed(
+                    ct.gps_satellites as i32,
+                    0,
+                    0,
+                    false,
+                    SignMode::None,
+                    "",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "SATS", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "SATS", "--", false);
@@ -396,7 +487,15 @@ fn render_sensor_tile(
         20 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_att_ms, now_ms, ct.connected);
             if is_crsf && has_data {
-                let s = format_fixed((ct.pitch_cdeg / 10) as i32, 0, 0, false, SignMode::Force, "D", &mut buf);
+                let s = format_fixed(
+                    (ct.pitch_cdeg / 10) as i32,
+                    0,
+                    0,
+                    false,
+                    SignMode::Force,
+                    "D",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "PITCH", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "PITCH", "---", false);
@@ -405,7 +504,15 @@ fn render_sensor_tile(
         21 => {
             let (has_data, is_stale) = check_sensor_status(ct.last_att_ms, now_ms, ct.connected);
             if is_crsf && has_data {
-                let s = format_fixed((ct.roll_cdeg / 10) as i32, 0, 0, false, SignMode::Force, "D", &mut buf);
+                let s = format_fixed(
+                    (ct.roll_cdeg / 10) as i32,
+                    0,
+                    0,
+                    false,
+                    SignMode::Force,
+                    "D",
+                    &mut buf,
+                );
                 render_tile(lcd, x, y, "ROLL", s, is_stale);
             } else {
                 render_tile(lcd, x, y, "ROLL", "---", false);
@@ -472,25 +579,77 @@ pub fn render(
         let lq = ct.uplink_link_quality.min(100);
         let mut lq_buf = [0u8; 12];
         lq_buf[0..3].copy_from_slice(b"LQ:");
-        format_fixed(lq as i32, 0, 3, false, SignMode::None, "%", &mut lq_buf[3..]);
-        draw_diag_stat(lcd, 2, 14, link_has, ascii_as_str(&lq_buf[..7]), "LQ: ---%", link_stale);
+        format_fixed(
+            lq as i32,
+            0,
+            3,
+            false,
+            SignMode::None,
+            "%",
+            &mut lq_buf[3..],
+        );
+        draw_diag_stat(
+            lcd,
+            2,
+            14,
+            link_has,
+            ascii_as_str(&lq_buf[..7]),
+            "LQ: ---%",
+            link_stale,
+        );
 
         // Row 2 (y = 24): Uplink RSSI 1 (dBm)
         let rssi_val = ct.uplink_rssi_1.unsigned_abs();
         let mut rssi_buf = [0u8; 12];
         rssi_buf[0..5].copy_from_slice(b"RS: -");
-        format_fixed(rssi_val as i32, 0, 3, true, SignMode::None, "dB", &mut rssi_buf[5..]);
-        draw_diag_stat(lcd, 2, 24, link_has, ascii_as_str(&rssi_buf[..10]), "RS: ---dB", link_stale);
+        format_fixed(
+            rssi_val as i32,
+            0,
+            3,
+            true,
+            SignMode::None,
+            "dB",
+            &mut rssi_buf[5..],
+        );
+        draw_diag_stat(
+            lcd,
+            2,
+            24,
+            link_has,
+            ascii_as_str(&rssi_buf[..10]),
+            "RS: ---dB",
+            link_stale,
+        );
 
         // Row 3 (y = 34): Uplink SNR (dB)
         let mut snr_buf = [0u8; 12];
         snr_buf[0..4].copy_from_slice(b"SNR:");
-        format_fixed(ct.uplink_snr as i32, 0, 2, true, SignMode::Force, "dB", &mut snr_buf[4..]);
-        draw_diag_stat(lcd, 2, 34, link_has, ascii_as_str(&snr_buf[..9]), "SNR: --dB", link_stale);
+        format_fixed(
+            ct.uplink_snr as i32,
+            0,
+            2,
+            true,
+            SignMode::Force,
+            "dB",
+            &mut snr_buf[4..],
+        );
+        draw_diag_stat(
+            lcd,
+            2,
+            34,
+            link_has,
+            ascii_as_str(&snr_buf[..9]),
+            "SNR: --dB",
+            link_stale,
+        );
 
         // Row 4 (y = 44): Active Antenna
         let ant_str = if ct.connected {
-            if ct.active_antenna == 0 { "ANT: 1" } else { "ANT: 2" }
+            if ct.active_antenna == 0 {
+                "ANT: 1"
+            } else {
+                "ANT: 2"
+            }
         } else {
             "ANT: -"
         };
@@ -503,8 +662,24 @@ pub fn render(
         // Row 1 (y = 14): TX Power (mW)
         let mut pwr_buf = [0u8; 12];
         pwr_buf[0..4].copy_from_slice(b"PWR:");
-        format_fixed(ct.tx_power_mw as i32, 0, 4, false, SignMode::None, "mW", &mut pwr_buf[4..]);
-        draw_diag_stat(lcd, 66, 14, link_has && ct.tx_power_mw > 0, ascii_as_str(&pwr_buf[..10]), "PWR: ---", link_stale);
+        format_fixed(
+            ct.tx_power_mw as i32,
+            0,
+            4,
+            false,
+            SignMode::None,
+            "mW",
+            &mut pwr_buf[4..],
+        );
+        draw_diag_stat(
+            lcd,
+            66,
+            14,
+            link_has && ct.tx_power_mw > 0,
+            ascii_as_str(&pwr_buf[..10]),
+            "PWR: ---",
+            link_stale,
+        );
 
         // Row 2 (y = 24): RF Mode / Packet Rate
         let rate_name = if link_has {
@@ -525,13 +700,29 @@ pub fn render(
         }
         let mut rxv_buf = [0u8; 6];
         let rxv_str = format_vbat(ct.rx_battery_mv, &mut rxv_buf);
-        draw_diag_stat(lcd, 92, 34, vbat_has && ct.rx_battery_mv > 0, rxv_str, "----", vbat_stale);
+        draw_diag_stat(
+            lcd,
+            92,
+            34,
+            vbat_has && ct.rx_battery_mv > 0,
+            rxv_str,
+            "----",
+            vbat_stale,
+        );
 
         // Row 4 (y = 44): Consumed Capacity (mAh)
         lcd.draw_str_6x10(66, 44, "CAP:", false);
         let mut cap_buf = [b' '; 5];
         u32_to_dec_5(ct.rx_capacity_mah.min(99999), &mut cap_buf);
-        draw_diag_stat(lcd, 92, 44, vbat_has && ct.rx_capacity_mah > 0, ascii_as_str(&cap_buf), "----", vbat_stale);
+        draw_diag_stat(
+            lcd,
+            92,
+            44,
+            vbat_has && ct.rx_capacity_mah > 0,
+            ascii_as_str(&cap_buf),
+            "----",
+            vbat_stale,
+        );
 
         // Standardized Footer
         widgets::draw_footer_split(lcd, "P5/5", "CRSF LINK DIAG");
@@ -543,11 +734,31 @@ pub fn render(
         // Row 1 (y = 14): RSSI
         let mut r_buf = [0u8; 12];
         r_buf[0..5].copy_from_slice(b"RSSI:");
-        format_fixed(telem.rssi.min(100) as i32, 0, 3, false, SignMode::None, "%", &mut r_buf[5..]);
-        draw_diag_stat(lcd, 2, 14, telem.connected, ascii_as_str(&r_buf[..9]), "RSSI: --%", false);
+        format_fixed(
+            telem.rssi.min(100) as i32,
+            0,
+            3,
+            false,
+            SignMode::None,
+            "%",
+            &mut r_buf[5..],
+        );
+        draw_diag_stat(
+            lcd,
+            2,
+            14,
+            telem.connected,
+            ascii_as_str(&r_buf[..9]),
+            "RSSI: --%",
+            false,
+        );
 
         // Row 2 (y = 24): Link Status
-        let link_str = if telem.connected { "LINK: OK" } else { "LINK: DISC" };
+        let link_str = if telem.connected {
+            "LINK: OK"
+        } else {
+            "LINK: DISC"
+        };
         lcd.draw_str_6x10(2, 24, link_str, false);
 
         // Row 3 (y = 34): Packets Sent
@@ -570,7 +781,15 @@ pub fn render(
         lcd.draw_str_6x10(66, 14, "RX:", false);
         let mut rxv_buf = [0u8; 6];
         let rxv_str = format_vbat(telem.rx_voltage_mv, &mut rxv_buf);
-        draw_diag_stat(lcd, 88, 14, rxv_has && telem.rx_voltage_mv > 0, rxv_str, "----", rxv_stale);
+        draw_diag_stat(
+            lcd,
+            88,
+            14,
+            rxv_has && telem.rx_voltage_mv > 0,
+            rxv_str,
+            "----",
+            rxv_stale,
+        );
 
         // Row 2 (y = 24): TX Battery Voltage
         lcd.draw_str_6x10(66, 24, "TX:", false);
@@ -581,14 +800,30 @@ pub fn render(
         // Row 3 (y = 34): Min Session RSSI
         lcd.draw_str_6x10(66, 34, "mRSS:", false);
         let mut mr_buf = [0u8; 4];
-        let mr_str = format_fixed(min_rssi.min(100) as i32, 0, 3, false, SignMode::None, "%", &mut mr_buf);
+        let mr_str = format_fixed(
+            min_rssi.min(100) as i32,
+            0,
+            3,
+            false,
+            SignMode::None,
+            "%",
+            &mut mr_buf,
+        );
         draw_diag_stat(lcd, 98, 34, telem_seen, mr_str, " --%", false);
 
         // Row 4 (y = 44): Min Session RX Voltage
         lcd.draw_str_6x10(66, 44, "mRX:", false);
         let mut mrxv_buf = [0u8; 6];
         let mrxv_str = format_vbat(min_rx_v_mv, &mut mrxv_buf);
-        draw_diag_stat(lcd, 92, 44, min_rx_v_mv != 0xFFFF && min_rx_v_mv > 0, mrxv_str, "----", rxv_stale);
+        draw_diag_stat(
+            lcd,
+            92,
+            44,
+            min_rx_v_mv != 0xFFFF && min_rx_v_mv > 0,
+            mrxv_str,
+            "----",
+            rxv_stale,
+        );
 
         // Standardized Footer
         if is_binding {

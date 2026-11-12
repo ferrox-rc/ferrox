@@ -1,12 +1,12 @@
 //! FlySky FS-i6X board profile and keypad matrix layout.
 
-use crate::display::St7567;
-use crate::input::{InputState, SwitchPos};
-use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 use super::{
     draw_switch_slot_i6x, BoardProfile, DefaultIdleState, DiagPage, HardwareExtItem, MainMenuItem,
     RadioSetupItem, RfProtocol,
 };
+use crate::display::St7567;
+use crate::input::{InputState, SwitchPos};
+use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct I6xSpec;
@@ -31,7 +31,8 @@ impl BoardProfile for I6xSpec {
         ")\r\n"
     )
     .as_bytes();
-    const CRSF_UART_STATUS: &'static [u8] = b"Protocol: CRSF / ExpressLRS (USART2 PD5/PA15 active)\r\n";
+    const CRSF_UART_STATUS: &'static [u8] =
+        b"Protocol: CRSF / ExpressLRS (USART2 PD5/PA15 active)\r\n";
 
     const EXT_ADC_COUNT: usize = 4;
     const DEFAULT_SB_MODE: AdcInputMode = AdcInputMode::TwoPos;
@@ -103,9 +104,8 @@ impl BoardProfile for I6xSpec {
     const DIAG_EXT_ADC_TITLE: &'static str = "EXT ANALOG (P7)";
     const DIAG_EXT_ADC_EN_HDR: &'static str = "P7 ADC: ENABLED (15-CH)";
     const DIAG_EXT_ADC_DIS_HDR: &'static str = "P7 ADC: DISABLED (OFF)";
-    const DIAG_EXT_ADC_NAMES: &'static [&'static str] = &[
-        "VRC:AD12", "VRD:AD13", "VRE:AD14", "VRF:AD15",
-    ];
+    const DIAG_EXT_ADC_NAMES: &'static [&'static str] =
+        &["VRC:AD12", "VRD:AD13", "VRE:AD14", "VRF:AD15"];
 
     const AUX_NAMES: &'static [&'static str] = &[
         "SA (PA4):",
@@ -120,9 +120,8 @@ impl BoardProfile for I6xSpec {
         "VRF (PC5):",
     ];
 
-    const ADAPTIVE_CH_NAMES: &'static [&'static str] = &[
-        "A", "B", "C", "D", "1", "2", "3", "4", "5", "6",
-    ];
+    const ADAPTIVE_CH_NAMES: &'static [&'static str] =
+        &["A", "B", "C", "D", "1", "2", "3", "4", "5", "6"];
 
     const AUX_SOURCES: &'static [u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 31, 32, 35, 36, 37, 38];
 
@@ -156,7 +155,7 @@ impl BoardProfile for I6xSpec {
 
     fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
         match src {
-            0..=4 => true, // None, Roll, Pitch, Thr, Yaw
+            0..=4 => true,                       // None, Roll, Pitch, Thr, Yaw
             5 => radio.get_adc_mode(4).is_pot(), // VRA
             6 => radio.get_adc_mode(5).is_pot(), // VRB
             7 => matches!(
@@ -175,8 +174,8 @@ impl BoardProfile for I6xSpec {
                 radio.get_adc_mode(3),
                 AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
             ), // SD
-            11 => true, // MAX constant
-            12..=15 => true, // CH1..CH4 primary flight channels
+            11 => true,                          // MAX constant
+            12..=15 => true,                     // CH1..CH4 primary flight channels
             16..=29 => {
                 let ch_idx = (src - 12) as usize; // 4..17
                 let aux_idx = ch_idx - 4; // 0..13
@@ -186,13 +185,16 @@ impl BoardProfile for I6xSpec {
                 if model.aux_channels[aux_idx] != 0 {
                     return true;
                 }
-                model.mixes.iter().any(|m| m.target_ch == (ch_idx + 1) as u8)
+                model
+                    .mixes
+                    .iter()
+                    .any(|m| m.target_ch == (ch_idx + 1) as u8)
             }
-            30 => true, // Thr+
+            30 => true,                    // Thr+
             31 => radio.ext_switches != 0, // SE
             32 => radio.ext_switches != 0, // SF
-            33 => radio.j4_sg_sh_en != 0, // SG
-            34 => radio.j4_sg_sh_en != 0, // SH
+            33 => radio.j4_sg_sh_en != 0,  // SG
+            34 => radio.j4_sg_sh_en != 0,  // SH
             35 => {
                 radio.ext_adc != 0
                     && matches!(
@@ -233,7 +235,7 @@ impl BoardProfile for I6xSpec {
                         AdcInputMode::TwoPos | AdcInputMode::ThreePos
                     )
             } // SWM
-            45..=49 => true, // GV1..GV5
+            45..=49 => true,               // GV1..GV5
             _ => false,
         }
     }
@@ -374,7 +376,17 @@ impl BoardProfile for I6xSpec {
             (SwitchPos::Up, SwitchPos::Up, SwitchPos::Up, SwitchPos::Up)
         };
 
-        (se, sf, SwitchPos::Up, SwitchPos::Up, swi, swj, swk, swl, SwitchPos::Up)
+        (
+            se,
+            sf,
+            SwitchPos::Up,
+            SwitchPos::Up,
+            swi,
+            swj,
+            swk,
+            swl,
+            SwitchPos::Up,
+        )
     }
 
     fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {

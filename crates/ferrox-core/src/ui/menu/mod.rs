@@ -256,7 +256,9 @@ impl MenuController {
         // - Must return to the neutral middle deadband ([-300, 300]) to re-arm for the next line change.
         // - Active for Default (spring wheels), Pot, and PotDetent (detented pots).
         // - Switch modes (TwoPos, ThreePos, etc.) and InputSetup screen are excluded to prevent runaway scrolling.
-        if ActiveBoard::HAS_JOG_WHEELS && !is_source_selection && self.state != MenuState::InputSetup
+        if ActiveBoard::HAS_JOG_WHEELS
+            && !is_source_selection
+            && self.state != MenuState::InputSetup
         {
             let mut current_dir: i8 = 0;
 
@@ -945,10 +947,16 @@ mod tests {
 
         ctrl.state = MenuState::HardwareSetup;
         let items = ActiveBoard::HARDWARE_EXT_ITEMS;
-        let Some(ppm_out_pos) = items.iter().position(|&it| it == crate::board::HardwareExtItem::PpmOut) else {
+        let Some(ppm_out_pos) = items
+            .iter()
+            .position(|&it| it == crate::board::HardwareExtItem::PpmOut)
+        else {
             return;
         };
-        let ppm_in_pos = items.iter().position(|&it| it == crate::board::HardwareExtItem::PpmIn).unwrap();
+        let ppm_in_pos = items
+            .iter()
+            .position(|&it| it == crate::board::HardwareExtItem::PpmIn)
+            .unwrap();
 
         ctrl.selected_item = ppm_out_pos;
         ctrl.scroll_offset = ppm_out_pos.saturating_sub(2);
@@ -968,13 +976,7 @@ mod tests {
         };
 
         // Press OK on PPM Out -> Toggle PPM Out ON
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(storage.radio.is_ppm_out_enabled());
         assert!(!storage.radio.is_ppm_in_enabled());
 
@@ -984,36 +986,18 @@ mod tests {
 
         // Press OK on Trainer In -> Cycle to PPM In (ON)
         nav.ok = true;
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(storage.radio.is_ppm_out_enabled());
         assert!(storage.radio.is_ppm_in_enabled());
         assert!(!storage.radio.is_dsm_sat_in_enabled());
 
         // Press OK again on Trainer In -> Cycle to DSMX SAT
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(!storage.radio.is_ppm_in_enabled());
         assert!(storage.radio.is_dsm_sat_in_enabled());
 
         // Press OK again on Trainer In -> Cycle to OFF
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(!storage.radio.is_ppm_in_enabled());
         assert!(!storage.radio.is_dsm_sat_in_enabled());
     }
@@ -1028,7 +1012,10 @@ mod tests {
 
         ctrl.state = MenuState::RadioSetup;
         let items = ActiveBoard::RADIO_SETUP_ITEMS;
-        let gimbal_pos = items.iter().position(|&it| it == crate::board::RadioSetupItem::GimbalType).unwrap();
+        let gimbal_pos = items
+            .iter()
+            .position(|&it| it == crate::board::RadioSetupItem::GimbalType)
+            .unwrap();
         ctrl.selected_item = gimbal_pos;
         ctrl.scroll_offset = gimbal_pos.saturating_sub(2);
 

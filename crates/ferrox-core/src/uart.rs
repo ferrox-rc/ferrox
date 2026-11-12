@@ -1,7 +1,7 @@
 //! Platform-agnostic serial port interface (CRSF / ExpressLRS).
 
-use core::sync::atomic::{AtomicBool, Ordering};
 use crate::hal::SerialPort;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 static mut SERIAL_PORT: Option<&'static mut dyn SerialPort> = None;
 static HALF_DUPLEX_ACTIVE: AtomicBool = AtomicBool::new(false);

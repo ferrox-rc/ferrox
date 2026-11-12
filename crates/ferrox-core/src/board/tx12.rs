@@ -1,8 +1,8 @@
 //! RadioMaster TX12 MKII board specification.
 
-use crate::storage::AdcInputMode;
 use super::qx7_family::{impl_qx7_board_profile, Qx7FamilyProfile};
 use super::*;
+use crate::storage::AdcInputMode;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tx12Spec;
@@ -25,7 +25,8 @@ impl Qx7FamilyProfile for Tx12Spec {
         " (",
         env!("GIT_HASH"),
         ")\r\n"
-    ).as_bytes();
+    )
+    .as_bytes();
 
     const HAS_S2_POT: bool = true;
     const DEFAULT_SA_MODE: AdcInputMode = AdcInputMode::TwoPos;
@@ -39,10 +40,10 @@ impl Qx7FamilyProfile for Tx12Spec {
     const HAS_SH: bool = false;
 
     const DIAG_SW_TITLE: &'static str = "SWITCHES (SA-SF)";
-    const AUX_NAMES: &'static [&'static str] = &["SA:", "SB:", "SC:", "SD:", "S1:", "S2:", "SE:", "SF:"];
+    const AUX_NAMES: &'static [&'static str] =
+        &["SA:", "SB:", "SC:", "SD:", "S1:", "S2:", "SE:", "SF:"];
     const ADAPTIVE_CH_NAMES: &'static [&'static str] = &["A", "B", "C", "D", "1", "2", "E", "F"];
     const AUX_SOURCES: &'static [u8] = &[0, 7, 8, 9, 10, 5, 6, 31, 32];
 }
 
 impl_qx7_board_profile!(Tx12Spec);
-

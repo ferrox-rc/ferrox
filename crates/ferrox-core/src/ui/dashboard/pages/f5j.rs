@@ -123,7 +123,12 @@ pub fn render(
 
     // --- 4. Coordinate Axes & Timeline Grid (5m, 10m, 15m) ---
     lcd.draw_vline(x_axis_left, y_top, (y_axis_base - y_top + 1) as u32, true);
-    lcd.draw_hline(x_axis_left, y_axis_base, (x_axis_right - x_axis_left + 1) as u32, true);
+    lcd.draw_hline(
+        x_axis_left,
+        y_axis_base,
+        (x_axis_right - x_axis_left + 1) as u32,
+        true,
+    );
 
     let x_5m = graph_x_start + (plot_w / 3);
     let x_10m = graph_x_start + (plot_w * 2 / 3);
@@ -156,7 +161,12 @@ pub fn render(
         let mut lbl = [b' '; 8];
         let mut lp = push_str_ascii(&mut lbl, 0, b"R:");
         lp = push_str_ascii(&mut lbl, lp, rx_str.as_bytes());
-        lcd.draw_str_4x6(w - (lp as i32 * 4) - 2, y_top, ascii_as_str(&lbl[..lp]), false);
+        lcd.draw_str_4x6(
+            w - (lp as i32 * 4) - 2,
+            y_top,
+            ascii_as_str(&lbl[..lp]),
+            false,
+        );
     }
 
     // --- 6. Helper to map sample index & decimeter alt to pixel coordinates ---
@@ -259,7 +269,11 @@ mod tests {
         render(&mut lcd, &storage, &telem, &f5j, 210_000);
 
         // Verify framebuffer has active pixels rendered (axes, curve, labels) without panics
-        let lit = lcd.framebuffer().iter().map(|b| b.count_ones()).sum::<u32>();
+        let lit = lcd
+            .framebuffer()
+            .iter()
+            .map(|b| b.count_ones())
+            .sum::<u32>();
         assert!(lit > 100);
     }
 }

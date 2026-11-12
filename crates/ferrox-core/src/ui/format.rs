@@ -164,7 +164,15 @@ pub fn format_deci_volt(deci: u8, buf: &mut [u8; 4]) -> &str {
 
 /// Format servo frequency (50..400 Hz) into buf[0..8] as "50 Hz" .. "400 Hz"
 pub fn format_servo_hz(hz: u16, buf: &mut [u8; 8]) -> &str {
-    format_fixed(hz.clamp(50, 400) as i32, 0, 0, false, SignMode::None, " Hz", buf)
+    format_fixed(
+        hz.clamp(50, 400) as i32,
+        0,
+        0,
+        false,
+        SignMode::None,
+        " Hz",
+        buf,
+    )
 }
 
 pub fn next_ascii(c: u8) -> u8 {

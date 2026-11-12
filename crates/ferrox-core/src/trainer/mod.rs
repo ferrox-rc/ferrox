@@ -16,8 +16,8 @@ pub use handover::{SafetyHandover, TrainerState};
 pub use ppm_in::PpmDecoder;
 pub use ppm_out::PpmGenerator;
 
-use core::sync::atomic::{AtomicBool, Ordering};
 use crate::hal::TrainerDriver;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 static PPM_OUT_ENABLED: AtomicBool = AtomicBool::new(false);
 static PPM_IN_ENABLED: AtomicBool = AtomicBool::new(false);

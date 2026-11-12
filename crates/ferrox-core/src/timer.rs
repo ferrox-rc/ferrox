@@ -340,17 +340,44 @@ mod tests {
         assert_eq!(bank.timers[0].elapsed_secs, 0);
 
         // Advance 1 second
-        bank.update(1000, &configs, 0, &switches, true, false, false, &mut buzzer);
+        bank.update(
+            1000,
+            &configs,
+            0,
+            &switches,
+            true,
+            false,
+            false,
+            &mut buzzer,
+        );
         assert_eq!(bank.timers[0].remaining_secs, 2);
         assert_eq!(bank.timers[0].elapsed_secs, 0);
 
         // Advance 2 seconds -> should reach 0
-        bank.update(2000, &configs, 0, &switches, true, false, false, &mut buzzer);
+        bank.update(
+            2000,
+            &configs,
+            0,
+            &switches,
+            true,
+            false,
+            false,
+            &mut buzzer,
+        );
         assert_eq!(bank.timers[0].remaining_secs, 0);
         assert_eq!(bank.timers[0].elapsed_secs, 0);
 
         // Advance 1 more second -> overtime elapsed
-        bank.update(1000, &configs, 0, &switches, true, false, false, &mut buzzer);
+        bank.update(
+            1000,
+            &configs,
+            0,
+            &switches,
+            true,
+            false,
+            false,
+            &mut buzzer,
+        );
         assert_eq!(bank.timers[0].remaining_secs, 0);
         assert_eq!(bank.timers[0].elapsed_secs, 1);
     }
@@ -420,7 +447,16 @@ mod tests {
 
         bank.reset_all(&configs);
         // Run for 5 seconds
-        bank.update(5000, &configs, 0, &switches, true, false, false, &mut buzzer);
+        bank.update(
+            5000,
+            &configs,
+            0,
+            &switches,
+            true,
+            false,
+            false,
+            &mut buzzer,
+        );
         assert_eq!(bank.timers[0].remaining_secs, 55);
 
         // Flick SA to Down (SAv active -> reset triggered)

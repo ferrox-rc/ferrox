@@ -1386,11 +1386,25 @@ mod tests {
         // With sticks fully deflected (+1000 roll, -1000 pitch, +1000 thr, -1000 yaw),
         // all primary channels CH1..CH4 must remain at neutral center 1500 us because
         // gimbals are released and no matrix mixes target them yet.
-        let chs = compute_channels(1000, -1000, 1000, -1000, &pots, &switches, &model, &trims, 0);
-        assert_eq!(chs[0], CHANNEL_CENTER_US, "CH1 must stay neutral when gimbals are released");
-        assert_eq!(chs[1], CHANNEL_CENTER_US, "CH2 must stay neutral when gimbals are released");
-        assert_eq!(chs[2], CHANNEL_CENTER_US, "CH3 must stay neutral when gimbals are released");
-        assert_eq!(chs[3], CHANNEL_CENTER_US, "CH4 must stay neutral when gimbals are released");
+        let chs = compute_channels(
+            1000, -1000, 1000, -1000, &pots, &switches, &model, &trims, 0,
+        );
+        assert_eq!(
+            chs[0], CHANNEL_CENTER_US,
+            "CH1 must stay neutral when gimbals are released"
+        );
+        assert_eq!(
+            chs[1], CHANNEL_CENTER_US,
+            "CH2 must stay neutral when gimbals are released"
+        );
+        assert_eq!(
+            chs[2], CHANNEL_CENTER_US,
+            "CH3 must stay neutral when gimbals are released"
+        );
+        assert_eq!(
+            chs[3], CHANNEL_CENTER_US,
+            "CH4 must stay neutral when gimbals are released"
+        );
 
         // Now configure a mix line targeting CH1 from Throttle stick (source 3), weight 100, mode ADD
         model.mixes[0].target_ch = 1;
@@ -1413,14 +1427,23 @@ mod tests {
         // Stick inputs: Roll = -500, Pitch = 0, Throttle = 750 (+500 normalized), Yaw = +1000
         let chs_mixed = compute_channels(-500, 0, 750, 1000, &pots, &switches, &model, &trims, 0);
         // CH1 receives Throttle (+500 -> 1756 us)
-        assert_eq!(chs_mixed[0], 1756, "CH1 driven by Throttle stick via matrix mix");
+        assert_eq!(
+            chs_mixed[0], 1756,
+            "CH1 driven by Throttle stick via matrix mix"
+        );
         // CH2 unassigned -> neutral 1500 us
         assert_eq!(chs_mixed[1], CHANNEL_CENTER_US, "CH2 remains neutral");
         // CH3 receives Roll (-500 -> 1244 us)
-        assert_eq!(chs_mixed[2], 1244, "CH3 driven by Roll stick via matrix mix");
+        assert_eq!(
+            chs_mixed[2], 1244,
+            "CH3 driven by Roll stick via matrix mix"
+        );
         // CH4 unassigned -> neutral 1500 us
         assert_eq!(chs_mixed[3], CHANNEL_CENTER_US, "CH4 remains neutral");
         // CH5 receives Yaw (+1000 -> 2012 us)
-        assert_eq!(chs_mixed[4], CHANNEL_MAX_US, "CH5 driven by Yaw stick via matrix mix");
+        assert_eq!(
+            chs_mixed[4], CHANNEL_MAX_US,
+            "CH5 driven by Yaw stick via matrix mix"
+        );
     }
 }

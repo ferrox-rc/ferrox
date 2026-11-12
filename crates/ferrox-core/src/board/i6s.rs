@@ -1,13 +1,13 @@
 //! FlySky FS-i6S board profile and touchscreen idle hook.
 
-use crate::buzzer::Buzzer;
-use crate::display::St7567;
-use crate::input::{InputState, SwitchPos};
-use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 use super::{
     BoardIdleHook, BoardProfile, DiagPage, HardwareExtItem, MainMenuItem, RadioSetupItem,
     RfProtocol,
 };
+use crate::buzzer::Buzzer;
+use crate::display::St7567;
+use crate::input::{InputState, SwitchPos};
+use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct I6sSpec;
@@ -32,7 +32,8 @@ impl BoardProfile for I6sSpec {
         ")\r\n"
     )
     .as_bytes();
-    const CRSF_UART_STATUS: &'static [u8] = b"Protocol: CRSF / ExpressLRS (USART1 PB6/PB7 active)\r\n";
+    const CRSF_UART_STATUS: &'static [u8] =
+        b"Protocol: CRSF / ExpressLRS (USART1 PB6/PB7 active)\r\n";
 
     const EXT_ADC_COUNT: usize = 5;
     const DEFAULT_SB_MODE: AdcInputMode = AdcInputMode::ThreePos;
@@ -108,9 +109,8 @@ impl BoardProfile for I6sSpec {
     const DIAG_EXT_ADC_TITLE: &'static str = "EXT ANALOG (PC1-5)";
     const DIAG_EXT_ADC_EN_HDR: &'static str = "PC ADC: ENABLED (16-CH)";
     const DIAG_EXT_ADC_DIS_HDR: &'static str = "PC ADC: DISABLED (OFF)";
-    const DIAG_EXT_ADC_NAMES: &'static [&'static str] = &[
-        "VRC:PC1 ", "VRD:PC2 ", "VRE:PC3 ", "VRF:PC4 ", "VRG:PC5 ",
-    ];
+    const DIAG_EXT_ADC_NAMES: &'static [&'static str] =
+        &["VRC:PC1 ", "VRD:PC2 ", "VRE:PC3 ", "VRF:PC4 ", "VRG:PC5 "];
 
     const AUX_NAMES: &'static [&'static str] = &[
         "SA (PA4):",
@@ -126,9 +126,8 @@ impl BoardProfile for I6sSpec {
         "VRG (PC5):",
     ];
 
-    const ADAPTIVE_CH_NAMES: &'static [&'static str] = &[
-        "A", "B", "C", "D", "1", "2", "I", "J", "K", "L", "M",
-    ];
+    const ADAPTIVE_CH_NAMES: &'static [&'static str] =
+        &["A", "B", "C", "D", "1", "2", "I", "J", "K", "L", "M"];
 
     const AUX_SOURCES: &'static [u8] = &[
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
@@ -166,7 +165,7 @@ impl BoardProfile for I6sSpec {
 
     fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
         match src {
-            0..=4 => true, // None, Roll, Pitch, Thr, Yaw
+            0..=4 => true,                       // None, Roll, Pitch, Thr, Yaw
             5 => radio.get_adc_mode(4).is_pot(), // VRA
             6 => radio.get_adc_mode(5).is_pot(), // VRB
             7 => matches!(
@@ -185,8 +184,8 @@ impl BoardProfile for I6sSpec {
                 radio.get_adc_mode(3),
                 AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
             ), // SD
-            11 => true, // MAX constant
-            12..=15 => true, // CH1..CH4 primary flight channels
+            11 => true,                          // MAX constant
+            12..=15 => true,                     // CH1..CH4 primary flight channels
             16..=29 => {
                 let ch_idx = (src - 12) as usize; // 4..17
                 let aux_idx = ch_idx - 4; // 0..13
@@ -196,13 +195,16 @@ impl BoardProfile for I6sSpec {
                 if model.aux_channels[aux_idx] != 0 {
                     return true;
                 }
-                model.mixes.iter().any(|m| m.target_ch == (ch_idx + 1) as u8)
+                model
+                    .mixes
+                    .iter()
+                    .any(|m| m.target_ch == (ch_idx + 1) as u8)
             }
-            30 => true, // Thr+
+            30 => true,                    // Thr+
             31 => radio.ext_switches != 0, // SE
             32 => radio.ext_switches != 0, // SF
-            33 => radio.j4_sg_sh_en != 0, // SG
-            34 => radio.j4_sg_sh_en != 0, // SH
+            33 => radio.j4_sg_sh_en != 0,  // SG
+            34 => radio.j4_sg_sh_en != 0,  // SH
             35 => {
                 radio.ext_adc != 0
                     && matches!(
@@ -243,7 +245,7 @@ impl BoardProfile for I6sSpec {
                         AdcInputMode::TwoPos | AdcInputMode::ThreePos
                     )
             } // SWM
-            45..=49 => true, // GV1..GV5
+            45..=49 => true,               // GV1..GV5
             _ => false,
         }
     }
@@ -466,7 +468,14 @@ impl BoardProfile for I6sSpec {
                 x += 12;
             }
 
-            crate::ui::widgets::draw_split_pot_bar(lcd, 100, 46, 26, state.pots.vr1, state.pots.vr2);
+            crate::ui::widgets::draw_split_pot_bar(
+                lcd,
+                100,
+                46,
+                26,
+                state.pots.vr1,
+                state.pots.vr2,
+            );
         } else {
             let sw_list = [
                 ("A", state.switches.sa),

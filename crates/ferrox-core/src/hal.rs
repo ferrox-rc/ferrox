@@ -579,4 +579,3 @@ impl PlatformContext {
         }
     }
 }
-

@@ -508,13 +508,7 @@ pub fn draw_bar_gauge(lcd: &mut St7567, x: i32, y: i32, width: u32, height: u32,
 /// Draw a standardized gauge row with a 4x6 label at (2, y), framed bar gauge at (44, y+1),
 /// and 4-digit decimal value at (90, y).
 #[inline(never)]
-pub fn draw_gauge_row(
-    lcd: &mut St7567,
-    y: i32,
-    label: &str,
-    fill_width: u32,
-    val: u16,
-) {
+pub fn draw_gauge_row(lcd: &mut St7567, y: i32, label: &str, fill_width: u32, val: u16) {
     lcd.draw_str_4x6(2, y, label, false);
     draw_bar_gauge(lcd, 44, y + 1, 40, 5, fill_width);
     let mut val_buf = [0u8; 4];

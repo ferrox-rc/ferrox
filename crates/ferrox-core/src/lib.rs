@@ -2,13 +2,19 @@
 #![allow(static_mut_refs)]
 
 #[cfg(all(feature = "board-i6x", feature = "board-i6s"))]
-compile_error!("Multiple board features cannot be enabled simultaneously (board-i6x and board-i6s).");
+compile_error!(
+    "Multiple board features cannot be enabled simultaneously (board-i6x and board-i6s)."
+);
 
 #[cfg(all(feature = "board-i6x", feature = "board-pocket"))]
-compile_error!("Multiple board features cannot be enabled simultaneously (board-i6x and board-pocket).");
+compile_error!(
+    "Multiple board features cannot be enabled simultaneously (board-i6x and board-pocket)."
+);
 
 #[cfg(all(feature = "board-i6s", feature = "board-pocket"))]
-compile_error!("Multiple board features cannot be enabled simultaneously (board-i6s and board-pocket).");
+compile_error!(
+    "Multiple board features cannot be enabled simultaneously (board-i6s and board-pocket)."
+);
 
 #[cfg(not(any(
     feature = "board-i6x",
@@ -31,6 +37,8 @@ compile_error!("A board target must be selected (e.g., board-i6x, board-i6s, boa
 pub mod board;
 pub use board::{ActiveBoard, BoardProfile};
 
+pub mod adc;
+pub mod boot;
 pub mod buzzer;
 pub mod calib;
 pub mod chip;
@@ -40,14 +48,12 @@ pub mod display;
 #[cfg(feature = "rf-dsm")]
 pub mod dsm;
 pub mod hal;
-pub mod adc;
-pub mod boot;
-pub mod power;
-pub mod touch;
 pub mod input;
 pub mod mixer;
+pub mod power;
 pub mod rf;
 pub mod runtime;
+pub mod touch;
 pub use runtime::{BackgroundIdleManager, FlightPipeline, FlightSnapshot};
 pub mod safety;
 pub mod soaring;
@@ -55,13 +61,13 @@ pub mod storage;
 pub mod time;
 pub mod timer;
 pub use timer::{TimerBank, TimerConfig};
+pub mod telemetry_log;
 pub mod trainer;
 pub mod trim;
-pub mod telemetry_log;
 pub use telemetry_log::{FlightLogFrame, TelemetryLogger};
 pub mod ui;
 pub use ui::menu;
-pub mod usb;
 pub mod uart;
+pub mod usb;
 pub mod vario;
 pub mod watchdog;

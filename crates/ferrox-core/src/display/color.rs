@@ -3,6 +3,7 @@
 //! Provides 16-color indexed framebuffers (<38 KB RAM for 320x240)
 //! expanding via RGB565 look-up tables for color TFT targets (e.g. RadioLink AT9S Pro, TX16S).
 
+use crate::hal::DisplayBus;
 use core::convert::Infallible;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -10,7 +11,6 @@ use embedded_graphics::{
     pixelcolor::{BinaryColor, PixelColor},
     Pixel,
 };
-use crate::hal::DisplayBus;
 
 /// 16 Semantic UI Color Indices (4 bits per pixel).
 #[repr(u8)]
@@ -73,42 +73,42 @@ pub const fn rgb565(r: u8, g: u8, b: u8) -> u16 {
 
 /// Default high-contrast dark theme RGB565 palette.
 pub const DARK_PALETTE: [u16; 16] = [
-    rgb565(20, 24, 30),     // 0: Bg (Dark charcoal/navy)
-    rgb565(240, 244, 250),  // 1: Fg (Crisp white)
-    rgb565(36, 44, 56),     // 2: HeaderBg (Deep slate)
-    rgb565(255, 255, 255),  // 3: HeaderFg (Pure white)
-    rgb565(0, 168, 255),    // 4: Accent (Vibrant electric blue)
-    rgb565(255, 170, 0),    // 5: Highlight (Amber yellow)
-    rgb565(120, 130, 145),  // 6: Muted (Cool gray)
-    rgb565(46, 204, 113),   // 7: Ok (Bright green)
-    rgb565(243, 156, 18),   // 8: Warn (Vibrant orange)
-    rgb565(231, 76, 60),    // 9: Danger (Crimson red)
-    rgb565(40, 48, 60),     // 10: BarBg (Dark bar trough)
-    rgb565(0, 210, 255),    // 11: BarFg (Cyan bar fill)
-    rgb565(50, 60, 75),     // 12: Grid (Subtle grid lines)
-    rgb565(70, 82, 100),    // 13: Border (Framing border)
-    rgb565(155, 89, 182),   // 14: Custom1 (Purple)
-    rgb565(26, 188, 156),   // 15: Custom2 (Turquoise)
+    rgb565(20, 24, 30),    // 0: Bg (Dark charcoal/navy)
+    rgb565(240, 244, 250), // 1: Fg (Crisp white)
+    rgb565(36, 44, 56),    // 2: HeaderBg (Deep slate)
+    rgb565(255, 255, 255), // 3: HeaderFg (Pure white)
+    rgb565(0, 168, 255),   // 4: Accent (Vibrant electric blue)
+    rgb565(255, 170, 0),   // 5: Highlight (Amber yellow)
+    rgb565(120, 130, 145), // 6: Muted (Cool gray)
+    rgb565(46, 204, 113),  // 7: Ok (Bright green)
+    rgb565(243, 156, 18),  // 8: Warn (Vibrant orange)
+    rgb565(231, 76, 60),   // 9: Danger (Crimson red)
+    rgb565(40, 48, 60),    // 10: BarBg (Dark bar trough)
+    rgb565(0, 210, 255),   // 11: BarFg (Cyan bar fill)
+    rgb565(50, 60, 75),    // 12: Grid (Subtle grid lines)
+    rgb565(70, 82, 100),   // 13: Border (Framing border)
+    rgb565(155, 89, 182),  // 14: Custom1 (Purple)
+    rgb565(26, 188, 156),  // 15: Custom2 (Turquoise)
 ];
 
 /// High-visibility direct daylight theme RGB565 palette.
 pub const DAYLIGHT_PALETTE: [u16; 16] = [
-    rgb565(255, 255, 255),  // 0: Bg (White)
-    rgb565(0, 0, 0),        // 1: Fg (Black)
-    rgb565(220, 225, 230),  // 2: HeaderBg (Light gray)
-    rgb565(0, 0, 0),        // 3: HeaderFg (Black)
-    rgb565(0, 100, 220),    // 4: Accent (Deep blue)
-    rgb565(200, 100, 0),    // 5: Highlight (Dark orange)
-    rgb565(100, 100, 100),  // 6: Muted (Mid gray)
-    rgb565(0, 140, 50),     // 7: Ok (Dark green)
-    rgb565(210, 110, 0),    // 8: Warn (Dark amber)
-    rgb565(200, 20, 20),    // 9: Danger (Dark red)
-    rgb565(210, 215, 220),  // 10: BarBg (Light bar trough)
-    rgb565(0, 90, 200),     // 11: BarFg (Blue bar fill)
-    rgb565(190, 195, 200),  // 12: Grid (Grid lines)
-    rgb565(80, 80, 80),     // 13: Border (Border line)
-    rgb565(120, 40, 160),   // 14: Custom1
-    rgb565(0, 130, 110),    // 15: Custom2
+    rgb565(255, 255, 255), // 0: Bg (White)
+    rgb565(0, 0, 0),       // 1: Fg (Black)
+    rgb565(220, 225, 230), // 2: HeaderBg (Light gray)
+    rgb565(0, 0, 0),       // 3: HeaderFg (Black)
+    rgb565(0, 100, 220),   // 4: Accent (Deep blue)
+    rgb565(200, 100, 0),   // 5: Highlight (Dark orange)
+    rgb565(100, 100, 100), // 6: Muted (Mid gray)
+    rgb565(0, 140, 50),    // 7: Ok (Dark green)
+    rgb565(210, 110, 0),   // 8: Warn (Dark amber)
+    rgb565(200, 20, 20),   // 9: Danger (Dark red)
+    rgb565(210, 215, 220), // 10: BarBg (Light bar trough)
+    rgb565(0, 90, 200),    // 11: BarFg (Blue bar fill)
+    rgb565(190, 195, 200), // 12: Grid (Grid lines)
+    rgb565(80, 80, 80),    // 13: Border (Border line)
+    rgb565(120, 40, 160),  // 14: Custom1
+    rgb565(0, 130, 110),   // 15: Custom2
 ];
 
 /// Zero-heap 4-bit indexed Color Canvas.
@@ -117,7 +117,9 @@ pub struct ColorCanvas<const W: usize, const H: usize, const BUF_SIZE: usize> {
     framebuffer: [u8; BUF_SIZE],
 }
 
-impl<const W: usize, const H: usize, const BUF_SIZE: usize> Default for ColorCanvas<W, H, BUF_SIZE> {
+impl<const W: usize, const H: usize, const BUF_SIZE: usize> Default
+    for ColorCanvas<W, H, BUF_SIZE>
+{
     fn default() -> Self {
         Self::new()
     }
@@ -294,8 +296,14 @@ mod tests {
             let mut adapter = BinaryColorAdapter::new(&mut canvas);
             adapter
                 .draw_iter([
-                    Pixel(embedded_graphics::geometry::Point::new(10, 10), BinaryColor::On),
-                    Pixel(embedded_graphics::geometry::Point::new(11, 10), BinaryColor::Off),
+                    Pixel(
+                        embedded_graphics::geometry::Point::new(10, 10),
+                        BinaryColor::On,
+                    ),
+                    Pixel(
+                        embedded_graphics::geometry::Point::new(11, 10),
+                        BinaryColor::Off,
+                    ),
                 ])
                 .unwrap();
         }

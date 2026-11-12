@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(calculate_launch_penalty_tenths(0), 0);
         assert_eq!(calculate_launch_penalty_tenths(100), 500); // 50.0 pts
         assert_eq!(calculate_launch_penalty_tenths(200), 1000); // 100.0 pts
-        // > 200m: 100 + 3.0 pts/m above 200
+                                                                // > 200m: 100 + 3.0 pts/m above 200
         assert_eq!(calculate_launch_penalty_tenths(210), 1300); // 130.0 pts
 
         // Net score: 580s flight (580 pts) + 45 landing - 71.0 penalty (142m) = 554.0 pts

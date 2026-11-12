@@ -94,7 +94,11 @@ pub fn update_aux_channels(
         }
     }
 
-    let header_title = if is_freeform { "CHANNELS (1..18)" } else { "AUX CHANNELS" };
+    let header_title = if is_freeform {
+        "CHANNELS (1..18)"
+    } else {
+        "AUX CHANNELS"
+    };
     widgets::draw_header(lcd, header_title);
 
     for slot in 0..4 {
@@ -104,11 +108,7 @@ pub fn update_aux_channels(
         }
         let is_sel = list_idx == ctrl.selected_item;
 
-        let ch_idx = if is_freeform {
-            list_idx
-        } else {
-            4 + list_idx
-        };
+        let ch_idx = if is_freeform { list_idx } else { 4 + list_idx };
         let ch_num = 1 + ch_idx;
         let mut ch_buf = *b"CH00: ";
         if ch_num >= 10 {
@@ -211,7 +211,11 @@ pub fn format_channel_label<'a>(
                     SOURCE_NAMES[direct_src]
                 } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 1) {
                     let src = m.source as usize;
-                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                    if src < SOURCE_NAMES.len() {
+                        SOURCE_NAMES[src]
+                    } else {
+                        "MIX"
+                    }
                 } else {
                     "None"
                 }
@@ -227,7 +231,11 @@ pub fn format_channel_label<'a>(
                     SOURCE_NAMES[direct_src]
                 } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 2) {
                     let src = m.source as usize;
-                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                    if src < SOURCE_NAMES.len() {
+                        SOURCE_NAMES[src]
+                    } else {
+                        "MIX"
+                    }
                 } else {
                     "None"
                 }
@@ -241,7 +249,11 @@ pub fn format_channel_label<'a>(
                     SOURCE_NAMES[direct_src]
                 } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 3) {
                     let src = m.source as usize;
-                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                    if src < SOURCE_NAMES.len() {
+                        SOURCE_NAMES[src]
+                    } else {
+                        "MIX"
+                    }
                 } else {
                     "None"
                 }
@@ -256,7 +268,11 @@ pub fn format_channel_label<'a>(
                     SOURCE_NAMES[direct_src]
                 } else if let Some(m) = model.mixes.iter().find(|m| m.target_ch == 4) {
                     let src = m.source as usize;
-                    if src < SOURCE_NAMES.len() { SOURCE_NAMES[src] } else { "MIX" }
+                    if src < SOURCE_NAMES.len() {
+                        SOURCE_NAMES[src]
+                    } else {
+                        "MIX"
+                    }
                 } else {
                     "None"
                 }
@@ -474,7 +490,8 @@ mod tests {
             dr_change: None,
             pot_change: None,
         };
-        let expected_next = storage.next_available_aux_source(0, crate::board::ActiveBoard::AUX_SOURCES);
+        let expected_next =
+            storage.next_available_aux_source(0, crate::board::ActiveBoard::AUX_SOURCES);
         update_aux_channels(&mut ctrl, &mut lcd, &keys_up, &mut storage, &mut buzzer);
         assert_eq!(storage.active_model.freeform_ch1_4[0], expected_next);
     }

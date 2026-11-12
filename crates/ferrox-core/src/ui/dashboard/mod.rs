@@ -141,7 +141,8 @@ impl DashboardController {
             2 => pages::channels::render(lcd, rf_chs, is_binding, 1),
             3 => pages::model::render(lcd, storage, telem, is_binding, now_ms),
             4 => {
-                let proto = crate::board::ActiveBoard::resolve_protocol(storage.active_model().rf_protocol);
+                let proto =
+                    crate::board::ActiveBoard::resolve_protocol(storage.active_model().rf_protocol);
                 let is_crsf = proto == crate::board::RfProtocol::Crsf;
                 pages::telemetry::render(
                     lcd,
@@ -278,4 +279,3 @@ mod tests {
         pages::model::render(&mut lcd, &storage_crsf, &telem, false, 5000);
     }
 }
-

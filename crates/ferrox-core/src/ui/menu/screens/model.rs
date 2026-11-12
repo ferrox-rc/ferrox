@@ -168,7 +168,8 @@ fn render_setup_row(
             }
         }
         5 => {
-            let proto = crate::board::ActiveBoard::resolve_protocol(storage.active_model.rf_protocol);
+            let proto =
+                crate::board::ActiveBoard::resolve_protocol(storage.active_model.rf_protocol);
             widgets::draw_list_row(lcd, slot, inverted, "Protocol:", Some(proto.name()), 64);
         }
         6 => {

@@ -420,9 +420,14 @@ pub trait BoardIdleHook: Default + 'static {
     fn render_overlay(&self, lcd: &mut St7567);
 }
 
-
 #[inline]
-pub fn draw_switch_slot_i6x(lcd: &mut St7567, label_x: i32, val_x: i32, label: &str, pos: SwitchPos) {
+pub fn draw_switch_slot_i6x(
+    lcd: &mut St7567,
+    label_x: i32,
+    val_x: i32,
+    label: &str,
+    pos: SwitchPos,
+) {
     lcd.draw_str_4x6(label_x, 47, label, false);
     crate::ui::glyphs::draw_switch_arrow(lcd, val_x, 46, pos);
 }
@@ -457,8 +462,6 @@ impl BoardIdleHook for DefaultIdleState {
     #[inline]
     fn render_overlay(&self, _lcd: &mut St7567) {}
 }
-
-
 
 pub mod at9spro;
 pub mod boxer;
@@ -549,4 +552,3 @@ pub type ActiveBoard = Gx12Spec;
     feature = "board-gx12"
 )))]
 pub type ActiveBoard = I6xSpec;
-

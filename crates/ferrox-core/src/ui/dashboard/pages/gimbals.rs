@@ -360,7 +360,10 @@ mod tests {
         // Helper to find the continuous vertical divider column between switches and pots
         let find_divider = |lcd: &St7567| -> Option<usize> {
             (40..crate::display::st7567::WIDTH - 5).find(|&x| {
-                (46..54).all(|y| lcd.framebuffer()[(y / 8) * crate::display::st7567::WIDTH + x] & (1 << (y % 8)) != 0)
+                (46..54).all(|y| {
+                    lcd.framebuffer()[(y / 8) * crate::display::st7567::WIDTH + x] & (1 << (y % 8))
+                        != 0
+                })
             })
         };
 

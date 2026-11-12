@@ -1,5 +1,6 @@
 //! ST7567 128×64 Monochrome LCD 8-bit Parallel Driver with Embedded-Graphics Support.
 
+use crate::hal::DisplayBus;
 use core::convert::Infallible;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -7,7 +8,6 @@ use embedded_graphics::{
     pixelcolor::BinaryColor,
     Pixel,
 };
-use crate::hal::DisplayBus;
 
 static mut DISPLAY_BUS: Option<&'static mut dyn DisplayBus> = None;
 
@@ -51,7 +51,6 @@ impl St7567 {
         display.set_backlight_level(100);
         display
     }
-
 
     /// Set Backlight brightness level (0..100%).
     pub fn set_backlight_level(&self, pct: u8) {
@@ -322,7 +321,12 @@ impl St7567 {
         }
         let glyph_idx = (c - 0x20) as usize;
         let glyph = &crate::display::fonts::FONT_4X6_DATA[glyph_idx];
-        let cols = [glyph[0] as u16, glyph[1] as u16, glyph[2] as u16, glyph[3] as u16];
+        let cols = [
+            glyph[0] as u16,
+            glyph[1] as u16,
+            glyph[2] as u16,
+            glyph[3] as u16,
+        ];
         self.draw_glyph_cols(x, y, &cols, 6, invert);
     }
 
