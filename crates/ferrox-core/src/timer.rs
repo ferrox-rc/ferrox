@@ -37,7 +37,7 @@ pub struct TimerConfig {
     pub reset_src: u8,
     /// Configuration bitflags:
     /// - Bit 0: Latch mode (0 = Level active while start_src true & stop_src false;
-    ///                     1 = Latch running on start_src rising edge, latch paused on stop_src rising edge)
+    ///   1 = Latch running on start_src rising edge, latch paused on stop_src rising edge)
     /// - Bit 1: Arm reset (auto-reset timer when model transitions to Armed)
     /// - Bit 2: Audio beeps (10s countdown beeps and expiration alarm enabled, default 1)
     pub flags: u8,
@@ -175,6 +175,7 @@ impl TimerBank {
     /// Update all timers with the elapsed delta time.
     ///
     /// Evaluates start triggers, stop/pause triggers, reset switches, and arm transitions.
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         dt_ms: u16,
@@ -186,7 +187,7 @@ impl TimerBank {
         just_disarmed: bool,
         buzzer: &mut Buzzer,
     ) {
-        for (_i, (state, cfg)) in self.timers.iter_mut().zip(configs.iter()).enumerate() {
+        for (state, cfg) in self.timers.iter_mut().zip(configs.iter()) {
             // Handle auto-reset on arming transition if configured
             if cfg.has_arm_reset() {
                 if just_armed {

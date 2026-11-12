@@ -179,6 +179,12 @@ impl MultiRxParser {
     }
 }
 
+impl Default for MultiRxParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 static mut MULTI_PARSER: MultiRxParser = MultiRxParser::new();
 static mut DSM_TELEMETRY: DsmTelemetry = DsmTelemetry {
     connected: false,
@@ -554,6 +560,12 @@ pub mod fwd_prog {
         pub fn send_action(&mut self, line_id: u8, value: i16) {
             let [vh, vl] = value.to_be_bytes();
             self.tx_pending_cmd = Some([0x09, 0x20, line_id, vh, vl, 0, 0, 0]);
+        }
+    }
+
+    impl Default for DsmConfigEngine {
+        fn default() -> Self {
+            Self::new()
         }
     }
 }

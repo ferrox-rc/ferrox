@@ -94,6 +94,7 @@ pub struct MpmTelemetry {
 /// - Byte 2: `(sub_proto << 4) | (rx_num & 0x0F)`
 /// - Byte 3: `option` (`-127..+127`, frequency fine tuning)
 /// - Bytes 4..26: 16 channels packed as 11-bit values (`0..2047`, 22 bytes total).
+#[allow(clippy::too_many_arguments)]
 pub fn pack_mpm_frame(
     channels_us: &[u16; NUM_CHANNELS],
     proto: Cc2500Protocol,

@@ -2,6 +2,13 @@
 
 #![no_std]
 #![allow(static_mut_refs)]
+#![allow(
+    clippy::identity_op,
+    clippy::result_unit_err,
+    clippy::unnecessary_cast,
+    clippy::new_without_default,
+    clippy::unnecessary_map_or
+)]
 
 pub mod adc;
 pub mod buzzer;
