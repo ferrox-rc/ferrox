@@ -29,6 +29,13 @@ pub fn mcu_name() -> &'static str {
     }
 }
 
+/// Run early platform-specific pre-initialization (e.g., VTOR relocation under bootloader).
+pub fn pre_init() {
+    if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {
+        driver.pre_init();
+    }
+}
+
 /// Initialize system clock using registered SystemDriver.
 pub fn init_system_clock() {
     if let Some(ref mut driver) = unsafe { SYSTEM_DRIVER.as_mut() } {

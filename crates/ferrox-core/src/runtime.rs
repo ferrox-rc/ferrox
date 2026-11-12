@@ -1044,6 +1044,9 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     // Register explicit platform context drivers
     ctx.register();
 
+    // Relocate VTOR and sanitize bootloader interrupt/SysTick state before any init
+    crate::chip::pre_init();
+
     // 0. Early board initialization (e.g. electronic power latch on FS-i6S)
     ActiveBoard::pre_init();
 

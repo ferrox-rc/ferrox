@@ -93,9 +93,29 @@ impl SystemDriver for Stm32f4SystemDriver {
     fn pre_init(&mut self) {
         #[cfg(feature = "edgetx-bootloader")]
         unsafe {
-            // Relocate vector table to 0x0800_8000 when running under EdgeTX SD bootloader
+            // 1. Keep interrupts disabled while tearing down bootloader state
+            cortex_m::interrupt::disable();
+
+            // 2. Disable SysTick left running by the bootloader
+            let syst = &*cortex_m::peripheral::SYST::PTR;
+            syst.csr.write(0);
+            syst.rvr.write(0);
+            syst.cvr.write(0);
+
+            // 3. Disable and clear all pending NVIC interrupts from the bootloader
+            let nvic = &*cortex_m::peripheral::NVIC::PTR;
+            for i in 0..8 {
+                nvic.icer[i].write(0xFFFF_FFFF);
+                nvic.icpr[i].write(0xFFFF_FFFF);
+            }
+
+            // 4. Relocate vector table to 0x0800_8000 with memory barriers
             let scb = &*cortex_m::peripheral::SCB::PTR;
             scb.vtor.write(0x0800_8000);
+            cortex_m::asm::dsb();
+            cortex_m::asm::isb();
+
+            // 5. Re-enable interrupts now that vector table and NVIC are clean
             cortex_m::interrupt::enable();
         }
     }
@@ -171,6 +191,24 @@ pub fn init_system_clock() {
     let flash = unsafe { &*pac::FLASH::ptr() };
 
     unsafe {
+        // 0. If a bootloader left PLL active as SYSCLK, switch back to HSI and disable PLL
+        //    so RCC_PLLCFGR can be written cleanly.
+        rcc.cr.modify(|r, w| w.bits(r.bits() | (1 << 0))); // HSION
+        let mut hsi_timeout = 100_000u32;
+        while (rcc.cr.read().bits() & (1 << 1)) == 0 && hsi_timeout > 0 {
+            hsi_timeout -= 1;
+        }
+        rcc.cfgr.modify(|r, w| w.bits(r.bits() & !0x03)); // SW = 0b00 (HSI)
+        let mut sw_timeout = 100_000u32;
+        while (rcc.cfgr.read().bits() & 0x0C) != 0 && sw_timeout > 0 {
+            sw_timeout -= 1;
+        }
+        rcc.cr.modify(|r, w| w.bits(r.bits() & !(1 << 24))); // PLLON = 0
+        let mut pll_off_timeout = 100_000u32;
+        while (rcc.cr.read().bits() & (1 << 25)) != 0 && pll_off_timeout > 0 {
+            pll_off_timeout -= 1;
+        }
+
         // 1. Enable PWR clock in RCC_APB1ENR (bit 28)
         rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 28)));
 
