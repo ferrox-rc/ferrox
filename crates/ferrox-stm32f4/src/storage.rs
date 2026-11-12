@@ -3,9 +3,7 @@ use ferrox_core::hal::StorageBus;
 use stm32f4::stm32f407 as pac;
 
 use crate::descriptor::{PinDef, PocketHal, Qx7HalDescriptor};
-use crate::sdcard::{
-    SpiSdCard, FERROX_STORAGE_SECTOR_BASE, FERROX_TELEM_SECTOR_BASE, SD_SECTOR_SIZE,
-};
+use crate::sdcard::{SpiSdCard, FERROX_TELEM_SECTOR_BASE, SD_SECTOR_SIZE};
 
 const EEPROM_ADDR: u8 = 0x51; // 7-bit I2C address for M24256 on Q X7 family
 const PAGE_SIZE: usize = 64;
@@ -13,6 +11,7 @@ const PAGE_SIZE: usize = 64;
 pub struct PocketEepromI2cBus<H: Qx7HalDescriptor = PocketHal> {
     using_sd: bool,
     sd_card: SpiSdCard<H>,
+    raw_gap: Option<ferrox_core::storage::SdRawGap>,
     active_telem_sector: u32,
     _phantom: PhantomData<H>,
 }
@@ -22,6 +21,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
         Self {
             using_sd: false,
             sd_card: SpiSdCard::new(),
+            raw_gap: None,
             active_telem_sector: FERROX_TELEM_SECTOR_BASE,
             _phantom: PhantomData,
         }
@@ -270,13 +270,17 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
     }
 
     fn read_sd(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {
+        let gap = self.raw_gap.ok_or(())?;
         let mut cur_addr = addr as usize;
         let mut offset = 0;
         let total = buf.len();
         let mut sector_buf = [0u8; SD_SECTOR_SIZE];
 
         while offset < total {
-            let sector_idx = FERROX_STORAGE_SECTOR_BASE + (cur_addr / SD_SECTOR_SIZE) as u32;
+            let sector_idx = gap.eeprom_base_sector + (cur_addr / SD_SECTOR_SIZE) as u32;
+            if !gap.is_eeprom_sector_safe(sector_idx) {
+                return Err(());
+            }
             let sector_offset = cur_addr % SD_SECTOR_SIZE;
             let bytes_in_sector = SD_SECTOR_SIZE - sector_offset;
             let chunk_size = bytes_in_sector.min(total - offset);
@@ -292,13 +296,17 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
     }
 
     fn write_sd(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
+        let gap = self.raw_gap.ok_or(())?;
         let mut cur_addr = addr as usize;
         let mut offset = 0;
         let total = buf.len();
         let mut sector_buf = [0u8; SD_SECTOR_SIZE];
 
         while offset < total {
-            let sector_idx = FERROX_STORAGE_SECTOR_BASE + (cur_addr / SD_SECTOR_SIZE) as u32;
+            let sector_idx = gap.eeprom_base_sector + (cur_addr / SD_SECTOR_SIZE) as u32;
+            if !gap.is_eeprom_sector_safe(sector_idx) {
+                return Err(());
+            }
             let sector_offset = cur_addr % SD_SECTOR_SIZE;
             let bytes_in_sector = SD_SECTOR_SIZE - sector_offset;
             let chunk_size = bytes_in_sector.min(total - offset);
@@ -330,18 +338,27 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
         // 1. Probe I2C1 EEPROM first (FrSky QX7 / X9D+ with onboard M24256)
         if self.init_i2c() {
             self.using_sd = false;
+            self.raw_gap = None;
             return true;
         }
 
-        // 2. Fall back to SPI2 SD card (RadioMaster Pocket, Boxer, Zorro, TX12 MKII)
+        // 2. Fall back to SPI2 SD card (RadioMaster Pocket, Boxer, Zorro, TX12 MKII),
+        //    STRICTLY verifying a safe MBR pre-partition gap before enabling raw writes!
         if self.sd_card.init() {
-            self.using_sd = true;
-            self.active_telem_sector = FERROX_TELEM_SECTOR_BASE;
-            return true;
+            let mut sector0 = [0u8; SD_SECTOR_SIZE];
+            if self.sd_card.read_sector(0, &mut sector0).is_ok() {
+                if let Some(gap) = ferrox_core::storage::SdRawGap::from_mbr(&sector0) {
+                    self.raw_gap = Some(gap);
+                    self.using_sd = true;
+                    self.active_telem_sector = FERROX_TELEM_SECTOR_BASE;
+                    return true;
+                }
+            }
         }
 
-        // 3. No hardware storage found (bench testing with SD card removed)
+        // 3. No hardware EEPROM or safe unallocated SD gap found (never corrupt FAT32 partitions!)
         self.using_sd = false;
+        self.raw_gap = None;
         false
     }
 
@@ -363,8 +380,22 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
 
     fn append_telemetry_sector(&mut self, sector: &[u8; 512]) -> Result<(), ()> {
         if self.using_sd {
+            let Some(gap) = self.raw_gap else {
+                return Ok(());
+            };
+            if !gap.has_safe_telem_ring() {
+                return Ok(());
+            }
+            if self.active_telem_sector >= gap.limit_sector
+                || self.active_telem_sector < FERROX_TELEM_SECTOR_BASE
+            {
+                self.active_telem_sector = FERROX_TELEM_SECTOR_BASE;
+            }
+            if !gap.is_telem_sector_safe(self.active_telem_sector) {
+                return Ok(());
+            }
             self.sd_card.write_sector(self.active_telem_sector, sector)?;
-            self.active_telem_sector = self.active_telem_sector.wrapping_add(1);
+            self.active_telem_sector = self.active_telem_sector.saturating_add(1);
         }
         Ok(())
     }

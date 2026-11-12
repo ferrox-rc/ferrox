@@ -2174,6 +2174,93 @@ pub fn load_saved_rx_id() -> Option<u32> {
     }
 }
 
+/// Verified unallocated pre-partition SD card gap (`1..min_partition_start_lba`)
+/// so virtual EEPROM / raw telemetry writes never collide with EdgeTX FAT32 filesystems.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SdRawGap {
+    /// First safe pre-partition sector for the 16 KB (32 sectors) virtual EEPROM.
+    pub eeprom_base_sector: u32,
+    /// Exclusive upper bound (`first_lba` of the lowest partition). No raw write may touch `>= limit_sector`.
+    pub limit_sector: u32,
+}
+
+impl SdRawGap {
+    pub const EEPROM_SECTORS: u32 = 32; // 16 KB / 512 B
+    pub const PREFERRED_EEPROM_BASE: u32 = 256;
+    pub const PREFERRED_TELEM_BASE: u32 = 512;
+
+    /// Inspect Sector 0 (MBR) to verify a safe unallocated gap before Partition 1.
+    /// Rejects FAT/EXFAT Volume Boot Records ("superfloppy" cards without MBR), GPT protective disks,
+    /// invalid signatures, and cards whose first partition starts below sector `288`.
+    pub fn from_mbr(sector0: &[u8; 512]) -> Option<Self> {
+        if sector0[510] != 0x55 || sector0[511] != 0xAA {
+            return None;
+        }
+        // Reject raw FAT12/16/32 or EXFAT Volume Boot Record directly on Sector 0
+        if &sector0[54..57] == b"FAT"
+            || &sector0[82..87] == b"FAT32"
+            || &sector0[3..11] == b"EXFAT   "
+        {
+            return None;
+        }
+
+        let mut min_first_lba = u32::MAX;
+        for entry_idx in 0..4 {
+            let off = 446 + entry_idx * 16;
+            let ptype = sector0[off + 4];
+            if ptype == 0 {
+                continue;
+            }
+            // Reject GPT protective MBR (GPT tables span sectors 2..33+)
+            if ptype == 0xEE {
+                return None;
+            }
+            let first_lba = u32::from_le_bytes([
+                sector0[off + 8],
+                sector0[off + 9],
+                sector0[off + 10],
+                sector0[off + 11],
+            ]);
+            if first_lba == 0 {
+                return None;
+            }
+            if first_lba < min_first_lba {
+                min_first_lba = first_lba;
+            }
+        }
+
+        if min_first_lba == u32::MAX
+            || min_first_lba < Self::PREFERRED_EEPROM_BASE + Self::EEPROM_SECTORS
+        {
+            return None;
+        }
+
+        Some(Self {
+            eeprom_base_sector: Self::PREFERRED_EEPROM_BASE,
+            limit_sector: min_first_lba,
+        })
+    }
+
+    #[inline]
+    pub const fn is_eeprom_sector_safe(&self, sector_idx: u32) -> bool {
+        sector_idx >= self.eeprom_base_sector
+            && sector_idx < (self.eeprom_base_sector + Self::EEPROM_SECTORS)
+            && sector_idx < self.limit_sector
+    }
+
+    #[inline]
+    pub const fn has_safe_telem_ring(&self) -> bool {
+        self.limit_sector >= Self::PREFERRED_TELEM_BASE + 128
+    }
+
+    #[inline]
+    pub const fn is_telem_sector_safe(&self, sector_idx: u32) -> bool {
+        self.has_safe_telem_ring()
+            && sector_idx >= Self::PREFERRED_TELEM_BASE
+            && sector_idx < self.limit_sector
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2694,5 +2781,44 @@ mod tests {
         assert_eq!(v2.timer1_stop_src, 0);
         assert_eq!(v2.timer1_reset_src, 0);
         assert_eq!(v2.freeform_ch1_4, [0; 4]);
+    }
+
+    #[test]
+    fn test_sd_raw_gap_mbr_validation() {
+        // 1. Standard 1 MiB aligned FAT32 SD card (Partition 1 at LBA 2048)
+        let mut mbr = [0u8; 512];
+        mbr[510] = 0x55;
+        mbr[511] = 0xAA;
+        mbr[446 + 4] = 0x0C; // FAT32 LBA
+        mbr[446 + 8..446 + 12].copy_from_slice(&2048u32.to_le_bytes());
+
+        let gap = SdRawGap::from_mbr(&mbr).expect("2048 LBA MBR must provide safe gap");
+        assert_eq!(gap.eeprom_base_sector, 256);
+        assert_eq!(gap.limit_sector, 2048);
+        assert!(gap.is_eeprom_sector_safe(256));
+        assert!(gap.is_eeprom_sector_safe(287));
+        assert!(!gap.is_eeprom_sector_safe(288));
+        assert!(!gap.is_eeprom_sector_safe(2048));
+        assert!(gap.has_safe_telem_ring());
+        assert!(gap.is_telem_sector_safe(512));
+        assert!(!gap.is_telem_sector_safe(2048));
+
+        // 2. Legacy CHS aligned MBR (Partition 1 at LBA 63 -> NO safe gap!)
+        mbr[446 + 8..446 + 12].copy_from_slice(&63u32.to_le_bytes());
+        assert!(SdRawGap::from_mbr(&mbr).is_none());
+
+        // 3. Superfloppy FAT32 directly on Sector 0 -> NO safe gap!
+        let mut vbr = [0u8; 512];
+        vbr[510] = 0x55;
+        vbr[511] = 0xAA;
+        vbr[82..87].copy_from_slice(b"FAT32");
+        vbr[446 + 4] = 0x0C;
+        vbr[446 + 8..446 + 12].copy_from_slice(&2048u32.to_le_bytes());
+        assert!(SdRawGap::from_mbr(&vbr).is_none());
+
+        // 4. GPT Protective MBR -> NO safe gap!
+        mbr[446 + 4] = 0xEE;
+        mbr[446 + 8..446 + 12].copy_from_slice(&1u32.to_le_bytes());
+        assert!(SdRawGap::from_mbr(&mbr).is_none());
     }
 }

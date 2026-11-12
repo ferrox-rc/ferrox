@@ -7,12 +7,12 @@ use crate::descriptor::{PinDef, PocketHal, Qx7HalDescriptor};
 
 pub const SD_SECTOR_SIZE: usize = 512;
 
-/// Dedicated reserved sector offset for Ferrox virtual EEPROM storage image (16 KB = 32 sectors).
-/// Sector 2048 (1 MB offset) is safely outside standard FAT MBR / boot record.
-pub const FERROX_STORAGE_SECTOR_BASE: u32 = 2048;
+/// Dedicated pre-partition MBR gap offset for Ferrox virtual EEPROM (16 KB = sectors 256..287).
+/// Verified at runtime via `SdRawGap::from_mbr` to strictly precede Partition 1 (`LBA >= 288`).
+pub const FERROX_STORAGE_SECTOR_BASE: u32 = ferrox_core::storage::SdRawGap::PREFERRED_EEPROM_BASE;
 
-/// Dedicated starting sector for circular/append telemetry logging (2 MB offset).
-pub const FERROX_TELEM_SECTOR_BASE: u32 = 4096;
+/// Dedicated pre-partition MBR gap offset for circular raw telemetry logging (sectors 512..min_first_lba).
+pub const FERROX_TELEM_SECTOR_BASE: u32 = ferrox_core::storage::SdRawGap::PREFERRED_TELEM_BASE;
 
 pub struct SpiSdCard<H: Qx7HalDescriptor = PocketHal> {
     is_sdhc: bool,
