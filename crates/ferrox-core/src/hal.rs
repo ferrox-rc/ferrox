@@ -507,41 +507,40 @@ impl UsbDriver for NullUsbDriver {
 }
 
 /// Unified platform services and peripheral drivers bundle.
-pub struct PlatformContext<'a> {
-    pub system: &'a mut dyn SystemDriver,
-    pub tone: &'a mut dyn ToneOutput,
-    pub display: &'a mut dyn DisplayBus,
-    pub storage: &'a mut dyn StorageBus,
-    pub trainer: &'a mut dyn TrainerDriver,
-    pub rf_bus: &'a mut dyn RfBus,
-    pub usb: &'a mut dyn UsbDriver,
-    pub adc: &'a mut dyn AdcDriver,
-    pub keys: &'a mut dyn KeyDriver,
-    pub serial: &'a mut dyn SerialPort,
-    pub power: Option<&'a mut dyn PowerDriver>,
-    pub touch: Option<&'a mut dyn TouchDriver>,
-    pub watchdog: Option<&'a mut dyn WatchdogDriver>,
+pub struct PlatformContext {
+    pub system: &'static mut dyn SystemDriver,
+    pub tone: &'static mut dyn ToneOutput,
+    pub display: &'static mut dyn DisplayBus,
+    pub storage: &'static mut dyn StorageBus,
+    pub trainer: &'static mut dyn TrainerDriver,
+    pub rf_bus: &'static mut dyn RfBus,
+    pub usb: &'static mut dyn UsbDriver,
+    pub adc: &'static mut dyn AdcDriver,
+    pub keys: &'static mut dyn KeyDriver,
+    pub serial: &'static mut dyn SerialPort,
+    pub power: Option<&'static mut dyn PowerDriver>,
+    pub touch: Option<&'static mut dyn TouchDriver>,
+    pub watchdog: Option<&'static mut dyn WatchdogDriver>,
 }
 
-impl<'a> PlatformContext<'a> {
+impl PlatformContext {
     /// Register all drivers in this context with the runtime subsystems.
-    #[allow(clippy::missing_transmute_annotations)]
     pub fn register(self) {
-        crate::chip::register_system_driver(unsafe { core::mem::transmute(self.system) });
-        crate::buzzer::register_tone_output(unsafe { core::mem::transmute(self.tone) });
-        crate::display::register_display_bus(unsafe { core::mem::transmute(self.display) });
-        crate::storage::register_storage_bus(unsafe { core::mem::transmute(self.storage) });
-        crate::trainer::register_trainer_driver(unsafe { core::mem::transmute(self.trainer) });
-        crate::rf::spi::register_rf_bus(unsafe { core::mem::transmute(self.rf_bus) });
-        crate::usb::register_usb_driver(unsafe { core::mem::transmute(self.usb) });
-        crate::adc::register_adc_driver(unsafe { core::mem::transmute(self.adc) });
-        crate::boot::register_key_driver(unsafe { core::mem::transmute(self.keys) });
-        crate::uart::register_serial_port(unsafe { core::mem::transmute(self.serial) });
+        crate::chip::register_system_driver(self.system);
+        crate::buzzer::register_tone_output(self.tone);
+        crate::display::register_display_bus(self.display);
+        crate::storage::register_storage_bus(self.storage);
+        crate::trainer::register_trainer_driver(self.trainer);
+        crate::rf::spi::register_rf_bus(self.rf_bus);
+        crate::usb::register_usb_driver(self.usb);
+        crate::adc::register_adc_driver(self.adc);
+        crate::boot::register_key_driver(self.keys);
+        crate::uart::register_serial_port(self.serial);
         if let Some(p) = self.power {
-            register_power_driver(unsafe { core::mem::transmute(p) });
+            register_power_driver(p);
         }
         if let Some(t) = self.touch {
-            register_touch_driver(unsafe { core::mem::transmute(t) });
+            register_touch_driver(t);
         }
     }
 

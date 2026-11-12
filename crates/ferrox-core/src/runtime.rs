@@ -1005,8 +1005,7 @@ pub fn draw_timer_reset_modal(lcd: &mut St7567, progress_pct: u8, completed: boo
 ///
 /// Executes initialization stages, bootloader checks, peripheral discovery,
 /// safety interlocks, and the dual-rate flight loop.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> ! {
+pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) -> ! {
     // Register explicit platform context drivers
     ctx.register();
 
@@ -1213,12 +1212,10 @@ pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> !
             }
 
             // Once the transmitter has been running steadily in the flight loop for >5 seconds,
-            // clear the consecutive panic count.
-            if now > 5000 && !panic_count_ptr.is_null() {
-                unsafe {
-                    if core::ptr::read_volatile(panic_count_ptr) != 0 {
-                        core::ptr::write_volatile(panic_count_ptr, 0);
-                    }
+            // invoke the board-level panic counter reset callback.
+            if now > 5000 {
+                if let Some(cb) = on_stable_runtime {
+                    cb();
                 }
             }
         }

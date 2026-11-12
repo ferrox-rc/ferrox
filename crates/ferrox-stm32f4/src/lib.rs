@@ -35,7 +35,7 @@ pub use watchdog::{feed as watchdog_feed, start as watchdog_start, WatchdogManag
 #[macro_export]
 macro_rules! define_qx7_context {
     ($fn_name:ident, $hal:ty) => {
-        pub fn $fn_name() -> ferrox_core::hal::PlatformContext<'static> {
+        pub fn $fn_name() -> ferrox_core::hal::PlatformContext {
             static mut SYSTEM_DRIVER: $crate::Stm32f4SystemDriver = $crate::Stm32f4SystemDriver;
             static mut BUZZER: $crate::DacToneBuzzer = $crate::DacToneBuzzer;
             static mut DISPLAY: $crate::St7567SpiBus<$hal> = $crate::St7567SpiBus::new();
@@ -83,7 +83,7 @@ define_qx7_context!(create_at9spro_context, At9sProHal);
 define_qx7_context!(create_gx12_context, Gx12Hal);
 
 /// Create PlatformContext for the active board target feature.
-pub fn create_active_context() -> ferrox_core::hal::PlatformContext<'static> {
+pub fn create_active_context() -> ferrox_core::hal::PlatformContext {
     #[cfg(feature = "board-boxer")]
     return create_boxer_context();
     #[cfg(feature = "board-zorro")]

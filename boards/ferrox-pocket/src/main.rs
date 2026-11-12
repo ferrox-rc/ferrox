@@ -35,10 +35,19 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
+fn clear_panic_count() {
+    unsafe {
+        let val = core::ptr::read_volatile(core::ptr::addr_of!(PANIC_COUNT));
+        if val != 0 {
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(PANIC_COUNT), 0);
+        }
+    }
+}
+
 use cortex_m_rt::entry;
 
 #[entry]
 fn main() -> ! {
     let ctx = ferrox_stm32f4::create_active_context();
-    ferrox_core::runtime::run(ctx, core::ptr::addr_of_mut!(PANIC_COUNT))
+    ferrox_core::runtime::run(ctx, Some(clear_panic_count))
 }

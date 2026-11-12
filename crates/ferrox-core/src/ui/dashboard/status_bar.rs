@@ -2,6 +2,7 @@
 
 use crate::ui::glyphs::draw_battery_gauge;
 
+use crate::board::BoardProfile;
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::rf::{self, afhds2a::TelemetryData};
@@ -28,7 +29,8 @@ pub fn render(
     min_rx_v_mv: &mut u16,
     telem_seen: &mut bool,
 ) {
-    let is_crsf = storage.active_model().rf_protocol == 1;
+    let proto = crate::board::ActiveBoard::resolve_protocol(storage.active_model().rf_protocol);
+    let is_crsf = proto == crate::board::RfProtocol::Crsf;
 
     // --- Model Name (x = 2..60, y = 2) ---
     let act_idx = storage.radio.active_model as usize;

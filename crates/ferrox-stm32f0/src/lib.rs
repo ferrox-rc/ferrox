@@ -51,7 +51,7 @@ pub use usb::Stm32f0UsbDriver;
 pub use watchdog::{feed as watchdog_feed, start as watchdog_start, WatchdogManager};
 
 /// Create PlatformContext for FlySky FS-i6X.
-pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext<'static> {
+pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext {
     static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
     static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
     static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;
@@ -84,7 +84,7 @@ pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext<'static> {
 }
 
 /// Create PlatformContext for FlySky FS-i6S.
-pub fn create_i6s_context() -> ferrox_core::hal::PlatformContext<'static> {
+pub fn create_i6s_context() -> ferrox_core::hal::PlatformContext {
     static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
     static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
     static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;

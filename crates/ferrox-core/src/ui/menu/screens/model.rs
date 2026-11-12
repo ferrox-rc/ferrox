@@ -1,5 +1,6 @@
 //! Model selection and configuration screens.
 
+use crate::board::BoardProfile;
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::menu::format::{ascii_as_str, next_ascii, prev_ascii};
@@ -167,12 +168,8 @@ fn render_setup_row(
             }
         }
         5 => {
-            let proto_str = if storage.active_model.rf_protocol == 0 {
-                "AFHDS 2A"
-            } else {
-                "CRSF/ELRS"
-            };
-            widgets::draw_list_row(lcd, slot, inverted, "Protocol:", Some(proto_str), 64);
+            let proto = crate::board::ActiveBoard::resolve_protocol(storage.active_model.rf_protocol);
+            widgets::draw_list_row(lcd, slot, inverted, "Protocol:", Some(proto.name()), 64);
         }
         6 => {
             widgets::draw_list_row(lcd, slot, inverted, "Telemetry: [SETUP]", None, 0);

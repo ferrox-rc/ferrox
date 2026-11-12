@@ -1503,6 +1503,180 @@ impl EepromI2c {
     }
 }
 
+/// Legacy RadioConfig v1 (140 bytes) from solo FS-i6X v0.27.0 release.
+/// Used for transparent, lossless migration to v2 (148 bytes).
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct LegacyRadioConfig140 {
+    pub magic: u32,                // 0..4 ("FSKY")
+    pub version: u32,              // 4..8 (5)
+    pub active_model: u8,          // 8 (0..19, active model index)
+    pub throttle_trim: u8,         // 9 (0: Off/Lock, 1: Idle T-Trim, 2: Linear)
+    pub audio_enabled: u8,         // 10 (0: Muted, 1: Enabled)
+    pub backlight_timeout: u8,     // 11 (0: Always On, 1: 15s, 2: 30s, 3: 60s)
+    pub backlight_brightness: u8,  // 12 (1..10)
+    pub vbat_warn_deci: u8,        // 13 (40..50 = 4.0V..5.0V, default 44 = 4.4V)
+    pub lcd_contrast: u8,          // 14 (15..55, default 37 / 0x25)
+    pub usb_mode: u8,              // 15 (0: Off, 1: Joystick, 2: Serial, 3: Composite)
+    pub sticks: [ChannelCalib; 4], // 16..48 (32 bytes: Roll, Pitch, Throttle, Yaw)
+    pub aux_pots: [PotCalib; 10],  // 48..108 (60 bytes: SA..SD, VRA..VRB, VRC..VRF)
+    pub ext_module_pwr: u8,        // 108 (0: Active HIGH / N-type, 1: Active LOW / P-type)
+    pub tone_style: u8,            // 109 (0: Simple / Standard, 1: Rich / Melodic)
+    pub servo_rate_hz: u16,        // 110..112 (50..400 Hz, default 50 Hz for analog servo safety)
+    pub rx_out_mode: u8,           // 112 (0: PWM, 1: PPM, default 0)
+    pub rx_serial_proto: u8,       // 113 (0: i-BUS, 1: S.BUS, default 0)
+    pub ext_switches: u8,          // 114 (0: Disabled, 1: Enabled / PC12+PC15)
+    pub ext_adc: u8,               // 115 (0: Disabled, 1: Enabled / Header P7 AD12-AD15 or PC1-PC4)
+    pub adc_modes: [u8; 10],       // 116..126: Input modes for the 10 auxiliary analog channels
+    pub stick_mode: u8,            // 126 (0: Mode 1, 1: Mode 2, 2: Mode 3, 3: Mode 4)
+    pub _reserved_telem: [u8; 4],  // 127..131: Reserved (previously global telem_slots, now per-model)
+    pub trainer_config: u8,        // 131: Bit 0: PPM Out on PF10, Bit 1: PPM In on PF9
+    pub rear_left_func: u8,        // 132: 0: RC Switch (SWE), 1: Timer Reset, 2: Trims Modifier
+    pub rear_right_func: u8,       // 133: 0: RC Switch (SWF), 1: Instant Trim, 2: Trims Modifier
+    pub touch_disabled: u8,        // 134: 0: Touch Enabled, 1: Touch Disabled
+    pub j4_sg_sh_en: u8,           // 135: 0: SWD Debug, 1: SG/SH Buttons on PA13/PA14
+    pub switch_beep: u8,           // 136: 0: Muted, 1: Beep on switch toggle
+    pub gimbal_type: u8,           // 137: 0: Standard Potentiometer, 1: Hall Effect
+    pub stick_invert_mask: u8,     // 138: 4 bits (bit 0: RH, bit 1: RV, bit 2: LV, bit 3: LH)
+    pub _pad_align: [u8; 1],       // 139..140: Align to 140 bytes
+}
+
+const _: () = assert!(core::mem::size_of::<LegacyRadioConfig140>() == 140);
+
+pub fn unpack_legacy_radio_140(v1: &LegacyRadioConfig140) -> RadioConfig {
+    let mut v2 = RadioConfig::default_factory();
+    v2.magic = v1.magic;
+    v2.version = v1.version;
+    v2.active_model = v1.active_model;
+    v2.throttle_trim = v1.throttle_trim;
+    v2.audio_enabled = v1.audio_enabled;
+    v2.backlight_timeout = v1.backlight_timeout;
+    v2.backlight_brightness = v1.backlight_brightness;
+    v2.vbat_warn_deci = v1.vbat_warn_deci;
+    v2.lcd_contrast = v1.lcd_contrast;
+    v2.usb_mode = v1.usb_mode;
+    v2.sticks = v1.sticks;
+    for i in 0..10 {
+        v2.aux_pots[i] = v1.aux_pots[i];
+    }
+    // 11th pot (VRG) keeps default_factory() calibration
+    v2.ext_module_pwr = v1.ext_module_pwr;
+    v2.tone_style = v1.tone_style;
+    v2.servo_rate_hz = v1.servo_rate_hz;
+    v2.rx_out_mode = v1.rx_out_mode;
+    v2.rx_serial_proto = v1.rx_serial_proto;
+    v2.ext_switches = v1.ext_switches;
+    v2.ext_adc = v1.ext_adc;
+    for i in 0..10 {
+        v2.adc_modes[i] = v1.adc_modes[i];
+    }
+    v2.stick_mode = v1.stick_mode;
+    v2._reserved_telem = v1._reserved_telem;
+    v2.trainer_config = v1.trainer_config;
+    v2.rear_left_func = v1.rear_left_func;
+    v2.rear_right_func = v1.rear_right_func;
+    v2.touch_disabled = v1.touch_disabled;
+    v2.j4_sg_sh_en = v1.j4_sg_sh_en;
+    v2.switch_beep = v1.switch_beep;
+    v2.gimbal_type = v1.gimbal_type;
+    v2.stick_invert_mask = v1.stick_invert_mask;
+    v2
+}
+
+/// Legacy ModelConfig from solo FS-i6X v0.27.0 (368 bytes, with i6X-specific field order).
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct LegacyModelConfigI6x368 {
+    pub name: [u8; 10],
+    pub model_type: u8,
+    pub _pad0: u8,
+    pub rx_id: u32,
+    pub trims: [i8; 4],
+    pub channel_reverse: u32,
+    pub dr_switch: u8,
+    pub thr_curve_pts: u8,
+    pub thr_curve_smooth: u8,
+    pub thr_curve: [u8; 17],
+    pub _pad_crv: u8,
+    pub dr_high: [u8; 3],
+    pub dr_low: [u8; 3],
+    pub expo_high: [i8; 3],
+    pub expo_low: [i8; 3],
+    pub _pad1: u8,
+    pub timer_secs: u16,
+    pub timer_source: u8,
+    pub rf_power: u8,
+    pub failsafe_thr: u16,
+    pub aux_channels: [u8; 14],
+    pub wing_tail_mix: u8,
+    pub template_diff: i8,
+    pub mixes: [MixLine; NUM_MIX_LINES],
+    pub failsafe_mode: u8,
+    pub failsafe_timeout: u8,
+    pub rf_protocol: u8,
+    pub crsf_baud: u8,
+    pub arm_switch: u8,
+    pub rx_out_mode: u8,
+    pub servo_rate_hz: u16,
+    pub rx_serial_proto: u8,
+    pub crsf_half_duplex: u8,
+    pub crsf_arm_mode: u8,
+    pub _pad_end: [u8; 1],
+    pub gvars: [i16; 5],
+    pub vario_switch: u8,
+    pub vario_climb_deadband: u8,
+    pub vario_sink_deadband: u8,
+    pub vario_sink_mode: u8,
+    pub vario_motor_mute: u8,
+    pub _pad_vario: [u8; 1],
+    pub telem_slots: [u8; 4],
+}
+
+const _: () = assert!(core::mem::size_of::<LegacyModelConfigI6x368>() == 368);
+
+pub fn unpack_legacy_i6x_368_model(src: &LegacyModelConfigI6x368) -> ModelConfig {
+    let mut dst = ModelConfig::default_for_index(0);
+    dst.name = src.name;
+    dst.model_type = src.model_type;
+    dst.rx_id = src.rx_id;
+    dst.trims = src.trims;
+    dst.channel_reverse = src.channel_reverse;
+    dst.dr_switch = src.dr_switch;
+    dst.thr_curve_pts = src.thr_curve_pts;
+    dst.thr_curve_smooth = src.thr_curve_smooth;
+    dst.thr_curve = src.thr_curve;
+    dst.dr_high = src.dr_high;
+    dst.dr_low = src.dr_low;
+    dst.expo_high = src.expo_high;
+    dst.expo_low = src.expo_low;
+    dst.timer_secs = src.timer_secs;
+    dst.timer_source = src.timer_source;
+    dst.rf_power = src.rf_power;
+    dst.failsafe_thr = src.failsafe_thr;
+    dst.aux_channels = src.aux_channels;
+    dst.wing_tail_mix = src.wing_tail_mix;
+    dst.template_diff = src.template_diff;
+    dst.mixes = src.mixes;
+    dst.failsafe_mode = src.failsafe_mode;
+    dst.failsafe_timeout = src.failsafe_timeout;
+    dst.rf_protocol = src.rf_protocol;
+    dst.crsf_baud = src.crsf_baud;
+    dst.arm_switch = src.arm_switch;
+    dst.rx_out_mode = src.rx_out_mode;
+    dst.servo_rate_hz = src.servo_rate_hz;
+    dst.rx_serial_proto = src.rx_serial_proto;
+    dst.crsf_half_duplex = src.crsf_half_duplex;
+    dst.crsf_arm_mode = src.crsf_arm_mode;
+    dst.gvars = src.gvars;
+    dst.vario_switch = src.vario_switch;
+    dst.vario_climb_deadband = src.vario_climb_deadband;
+    dst.vario_sink_deadband = src.vario_sink_deadband;
+    dst.vario_sink_mode = src.vario_sink_mode;
+    dst.vario_motor_mute = src.vario_motor_mute;
+    dst.telem_slots = src.telem_slots;
+    dst
+}
+
 /// Legacy ModelConfig v1 (128 bytes) from prior releases.
 /// Used for transparent, lossless migration to v2 (348 bytes).
 #[repr(C)]
@@ -1625,6 +1799,35 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
 
         let expected_size = core::mem::size_of::<T>();
 
+        // Check if this is a RadioConfig request and the slot holds legacy v1 (140 bytes from i6X)
+        if expected_size == core::mem::size_of::<RadioConfig>()
+            && hdr.len == 140
+            && hdr.magic == SLOT_MAGIC
+            && hdr.flags == 0
+        {
+            let mut v1 = core::mem::MaybeUninit::<LegacyRadioConfig140>::uninit();
+            let v1_bytes =
+                unsafe { core::slice::from_raw_parts_mut(v1.as_mut_ptr() as *mut u8, 140) };
+            EepromI2c::read(addr + HEADER_SIZE as u16, v1_bytes)?;
+
+            let computed_crc = crc16(v1_bytes);
+            if computed_crc != hdr.crc16 {
+                return Err(StorageError::CrcMismatch);
+            }
+
+            let legacy_radio = unsafe { v1.assume_init() };
+            let v2_radio = unpack_legacy_radio_140(&legacy_radio);
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    &v2_radio as *const RadioConfig as *const T,
+                    dst as *mut T,
+                    1,
+                );
+            }
+            let _ = save_slot(addr, &v2_radio);
+            return Ok(());
+        }
+
         // Check if this is a ModelConfig request and the slot holds legacy v1 (128 bytes)
         if expected_size == core::mem::size_of::<ModelConfig>()
             && hdr.len == 128
@@ -1653,7 +1856,7 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                 );
             }
 
-            // In-place upgrade: re-save slot as v2 (368 bytes) with updated CRC-16 envelope
+            // In-place upgrade: re-save slot as v2 (392 bytes) with updated CRC-16 envelope
             let _ = save_slot(addr, &v2_model);
 
             return Ok(());
@@ -1672,8 +1875,17 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
             if computed_crc != hdr.crc16 {
                 return Err(StorageError::CrcMismatch);
             }
-            let mut model =
-                unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) };
+
+            let mut model = if hdr.len == 368 && !crate::board::ActiveBoard::HAS_TOUCH {
+                // Solo FS-i6X v0.27.0 368-byte format (reordered vario vs crsf/gvars)
+                let legacy_i6x = unsafe {
+                    core::ptr::read_unaligned(buf.as_ptr() as *const LegacyModelConfigI6x368)
+                };
+                unpack_legacy_i6x_368_model(&legacy_i6x)
+            } else {
+                unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) }
+            };
+
             if hdr.len <= 364 {
                 model.telem_slots = [0, 1, 2, 3];
             }
@@ -1782,7 +1994,12 @@ pub fn peek_model_name(slot_idx: usize) -> Option<[u8; 10]> {
         if hdr.magic != SLOT_MAGIC || hdr.flags != 0 {
             return None;
         }
-        if hdr.len != (core::mem::size_of::<ModelConfig>() as u16) && hdr.len != 128 {
+        if hdr.len != (core::mem::size_of::<ModelConfig>() as u16)
+            && hdr.len != 128
+            && hdr.len != 348
+            && hdr.len != 364
+            && hdr.len != 368
+        {
             return None;
         }
 
@@ -2357,5 +2574,118 @@ mod tests {
         for ws in 37..=41 {
             assert!(storage.is_weight_src_available(ws));
         }
+    }
+
+    #[test]
+    fn test_legacy_radio_140_migration() {
+        let legacy140 = LegacyRadioConfig140 {
+            magic: FLASH_MAGIC,
+            version: CONFIG_VERSION,
+            active_model: 2,
+            throttle_trim: 1,
+            audio_enabled: 1,
+            backlight_timeout: 2,
+            backlight_brightness: 8,
+            vbat_warn_deci: 46,
+            lcd_contrast: 40,
+            usb_mode: 1,
+            sticks: [ChannelCalib::new(100, 2048, 3900); 4],
+            aux_pots: [PotCalib::new(200, 2000, 3800); 10],
+            ext_module_pwr: 1,
+            tone_style: 1,
+            servo_rate_hz: 100,
+            rx_out_mode: 1,
+            rx_serial_proto: 1,
+            ext_switches: 1,
+            ext_adc: 1,
+            adc_modes: [2; 10],
+            stick_mode: 2,
+            _reserved_telem: [1, 2, 3, 4],
+            trainer_config: 3,
+            rear_left_func: 1,
+            rear_right_func: 2,
+            touch_disabled: 0,
+            j4_sg_sh_en: 1,
+            switch_beep: 1,
+            gimbal_type: 1,
+            stick_invert_mask: 0x05,
+            _pad_align: [0; 1],
+        };
+        let v2 = unpack_legacy_radio_140(&legacy140);
+        assert_eq!(v2.active_model, 2);
+        assert_eq!(v2.throttle_trim, 1);
+        assert_eq!(v2.vbat_warn_deci, 46);
+        assert_eq!(v2.sticks[0].center, 2048);
+        assert_eq!(v2.aux_pots[9].center, 2000);
+        assert_eq!(v2.aux_pots[10].center, crate::adc::ADC_CENTER); // 11th pot gets default
+        assert_eq!(v2.ext_module_pwr, 1);
+        assert_eq!(v2.ext_switches, 1);
+        assert_eq!(v2.adc_modes[0], 2);
+        assert_eq!(v2.adc_modes[10], 0);
+        assert_eq!(v2.gimbal_type, 1);
+        assert_eq!(v2.stick_invert_mask, 0x05);
+    }
+
+    #[test]
+    fn test_legacy_i6x_368_model_migration() {
+        let legacy_i6x = LegacyModelConfigI6x368 {
+            name: *b"I6X MIGRAT",
+            model_type: 3,
+            _pad0: 0,
+            rx_id: 0xAABB_CCDD,
+            trims: [1, -2, 3, -4],
+            channel_reverse: 0x0A,
+            dr_switch: 3,
+            thr_curve_pts: 7,
+            thr_curve_smooth: 1,
+            thr_curve: [0, 15, 30, 50, 70, 85, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            _pad_crv: 0,
+            dr_high: [100, 100, 100],
+            dr_low: [70, 70, 70],
+            expo_high: [30, 30, 30],
+            expo_low: [0, 0, 0],
+            _pad1: 0,
+            timer_secs: 600,
+            timer_source: 1,
+            rf_power: 0,
+            failsafe_thr: 1000,
+            aux_channels: [7, 8, 5, 6, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0],
+            wing_tail_mix: 0,
+            template_diff: 0,
+            mixes: [MixLine::disabled(); NUM_MIX_LINES],
+            failsafe_mode: 0,
+            failsafe_timeout: 20,
+            rf_protocol: 1,
+            crsf_baud: 2,
+            arm_switch: 2,
+            rx_out_mode: 0,
+            servo_rate_hz: 50,
+            rx_serial_proto: 0,
+            crsf_half_duplex: 0,
+            crsf_arm_mode: 1,
+            _pad_end: [0; 1],
+            gvars: [100, -200, 300, -400, 500],
+            vario_switch: 4,
+            vario_climb_deadband: 3,
+            vario_sink_deadband: 6,
+            vario_sink_mode: 2,
+            vario_motor_mute: 1,
+            _pad_vario: [0; 1],
+            telem_slots: [1, 2, 3, 4],
+        };
+        let v2 = unpack_legacy_i6x_368_model(&legacy_i6x);
+        assert_eq!(&v2.name, b"I6X MIGRAT");
+        assert_eq!(v2.rx_id, 0xAABB_CCDD);
+        assert_eq!(v2.crsf_arm_mode, 1);
+        assert_eq!(v2.gvars, [100, -200, 300, -400, 500]);
+        assert_eq!(v2.vario_switch, 4);
+        assert_eq!(v2.vario_climb_deadband, 3);
+        assert_eq!(v2.vario_sink_deadband, 6);
+        assert_eq!(v2.vario_sink_mode, 2);
+        assert_eq!(v2.vario_motor_mute, 1);
+        assert_eq!(v2.telem_slots, [1, 2, 3, 4]);
+        assert_eq!(v2.timer1_stop_src, 0);
+        assert_eq!(v2.timer1_reset_src, 0);
+        assert_eq!(v2.freeform_ch1_4, [0; 4]);
     }
 }
