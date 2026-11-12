@@ -44,6 +44,18 @@ pub struct TripleBuffer<T: Copy> {
 
 unsafe impl<T: Copy + Send> Sync for TripleBuffer<T> {}
 
+#[inline(always)]
+fn critical_section<R>(f: impl FnOnce() -> R) -> R {
+    #[cfg(target_arch = "arm")]
+    {
+        cortex_m::interrupt::free(|_| f())
+    }
+    #[cfg(not(target_arch = "arm"))]
+    {
+        f()
+    }
+}
+
 impl<T: Copy> TripleBuffer<T> {
     pub const fn new(initial: T) -> Self {
         Self {
@@ -80,19 +92,20 @@ impl<T: Copy> TripleBuffer<T> {
     }
 
     /// Read the latest available data using an external/thread-local reading index.
-    /// Eliminates shared reader state race conditions when the consumer can be preempted by the writer.
     #[inline(always)]
     pub fn read_local(&self, local_reading_idx: &mut u8) -> T {
-        let published_val = self.published.load(Ordering::Acquire);
-        let read_idx = if (published_val & 0x80) != 0 {
-            let idx = published_val & 0x03;
-            self.reading_idx.store(idx, Ordering::Release);
-            self.published.store(idx, Ordering::Relaxed);
-            *local_reading_idx = idx;
-            idx
-        } else {
-            *local_reading_idx
-        };
+        let read_idx = critical_section(|| {
+            let published_val = self.published.load(Ordering::Acquire);
+            if (published_val & 0x80) != 0 {
+                let idx = published_val & 0x03;
+                self.reading_idx.store(idx, Ordering::Release);
+                self.published.store(idx, Ordering::Relaxed);
+                *local_reading_idx = idx;
+                idx
+            } else {
+                *local_reading_idx
+            }
+        });
 
         // Safety: `read_idx` is distinct from writer target slot.
         unsafe {
@@ -105,18 +118,20 @@ impl<T: Copy> TripleBuffer<T> {
     /// Called by the consumer (single reader, e.g. ISR).
     #[inline(always)]
     pub fn read(&self) -> T {
-        // Check if a new buffer was published since last read
-        let published_val = self.published.load(Ordering::Acquire);
-        let read_idx = if (published_val & 0x80) != 0 {
-            // Clear dirty bit so we know it has been consumed
-            let idx = published_val & 0x03;
-            self.reading_idx.store(idx, Ordering::Release);
-            self.published.store(idx, Ordering::Relaxed);
-            idx
-        } else {
-            // No new data: continue reading from current slot
-            self.reading_idx.load(Ordering::Relaxed) & 0x03
-        };
+        let read_idx = critical_section(|| {
+            // Check if a new buffer was published since last read
+            let published_val = self.published.load(Ordering::Acquire);
+            if (published_val & 0x80) != 0 {
+                // Clear dirty bit so we know it has been consumed
+                let idx = published_val & 0x03;
+                self.reading_idx.store(idx, Ordering::Release);
+                self.published.store(idx, Ordering::Relaxed);
+                idx
+            } else {
+                // No new data: continue reading from current slot
+                self.reading_idx.load(Ordering::Relaxed) & 0x03
+            }
+        });
 
         // Safety: `read_idx` is distinct from the writer's current write target slot.
         unsafe {
@@ -213,7 +228,7 @@ pub fn set_channels(channels: &[u16; NUM_CHANNELS]) {
 
 #[inline]
 fn with_driver<T, F: FnOnce(&afhds2a::Afhds2a) -> T>(f: F) -> Option<T> {
-    cortex_m::interrupt::free(|_| {
+    critical_section(|| {
         let driver = unsafe { &*RF_DRIVER.0.get() };
         driver.as_ref().map(f)
     })
@@ -221,7 +236,7 @@ fn with_driver<T, F: FnOnce(&afhds2a::Afhds2a) -> T>(f: F) -> Option<T> {
 
 #[inline]
 fn with_driver_mut<T, F: FnOnce(&mut afhds2a::Afhds2a) -> T>(f: F) -> Option<T> {
-    cortex_m::interrupt::free(|_| {
+    critical_section(|| {
         let driver = unsafe { &mut *RF_DRIVER.0.get() };
         driver.as_mut().map(f)
     })
@@ -318,23 +333,27 @@ pub fn on_timer_tick() {
         }
     }
 
-    let driver = unsafe { &mut *RF_DRIVER.0.get() };
-    if let Some(ref mut d) = driver {
-        let chs = CHANNEL_BUFFER.read();
-        d.set_channels(&chs);
-        d.on_timer_tick();
-    }
+    critical_section(|| {
+        let driver = unsafe { &mut *RF_DRIVER.0.get() };
+        if let Some(ref mut d) = driver {
+            let chs = CHANNEL_BUFFER.read();
+            d.set_channels(&chs);
+            d.on_timer_tick();
+        }
+    });
 }
 
 /// Transceiver GIO2 event handler: Triggers when A7105 GIO2 transitions LOW
 /// (indicating TX packet finished or RX packet received).
 pub fn on_gio2_event() {
-    let driver = unsafe { &mut *RF_DRIVER.0.get() };
-    if let Some(ref mut d) = driver {
-        d.on_gio2_event();
-        // Publish updated telemetry to triple buffer lock-free
-        TELEMETRY_BUFFER.write(&d.telemetry);
-    }
+    critical_section(|| {
+        let driver = unsafe { &mut *RF_DRIVER.0.get() };
+        if let Some(ref mut d) = driver {
+            d.on_gio2_event();
+            // Publish updated telemetry to triple buffer lock-free
+            TELEMETRY_BUFFER.write(&d.telemetry);
+        }
+    });
 }
 
 #[cfg(test)]

@@ -388,9 +388,9 @@ pub fn parse_telemetry_frame(frame: &[u8], telem: &mut CrsfTelemetry, now_ms: u3
         CRSF_FRAMETYPE_BATTERY_SENSOR if payload.len() >= 8 => {
             // Voltage in 0.1V units (big endian)
             let v_deci = u16::from_be_bytes([payload[0], payload[1]]);
-            telem.rx_battery_mv = v_deci * 100;
+            telem.rx_battery_mv = v_deci.saturating_mul(100);
             let c_deci = u16::from_be_bytes([payload[2], payload[3]]);
-            telem.rx_current_ma = c_deci * 100;
+            telem.rx_current_ma = c_deci.saturating_mul(100);
             let cap =
                 ((payload[4] as u32) << 16) | ((payload[5] as u32) << 8) | (payload[6] as u32);
             telem.rx_capacity_mah = cap;
@@ -611,6 +611,9 @@ pub fn device_role_str(addr: u8) -> Option<&'static str> {
 /// Build a Device Ping frame (0x28) to discover connected CRSF/ELRS modules.
 /// Wire frame format per TBS spec: [Sync (0xC8)] [Len (4)] [Type (0x28)] [Dest (0x00)] [Orig (0xEA)] [CRC]
 pub fn build_ping_frame(out_frame: &mut [u8]) -> usize {
+    if out_frame.len() < 6 {
+        return 0;
+    }
     out_frame[0] = CRSF_SYNC_BYTE;
     out_frame[1] = 4; // Type (1) + Payload (2) + CRC (1)
     out_frame[2] = CRSF_FRAMETYPE_DEVICE_PING;
@@ -629,6 +632,9 @@ pub fn build_param_ext_frame(
     val_or_chunk: u8,
     out_frame: &mut [u8],
 ) -> usize {
+    if out_frame.len() < 8 {
+        return 0;
+    }
     out_frame[0] = CRSF_SYNC_BYTE;
     out_frame[1] = 6; // Type (1) + Dest (1) + Orig (1) + Param (1) + Value/Chunk (1) + CRC (1) = 6
     out_frame[2] = frame_type;
@@ -671,6 +677,10 @@ pub fn build_param_write_frame_multi(
     payload: &[u8],
     out_frame: &mut [u8],
 ) -> usize {
+    let total_len = 7 + payload.len();
+    if out_frame.len() < total_len || payload.len() > 57 {
+        return 0;
+    }
     out_frame[0] = CRSF_SYNC_BYTE;
     out_frame[1] = (5 + payload.len()) as u8; // Type (1) + Dest (1) + Orig (1) + Param (1) + Payload (len) + CRC (1)
     out_frame[2] = CRSF_FRAMETYPE_PARAMETER_WRITE;
@@ -680,7 +690,7 @@ pub fn build_param_write_frame_multi(
     let end = 6 + payload.len();
     out_frame[6..end].copy_from_slice(payload);
     out_frame[end] = crc8(&out_frame[2..end]);
-    end + 1
+    total_len
 }
 
 #[cfg(test)]
@@ -1245,5 +1255,16 @@ mod tests {
         frame_fm[6] = crc8(&frame_fm[2..6]);
         assert!(parse_telemetry_frame(&frame_fm, &mut telem, 6500));
         assert_eq!(&telem.flight_mode[..3], b"AIR");
+    }
+
+    #[test]
+    fn test_frame_builders_short_buffers() {
+        let mut short = [0u8; 4];
+        assert_eq!(build_ping_frame(&mut short), 0);
+        assert_eq!(build_param_ext_frame(0xEC, 0x2C, 1, 0, &mut short), 0);
+        assert_eq!(
+            build_param_write_frame_multi(0xEC, 1, &[1, 2, 3, 4], &mut short),
+            0
+        );
     }
 }

@@ -139,9 +139,11 @@ unsafe fn send_param_write(target: u8, param_id: u8, val: u8) {
 
 #[inline]
 unsafe fn send_param_write_buf(target: u8, param_id: u8, payload: &[u8]) {
-    let mut buf = [0u8; 16];
+    let mut buf = [0u8; 64];
     let len = protocol::build_param_write_frame_multi(target, param_id, payload, &mut buf);
-    uart::write_bytes(&buf[..len]);
+    if len > 0 {
+        uart::write_bytes(&buf[..len]);
+    }
 }
 
 /// Extract null-terminated string from `data` starting at `offset` into `dest`,
@@ -447,8 +449,8 @@ pub fn next_param_for_folder(
     parent_map: &[u8; MAX_PARAM_MAP],
     has_root_folder: bool,
 ) -> Option<u8> {
-    let mut id = current_id + 1;
-    while id <= param_count {
+    let mut id = current_id.saturating_add(1);
+    while id <= param_count && id < 255 {
         let parent = if (id as usize) < MAX_PARAM_MAP {
             parent_map[id as usize]
         } else {
@@ -830,12 +832,13 @@ unsafe fn parse_and_store_parameter(chunk: &[u8], param_id: u8, now_ms: u32) {
                 for p in &mut CONFIG_ENGINE.params[..CONFIG_ENGINE.params_len] {
                     if p.id == param_id {
                         let offset = p.options_offset as usize;
-                        if offset + opt_slice_len <= CONFIG_ENGINE.string_pool.len() {
-                            CONFIG_ENGINE.string_pool[offset..offset + opt_slice_len]
-                                .copy_from_slice(
-                                    &chunk[opt_slice_start..opt_slice_start + opt_slice_len],
-                                );
-                            p.options_len = opt_slice_len as u8;
+                        let max_len = p.options_len as usize;
+                        let copy_len = opt_slice_len.min(max_len);
+                        if copy_len > 0 && offset + copy_len <= CONFIG_ENGINE.string_pool.len() {
+                            CONFIG_ENGINE.string_pool[offset..offset + copy_len].copy_from_slice(
+                                &chunk[opt_slice_start..opt_slice_start + copy_len],
+                            );
+                            p.options_len = copy_len as u8;
                         }
                         break;
                     }
@@ -1412,7 +1415,7 @@ pub fn cycle_param(param_idx: usize) {
     unsafe {
         if param_idx < CONFIG_ENGINE.params_len {
             let p = &mut CONFIG_ENGINE.params[param_idx];
-            if p.param_type == protocol::CRSF_TYPE_SELECT && p.max_value > 0 {
+            if p.clean_type() == protocol::CRSF_TYPE_SELECT && p.max_value > 0 {
                 p.value = (p.value + 1) % (p.max_value + 1);
                 send_param_write(CONFIG_ENGINE.device_id, p.id, p.value as u8);
             }
@@ -1425,7 +1428,7 @@ pub fn trigger_command(param_idx: usize) {
     unsafe {
         if param_idx < CONFIG_ENGINE.params_len {
             let p = &mut CONFIG_ENGINE.params[param_idx];
-            if p.param_type == protocol::CRSF_TYPE_COMMAND
+            if p.clean_type() == protocol::CRSF_TYPE_COMMAND
                 && (CONFIG_ENGINE.active_cmd == ActiveCommandState::Idle
                     || matches!(
                         CONFIG_ENGINE.active_cmd,

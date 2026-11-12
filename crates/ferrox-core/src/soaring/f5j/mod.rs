@@ -265,7 +265,11 @@ impl F5jEngine {
                     if motor_sec != self.last_motor_sec {
                         self.last_motor_sec = motor_sec;
                         if audio_en {
-                            if motor_sec == 5 || motor_sec == 10 || motor_sec == 15 || motor_sec == 20 {
+                            if motor_sec == 5
+                                || motor_sec == 10
+                                || motor_sec == 15
+                                || motor_sec == 20
+                            {
                                 buzzer.play_tone(1800, 60);
                             } else if (21..=29).contains(&motor_sec) {
                                 buzzer.timer_countdown_beep();
@@ -308,7 +312,8 @@ impl F5jEngine {
                         self.last_land_check_ms = now_ms;
                         let land_max_dm = (cfg.land_alt_max_m as i16).saturating_mul(10);
                         let is_on_ground = self.rel_alt_dm <= land_max_dm;
-                        let is_constant = (self.rel_alt_dm - self.last_land_alt_dm).abs() <= 2; // <= 0.2m
+                        let is_constant =
+                            (self.rel_alt_dm as i32 - self.last_land_alt_dm as i32).abs() <= 2; // <= 0.2m
 
                         if is_on_ground && is_constant {
                             if self.ground_counter == 0 {

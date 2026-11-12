@@ -141,11 +141,11 @@ impl AdcInputMode {
         }
         // Default hardware mapping:
         match channel_idx {
-            0 => Self::TwoPos,               // SA (2-pos stock)
+            0 => Self::TwoPos,                               // SA (2-pos stock)
             1 => crate::board::ActiveBoard::DEFAULT_SB_MODE, // SB (2-pos stock on i6X, 3-pos stock on i6S)
-            2 => Self::ThreePos,             // SC (3-pos stock)
-            3 => Self::TwoPos,               // SD (2-pos stock)
-            _ => Self::Pot,                  // VRA..VRG (Pots stock)
+            2 => Self::ThreePos,                             // SC (3-pos stock)
+            3 => Self::TwoPos,                               // SD (2-pos stock)
+            _ => Self::Pot,                                  // VRA..VRG (Pots stock)
         }
     }
 }
@@ -456,23 +456,23 @@ impl MixLine {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ModelConfig {
-    pub name: [u8; 10],                  // 0..10: 10-char ASCII name
-    pub model_type: u8,                  // 10: 0: Airplane, 1: Glider, 2: Heli, 3: Quad, 4: General
-    pub _pad0: u8,                       // 11: align rx_id to 4 bytes
-    pub rx_id: u32,                      // 12..16: Model Match bound receiver ID
-    pub trims: [i8; 4],                  // 16..20: Roll, Pitch, Throttle, Yaw (-25..+25)
-    pub channel_reverse: u32,            // 20..24: Bitmask for CH1..CH18 inversion
-    pub dr_switch: u8,                   // 24: 0: None, 1: SA, 2: SB, 3: SC, 4: SD, 5: SE, 6: SF
-    pub thr_curve_pts: u8,               // 25: 5, 7, or 9 points mode
-    pub thr_curve_smooth: u8,            // 26: 0: Linear, 1: Spline / Smooth
-    pub thr_curve: [u8; 17],             // 27..44: Points buffer (0..100%, reserved up to 17)
-    pub _pad_crv: u8,                    // 44..45
-    pub dr_high: [u8; 3],                // 45..48: High rate (AIL, ELE, RUD: 50..100%)
-    pub dr_low: [u8; 3],                 // 48..51: Low rate (AIL, ELE, RUD: 30..100%)
-    pub expo_high: [i8; 3],              // 51..54: High expo (-100..+100%)
-    pub expo_low: [i8; 3],               // 54..57: Low expo (-100..+100%)
-    pub _pad1: u8,                       // 57..58: align timer_secs to 2-byte boundary
-    pub timer_secs: u16,                 // 58..60: Countdown timer in seconds (e.g. 300 = 5 min)
+    pub name: [u8; 10],                             // 0..10: 10-char ASCII name
+    pub model_type: u8, // 10: 0: Airplane, 1: Glider, 2: Heli, 3: Quad, 4: General
+    pub _pad0: u8,      // 11: align rx_id to 4 bytes
+    pub rx_id: u32,     // 12..16: Model Match bound receiver ID
+    pub trims: [i8; 4], // 16..20: Roll, Pitch, Throttle, Yaw (-25..+25)
+    pub channel_reverse: u32, // 20..24: Bitmask for CH1..CH18 inversion
+    pub dr_switch: u8,  // 24: 0: None, 1: SA, 2: SB, 3: SC, 4: SD, 5: SE, 6: SF
+    pub thr_curve_pts: u8, // 25: 5, 7, or 9 points mode
+    pub thr_curve_smooth: u8, // 26: 0: Linear, 1: Spline / Smooth
+    pub thr_curve: [u8; 17], // 27..44: Points buffer (0..100%, reserved up to 17)
+    pub _pad_crv: u8,   // 44..45
+    pub dr_high: [u8; 3], // 45..48: High rate (AIL, ELE, RUD: 50..100%)
+    pub dr_low: [u8; 3], // 48..51: Low rate (AIL, ELE, RUD: 30..100%)
+    pub expo_high: [i8; 3], // 51..54: High expo (-100..+100%)
+    pub expo_low: [i8; 3], // 54..57: Low expo (-100..+100%)
+    pub _pad1: u8,      // 57..58: align timer_secs to 2-byte boundary
+    pub timer_secs: u16, // 58..60: Countdown timer in seconds (e.g. 300 = 5 min)
     pub timer_source: u8, // 60: 0: Off, 1: THs (Thr>5%), 2: THt (Thr Latched), 3: Always On, 4..17: SA^..SFv
     pub rf_power: u8,     // 61: AFHDS 2A RF power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
     pub failsafe_thr: u16, // 62..64: Failsafe throttle pulse in µs (e.g. 1000)
@@ -500,7 +500,7 @@ pub struct ModelConfig {
     pub dsm_sub_proto: u8, // 366: Spektrum DSM sub-protocol (0: DSMX-11, 1: DSMX-22, 2: DSM2-11, 3: DSM2-22)
     pub timer1_stop_src: u8, // 367: Timer 1 Stop switch (0: None, 1..=28: switch conditions)
     pub timer1_reset_src: u8, // 368: Timer 1 Reset switch (0: None, 1..=28: switch conditions)
-    pub timer1_flags: u8, // 369: Timer 1 bitflags (bit 0: latch, bit 1: arm reset, bit 2: audio)
+    pub timer1_flags: u8,  // 369: Timer 1 bitflags (bit 0: latch, bit 1: arm reset, bit 2: audio)
     pub timers_ext: [crate::timer::TimerConfig; 3], // 370..388: Independent Timer 2, 3, 4 configs (3 * 6 = 18 bytes)
     pub freeform_ch1_4: [u8; 4], // 388..392: Direct source assignments for CH1..CH4 in Freeform mode
     pub soaring: crate::soaring::SoaringConfig, // 392..416: F5J / F3K Soaring competition & glider config (Total: 416 bytes)
@@ -742,93 +742,70 @@ impl RadioStorage {
     }
 
     /// Find the next available mix source index, wrapping around.
-    pub fn next_available_source(&self, cur: u8, max_len: usize) -> u8 {
-        let max = max_len as u8;
-        let mut candidate = (cur + 1) % max;
-        while candidate != cur {
-            if self.is_source_available(candidate) {
+    fn next_matching<F>(&self, cur: u8, max_len: usize, pred: F) -> u8
+    where
+        F: Fn(u8) -> bool,
+    {
+        let max = max_len.min(u8::MAX as usize) as u8;
+        if max == 0 {
+            return cur;
+        }
+        let start = if cur < max { cur } else { 0 };
+        for step in 1..=max {
+            let candidate = ((start as u16 + step as u16) % max as u16) as u8;
+            if pred(candidate) {
                 return candidate;
             }
-            candidate = (candidate + 1) % max;
         }
         cur
+    }
+
+    fn prev_matching<F>(&self, cur: u8, max_len: usize, pred: F) -> u8
+    where
+        F: Fn(u8) -> bool,
+    {
+        let max = max_len.min(u8::MAX as usize) as u8;
+        if max == 0 {
+            return cur;
+        }
+        let start = if cur < max { cur } else { 0 };
+        for step in 1..=max {
+            let candidate = ((start as u16 + max as u16 - step as u16) % max as u16) as u8;
+            if pred(candidate) {
+                return candidate;
+            }
+        }
+        cur
+    }
+
+    /// Find the next available mix source index, wrapping around.
+    pub fn next_available_source(&self, cur: u8, max_len: usize) -> u8 {
+        self.next_matching(cur, max_len, |c| self.is_source_available(c))
     }
 
     /// Find the previous available mix source index, wrapping around.
     pub fn prev_available_source(&self, cur: u8, max_len: usize) -> u8 {
-        let max = max_len as u8;
-        let mut candidate = if cur == 0 { max - 1 } else { cur - 1 };
-        while candidate != cur {
-            if self.is_source_available(candidate) {
-                return candidate;
-            }
-            candidate = if candidate == 0 {
-                max - 1
-            } else {
-                candidate - 1
-            };
-        }
-        cur
+        self.prev_matching(cur, max_len, |c| self.is_source_available(c))
     }
 
     /// Find the next available weight modulation source index, wrapping around.
     pub fn next_available_weight_src(&self, cur: u8, max_len: usize) -> u8 {
-        let max = max_len as u8;
-        let mut candidate = (cur + 1) % max;
-        while candidate != cur {
-            if self.is_weight_src_available(candidate) {
-                return candidate;
-            }
-            candidate = (candidate + 1) % max;
-        }
-        cur
+        self.next_matching(cur, max_len, |c| self.is_weight_src_available(c))
     }
 
     /// Find the previous available weight modulation source index, wrapping around.
     pub fn prev_available_weight_src(&self, cur: u8, max_len: usize) -> u8 {
-        let max = max_len as u8;
-        let mut candidate = if cur == 0 { max - 1 } else { cur - 1 };
-        while candidate != cur {
-            if self.is_weight_src_available(candidate) {
-                return candidate;
-            }
-            candidate = if candidate == 0 {
-                max - 1
-            } else {
-                candidate - 1
-            };
-        }
-        cur
+        self.prev_matching(cur, max_len, |c| self.is_weight_src_available(c))
     }
 
     /// Find the next available switch condition index, wrapping around.
     pub fn next_available_switch_cond(&self, cur: u8, max_len: usize) -> u8 {
-        let max = max_len as u8;
-        let mut candidate = (cur + 1) % max;
-        while candidate != cur {
-            if self.is_switch_cond_available(candidate) {
-                return candidate;
-            }
-            candidate = (candidate + 1) % max;
-        }
-        cur
+        self.next_matching(cur, max_len, |c| self.is_switch_cond_available(c))
     }
 
     /// Find the previous available switch condition index, wrapping around.
     pub fn prev_available_switch_cond(&self, cur: u8, max_len: usize) -> u8 {
-        let max = max_len as u8;
-        let mut candidate = if cur == 0 { max - 1 } else { cur - 1 };
-        while candidate != cur {
-            if self.is_switch_cond_available(candidate) {
-                return candidate;
-            }
-            candidate = if candidate == 0 {
-                max - 1
-            } else {
-                candidate - 1
-            };
-        }
-        cur
+        self.prev_matching(cur, max_len, |c| self.is_switch_cond_available(c))
     }
 
     /// Check if a physical switch index (0..6: None, SA..SF) is available for Dual Rate selection.
@@ -1014,37 +991,23 @@ impl RadioStorage {
         cur
     }
 
-    /// Check if a Timer Source (0..=17: 0: Off, 1: THs, 2: THt, 3: Always On, 4..=17: SA^..SFv) is available.
+    /// Check if a Timer Source (0..=31: 0: Off, 1: THs, 2: THt, 3: Always On, 4..=31: SA^..SWMv) is available.
     pub fn is_timer_source_available(&self, ts: u8) -> bool {
         match ts {
             0..=3 => true, // Off, THs, THt, Always On
-            4..=17 => self.is_switch_cond_available(ts - 3),
+            4..=31 => self.is_switch_cond_available(ts - 3),
             _ => false,
         }
     }
 
-    /// Cycle to next available Timer Source (0..=17).
+    /// Cycle to next available Timer Source (0..=31).
     pub fn next_available_timer_source(&self, cur: u8) -> u8 {
-        let mut candidate = (cur + 1) % 18;
-        while candidate != cur {
-            if self.is_timer_source_available(candidate) {
-                return candidate;
-            }
-            candidate = (candidate + 1) % 18;
-        }
-        cur
+        self.next_matching(cur, 32, |c| self.is_timer_source_available(c))
     }
 
-    /// Cycle to previous available Timer Source (0..=17).
+    /// Cycle to previous available Timer Source (0..=31).
     pub fn prev_available_timer_source(&self, cur: u8) -> u8 {
-        let mut candidate = if cur == 0 { 17 } else { cur - 1 };
-        while candidate != cur {
-            if self.is_timer_source_available(candidate) {
-                return candidate;
-            }
-            candidate = if candidate == 0 { 17 } else { candidate - 1 };
-        }
-        cur
+        self.prev_matching(cur, 32, |c| self.is_timer_source_available(c))
     }
 
     /// Sanitize all radio and model parameters to valid operating bounds.
@@ -1197,7 +1160,12 @@ impl RadioStorage {
             m.aux_channels = [7, 8, 5, 6, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0];
         }
         for src in m.aux_channels.iter_mut() {
-            if *src > 40 {
+            if *src > 44 {
+                *src = 0;
+            }
+        }
+        for src in m.freeform_ch1_4.iter_mut() {
+            if *src > 44 {
                 *src = 0;
             }
         }
@@ -1206,7 +1174,7 @@ impl RadioStorage {
                 || mix.source > 49
                 || mix.weight_src > 41
                 || mix.mode > 2
-                || mix.switch > 22
+                || mix.switch > 28
             {
                 *mix = MixLine::disabled();
             }
@@ -1448,8 +1416,6 @@ pub fn get_eeprom_status() -> EepromStatus {
     unsafe { EEPROM_STATUS }
 }
 
-
-
 pub struct EepromI2c;
 
 impl EepromI2c {
@@ -1532,16 +1498,16 @@ pub struct LegacyRadioConfig140 {
     pub ext_adc: u8,               // 115 (0: Disabled, 1: Enabled / Header P7 AD12-AD15 or PC1-PC4)
     pub adc_modes: [u8; 10],       // 116..126: Input modes for the 10 auxiliary analog channels
     pub stick_mode: u8,            // 126 (0: Mode 1, 1: Mode 2, 2: Mode 3, 3: Mode 4)
-    pub _reserved_telem: [u8; 4],  // 127..131: Reserved (previously global telem_slots, now per-model)
-    pub trainer_config: u8,        // 131: Bit 0: PPM Out on PF10, Bit 1: PPM In on PF9
-    pub rear_left_func: u8,        // 132: 0: RC Switch (SWE), 1: Timer Reset, 2: Trims Modifier
-    pub rear_right_func: u8,       // 133: 0: RC Switch (SWF), 1: Instant Trim, 2: Trims Modifier
-    pub touch_disabled: u8,        // 134: 0: Touch Enabled, 1: Touch Disabled
-    pub j4_sg_sh_en: u8,           // 135: 0: SWD Debug, 1: SG/SH Buttons on PA13/PA14
-    pub switch_beep: u8,           // 136: 0: Muted, 1: Beep on switch toggle
-    pub gimbal_type: u8,           // 137: 0: Standard Potentiometer, 1: Hall Effect
-    pub stick_invert_mask: u8,     // 138: 4 bits (bit 0: RH, bit 1: RV, bit 2: LV, bit 3: LH)
-    pub _pad_align: [u8; 1],       // 139..140: Align to 140 bytes
+    pub _reserved_telem: [u8; 4], // 127..131: Reserved (previously global telem_slots, now per-model)
+    pub trainer_config: u8,       // 131: Bit 0: PPM Out on PF10, Bit 1: PPM In on PF9
+    pub rear_left_func: u8,       // 132: 0: RC Switch (SWE), 1: Timer Reset, 2: Trims Modifier
+    pub rear_right_func: u8,      // 133: 0: RC Switch (SWF), 1: Instant Trim, 2: Trims Modifier
+    pub touch_disabled: u8,       // 134: 0: Touch Enabled, 1: Touch Disabled
+    pub j4_sg_sh_en: u8,          // 135: 0: SWD Debug, 1: SG/SH Buttons on PA13/PA14
+    pub switch_beep: u8,          // 136: 0: Muted, 1: Beep on switch toggle
+    pub gimbal_type: u8,          // 137: 0: Standard Potentiometer, 1: Hall Effect
+    pub stick_invert_mask: u8,    // 138: 4 bits (bit 0: RH, bit 1: RV, bit 2: LV, bit 3: LH)
+    pub _pad_align: [u8; 1],      // 139..140: Align to 140 bytes
 }
 
 const _: () = assert!(core::mem::size_of::<LegacyRadioConfig140>() == 140);
@@ -1889,6 +1855,10 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                 unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) }
             };
 
+            if hdr.len <= 348 {
+                model.vario_sink_mode = 1;
+                model.vario_motor_mute = 1;
+            }
             if hdr.len <= 364 {
                 model.telem_slots = [0, 1, 2, 3];
             }
@@ -2158,8 +2128,8 @@ pub fn save_radio_config(storage: &RadioStorage) -> bool {
 
 /// Atomic storage commit: writes active model first, then RadioConfig A/B.
 pub fn save_storage(storage: &RadioStorage) -> bool {
-    let mut ok = save_radio_config(storage);
-    ok = ok && save_active_model(storage);
+    let mut ok = save_active_model(storage);
+    ok = ok && save_radio_config(storage);
     ok
 }
 
@@ -2350,12 +2320,18 @@ mod tests {
         assert_eq!(storage.active_model.vario_motor_mute, 1);
         assert_eq!(storage.active_model.timer1_stop_src, 0);
         assert_eq!(storage.active_model.timer1_reset_src, 0);
-        assert_eq!(storage.active_model.timer1_flags, crate::timer::TimerConfig::FLAG_AUDIO_BEEPS);
+        assert_eq!(
+            storage.active_model.timer1_flags,
+            crate::timer::TimerConfig::FLAG_AUDIO_BEEPS
+        );
         assert_eq!(storage.active_model.timers_ext[0].secs, 0);
         assert_eq!(storage.active_model.timers_ext[0].start_src, 0);
         assert_eq!(storage.active_model.timers_ext[0].stop_src, 0);
         assert_eq!(storage.active_model.timers_ext[0].reset_src, 0);
-        assert_eq!(storage.active_model.timers_ext[0].flags, crate::timer::TimerConfig::FLAG_AUDIO_BEEPS);
+        assert_eq!(
+            storage.active_model.timers_ext[0].flags,
+            crate::timer::TimerConfig::FLAG_AUDIO_BEEPS
+        );
     }
 
     #[test]
@@ -2820,5 +2796,36 @@ mod tests {
         mbr[446 + 4] = 0xEE;
         mbr[446 + 8..446 + 12].copy_from_slice(&1u32.to_le_bytes());
         assert!(SdRawGap::from_mbr(&mbr).is_none());
+    }
+
+    #[test]
+    fn test_next_prev_matching_edge_cases() {
+        let storage = RadioStorage::default_factory();
+        assert_eq!(storage.next_matching(0, 0, |_| true), 0);
+        assert_eq!(storage.prev_matching(0, 0, |_| true), 0);
+        assert_eq!(storage.next_matching(10, 4, |i| i == 2), 2);
+        assert_eq!(storage.prev_matching(10, 4, |i| i == 2), 2);
+        assert_eq!(storage.next_matching(3, 5, |_| false), 3);
+        assert_eq!(storage.prev_matching(2, 5, |_| false), 2);
+    }
+
+    #[test]
+    fn test_sanitize_extended_bounds() {
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.aux_channels[0] = 44;
+        storage.active_model.aux_channels[1] = 45;
+        storage.active_model.freeform_ch1_4[0] = 44;
+        storage.active_model.freeform_ch1_4[1] = 45;
+        storage.active_model.mixes[0].switch = 28;
+        storage.active_model.mixes[1].switch = 29;
+
+        storage.sanitize();
+
+        assert_eq!(storage.active_model.aux_channels[0], 44);
+        assert_eq!(storage.active_model.aux_channels[1], 0);
+        assert_eq!(storage.active_model.freeform_ch1_4[0], 44);
+        assert_eq!(storage.active_model.freeform_ch1_4[1], 0);
+        assert_eq!(storage.active_model.mixes[0].switch, 28);
+        assert_eq!(storage.active_model.mixes[1].switch, 0);
     }
 }

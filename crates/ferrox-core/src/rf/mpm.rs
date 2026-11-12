@@ -7,12 +7,12 @@
 use crate::mixer::NUM_CHANNELS;
 
 /// MULTI-Module Protocol IDs for CC2500 transceivers:
-pub const MPM_PROTO_FRSKY_D: u8 = 3;    // FrSky D8
-pub const MPM_PROTO_FRSKY_X: u8 = 15;   // FrSky D16 / X (FCC & LBT)
-pub const MPM_PROTO_SFHSS: u8 = 21;     // Futaba SFHSS
-pub const MPM_PROTO_FRSKY_V: u8 = 25;   // FrSky V8
-pub const MPM_PROTO_CORONA: u8 = 36;    // Corona
-pub const MPM_PROTO_HITEC: u8 = 39;     // Hitec Optima/Minima
+pub const MPM_PROTO_FRSKY_D: u8 = 3; // FrSky D8
+pub const MPM_PROTO_FRSKY_X: u8 = 15; // FrSky D16 / X (FCC & LBT)
+pub const MPM_PROTO_SFHSS: u8 = 21; // Futaba SFHSS
+pub const MPM_PROTO_FRSKY_V: u8 = 25; // FrSky V8
+pub const MPM_PROTO_CORONA: u8 = 36; // Corona
+pub const MPM_PROTO_HITEC: u8 = 39; // Hitec Optima/Minima
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -105,9 +105,11 @@ pub fn pack_mpm_frame(
     range_check: bool,
     out: &mut [u8; 26],
 ) {
-    out[0] = 0x55;
+    let proto_id = proto.mpm_proto_id();
+    // MULTI-Module protocol uses 0x55 for protocols 0..31 and 0x54 for protocols 32..63 (bit 5).
+    out[0] = if (proto_id & 0x20) != 0 { 0x54 } else { 0x55 };
 
-    let mut b1 = proto.mpm_proto_id() & 0x1F;
+    let mut b1 = proto_id & 0x1F;
     if binding {
         b1 |= 0x80;
     }
@@ -147,7 +149,16 @@ mod tests {
         let chs = [1500u16; NUM_CHANNELS];
         let mut frame = [0u8; 26];
 
-        pack_mpm_frame(&chs, Cc2500Protocol::FrSkyD16, 0, 1, -15, false, false, &mut frame);
+        pack_mpm_frame(
+            &chs,
+            Cc2500Protocol::FrSkyD16,
+            0,
+            1,
+            -15,
+            false,
+            false,
+            &mut frame,
+        );
 
         assert_eq!(frame[0], 0x55);
         assert_eq!(frame[1], MPM_PROTO_FRSKY_X);
@@ -160,9 +171,50 @@ mod tests {
         let chs = [1500u16; NUM_CHANNELS];
         let mut frame = [0u8; 26];
 
-        pack_mpm_frame(&chs, Cc2500Protocol::FrSkyD8, 0, 0, 0, true, true, &mut frame);
+        pack_mpm_frame(
+            &chs,
+            Cc2500Protocol::FrSkyD8,
+            0,
+            0,
+            0,
+            true,
+            true,
+            &mut frame,
+        );
 
         assert_eq!(frame[0], 0x55);
         assert_eq!(frame[1], MPM_PROTO_FRSKY_D | 0x80 | 0x20);
+    }
+
+    #[test]
+    fn test_pack_mpm_frame_extended_proto_id() {
+        let chs = [1500u16; NUM_CHANNELS];
+        let mut frame = [0u8; 26];
+
+        pack_mpm_frame(
+            &chs,
+            Cc2500Protocol::Corona,
+            0,
+            0,
+            0,
+            false,
+            false,
+            &mut frame,
+        );
+        assert_eq!(frame[0], 0x54);
+        assert_eq!(frame[1], MPM_PROTO_CORONA & 0x1F);
+
+        pack_mpm_frame(
+            &chs,
+            Cc2500Protocol::Hitec,
+            0,
+            0,
+            0,
+            false,
+            false,
+            &mut frame,
+        );
+        assert_eq!(frame[0], 0x54);
+        assert_eq!(frame[1], MPM_PROTO_HITEC & 0x1F);
     }
 }

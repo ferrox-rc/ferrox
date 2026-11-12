@@ -160,7 +160,6 @@ impl PowerManager {
                 buzzer.play_tone_pattern(1800, 80, 40, 2);
 
                 // Commit model and radio settings safely to flash
-                storage::save_active_model(storage);
                 storage::save_storage(storage);
 
                 // Turn off power latch

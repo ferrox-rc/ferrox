@@ -88,9 +88,17 @@ pub fn decode_satellite_frame(frame: &[u8; 16], is_11bit: bool, ch_out: &mut [u1
         }
         let word = ((hi as u16) << 8) | (lo as u16);
         let (ch_id, raw_val, max_val) = if is_11bit {
-            (((word >> 11) & 0x0F) as usize, (word & 0x07FF) as u32, 2048u32)
+            (
+                ((word >> 11) & 0x0F) as usize,
+                (word & 0x07FF) as u32,
+                2048u32,
+            )
         } else {
-            (((word >> 10) & 0x0F) as usize, (word & 0x03FF) as u32, 1024u32)
+            (
+                ((word >> 10) & 0x0F) as usize,
+                (word & 0x03FF) as u32,
+                1024u32,
+            )
         };
         if ch_id < 12 {
             ch_out[ch_id] = (988 + (raw_val * 1024) / max_val) as u16;
@@ -132,12 +140,14 @@ impl MultiRxParser {
     pub fn feed_byte(&mut self, b: u8) -> Option<(u8, usize)> {
         match self.state {
             MultiParseState::WaitSync1 => {
-                if b == 0x4D { // 'M'
+                if b == 0x4D {
+                    // 'M'
                     self.state = MultiParseState::WaitSync2;
                 }
             }
             MultiParseState::WaitSync2 => {
-                if b == 0x50 { // 'P'
+                if b == 0x50 {
+                    // 'P'
                     self.state = MultiParseState::HeaderType;
                 } else if b == 0x4D {
                     self.state = MultiParseState::WaitSync2;
@@ -197,6 +207,7 @@ static mut DSM_TELEMETRY: DsmTelemetry = DsmTelemetry {
 };
 static mut DSM_LINK_ENABLED: bool = false;
 static mut LAST_DSM_TX_MS: u32 = 0;
+static mut LAST_DSM_TELEM_MS: u32 = 0;
 static mut DSM_BINDING: bool = false;
 static mut DSM_RANGE_CHECK: bool = false;
 
@@ -219,11 +230,15 @@ pub fn is_enabled() -> bool {
 }
 
 pub fn set_bind_mode(binding: bool) {
-    unsafe { DSM_BINDING = binding; }
+    unsafe {
+        DSM_BINDING = binding;
+    }
 }
 
 pub fn set_range_check(range_check: bool) {
-    unsafe { DSM_RANGE_CHECK = range_check; }
+    unsafe {
+        DSM_RANGE_CHECK = range_check;
+    }
 }
 
 pub fn get_telemetry() -> DsmTelemetry {
@@ -243,7 +258,7 @@ pub fn decode_flight_log(payload: &[u8; 16], telem: &mut DsmTelemetry) {
 
     let volts_raw = u16::from_be_bytes([payload[12], payload[13]]);
     if volts_raw != 0xFFFF {
-        telem.rx_voltage_mv = volts_raw * 10;
+        telem.rx_voltage_mv = volts_raw.saturating_mul(10);
     }
 
     // Compute synthetic link quality percentage based on frame losses and holds
@@ -274,7 +289,13 @@ pub fn update_link(now_ms: u32, channels: &[u16; NUM_CHANNELS], sub_proto: DsmSu
         if now_ms.wrapping_sub(LAST_DSM_TX_MS) >= interval {
             LAST_DSM_TX_MS = now_ms;
             let mut frame = [0u8; 26];
-            pack_multi_dsm_frame(channels, sub_proto, DSM_BINDING, DSM_RANGE_CHECK, &mut frame);
+            pack_multi_dsm_frame(
+                channels,
+                sub_proto,
+                DSM_BINDING,
+                DSM_RANGE_CHECK,
+                &mut frame,
+            );
 
             #[cfg(feature = "dsm-fwd-prog")]
             {
@@ -297,8 +318,11 @@ pub fn update_link(now_ms: u32, channels: &[u16; NUM_CHANNELS], sub_proto: DsmSu
     }
 }
 
+/// Timeout (ms) after which DSM telemetry is considered disconnected.
+const DSM_TELEM_TIMEOUT_MS: u32 = 2000;
+
 /// Poll incoming bytes from UART and parse `MULTI_TELEMETRY` frames.
-pub fn poll_telemetry(_now_ms: u32) {
+pub fn poll_telemetry(now_ms: u32) {
     unsafe {
         if !DSM_LINK_ENABLED {
             return;
@@ -314,16 +338,23 @@ pub fn poll_telemetry(_now_ms: u32) {
 
                     if sensor_id == TELEM_ID_FLIGHT_LOG || sensor_id == 0xFE {
                         decode_flight_log(&telem_buf, &mut DSM_TELEMETRY);
+                        LAST_DSM_TELEM_MS = now_ms;
                     }
                     #[cfg(feature = "dsm-fwd-prog")]
                     {
                         if sensor_id == TELEM_ID_FWD_PROG || sensor_id == TELEM_ID_TEXTGEN {
                             DSM_TELEMETRY.connected = true;
+                            LAST_DSM_TELEM_MS = now_ms;
                             get_config_engine().process_telem_frame(&telem_buf);
                         }
                     }
                 }
             }
+        }
+
+        if DSM_TELEMETRY.connected && now_ms.wrapping_sub(LAST_DSM_TELEM_MS) >= DSM_TELEM_TIMEOUT_MS
+        {
+            DSM_TELEMETRY.connected = false;
         }
     }
 }
@@ -450,7 +481,8 @@ pub mod fwd_prog {
                         self.last_req_ms = now_ms;
                         if self.retry_count < 10 {
                             self.retry_count += 1;
-                            self.tx_pending_cmd = Some([0x09, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+                            self.tx_pending_cmd =
+                                Some([0x09, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
                         }
                     }
                 }
@@ -671,11 +703,16 @@ mod tests {
         let mut payload = [0u8; 16];
         payload[0] = TELEM_ID_FLIGHT_LOG;
         payload[1] = 0x00;
-        payload[2] = 0x00; payload[3] = 0x05; // Fades A = 5
-        payload[4] = 0x00; payload[5] = 0x02; // Fades B = 2
-        payload[8] = 0x00; payload[9] = 0x01; // Frame Losses = 1
-        payload[10] = 0x00; payload[11] = 0x00; // Holds = 0
-        payload[12] = 0x01; payload[13] = 0xF4; // Rx Volts = 500 (5.00V -> 5000 mV)
+        payload[2] = 0x00;
+        payload[3] = 0x05; // Fades A = 5
+        payload[4] = 0x00;
+        payload[5] = 0x02; // Fades B = 2
+        payload[8] = 0x00;
+        payload[9] = 0x01; // Frame Losses = 1
+        payload[10] = 0x00;
+        payload[11] = 0x00; // Holds = 0
+        payload[12] = 0x01;
+        payload[13] = 0xF4; // Rx Volts = 500 (5.00V -> 5000 mV)
 
         let mut res = None;
         for &b in &payload {
@@ -705,8 +742,10 @@ mod tests {
         ack_frame[0] = TELEM_ID_FWD_PROG;
         ack_frame[2] = 0x01;
         ack_frame[3] = 2; // version
-        ack_frame[4] = 0; ack_frame[5] = 10; // menu_id
-        ack_frame[6] = 0; ack_frame[7] = 5;  // parent_menu_id
+        ack_frame[4] = 0;
+        ack_frame[5] = 10; // menu_id
+        ack_frame[6] = 0;
+        ack_frame[7] = 5; // parent_menu_id
         ack_frame[8] = 3; // line_count
         engine.process_telem_frame(&ack_frame);
 
@@ -723,7 +762,8 @@ mod tests {
         line_frame[3] = 0; // slot
         line_frame[4] = 1; // line_id
         line_frame[5] = 1; // editable
-        line_frame[6] = 0; line_frame[7] = 50; // cur_val
+        line_frame[6] = 0;
+        line_frame[7] = 50; // cur_val
         let text = b"AS3XGain";
         line_frame[8..8 + text.len()].copy_from_slice(text);
         engine.process_telem_frame(&line_frame);
@@ -738,9 +778,12 @@ mod tests {
         val_frame[0] = TELEM_ID_FWD_PROG;
         val_frame[2] = 0x04;
         val_frame[3] = 1; // line_id
-        val_frame[4] = 0; val_frame[5] = 0; // min = 0
-        val_frame[6] = 0; val_frame[7] = 100; // max = 100
-        val_frame[8] = 0; val_frame[9] = 75; // cur = 75
+        val_frame[4] = 0;
+        val_frame[5] = 0; // min = 0
+        val_frame[6] = 0;
+        val_frame[7] = 100; // max = 100
+        val_frame[8] = 0;
+        val_frame[9] = 75; // cur = 75
         let vtext = b"75%";
         val_frame[10..10 + vtext.len()].copy_from_slice(vtext);
         engine.process_telem_frame(&val_frame);
