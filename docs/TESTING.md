@@ -260,3 +260,9 @@ cargo build-x9d         # Cortex-M4F 212x64 wide display
 cargo build-at9spro     # Cortex-M4F 320x240 color TFT
 ```
 
+---
+
+## 7. Pilot Hardware Testing Field Guide
+
+For community testers evaluating pre-release binaries on physical radios (RadioMaster Pocket, Zorro, GX12, Jumper T12, FrSky X9E), refer to the **[Pilot Hardware Tester Field Guide](TESTER_FIELD_GUIDE.md)** for SD bootloader flashing, 5-minute sanity test checklists, and instant rollback instructions.
+

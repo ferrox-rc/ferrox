@@ -191,6 +191,7 @@ Comprehensive technical documentation is maintained in the [`docs/`](docs/) dire
 - **[CRSF / ExpressLRS Subsystem Guide](docs/CRSF_ELRS_GUIDE.md)**: Native CRSF/ELRS driver on `USART1` (`PB6`/`PB7` on `J15`), `PF6` (`H1`) power control, 5 baud rates up to 1.875M, and on-radio configurator.
 - **[CRSF Protocol Specification & Verification](docs/CRSF_PROTOCOL_SPEC.md)**: Byte-level wire format, CRC8-DVB calculation, parameter discovery handshake, state machine lifecycle, and manual verification guide.
 - **[Testing Methodology & Verification Guide](docs/TESTING.md)**: Dual-target host test harness (163/182 unit tests), peripheral mocking, deterministic virtual time, and adversarial state machine verification.
+- **[Pilot Hardware Tester Field Guide](docs/TESTER_FIELD_GUIDE.md)**: Flashing instructions via EdgeTX SD Bootloader, 5-minute sanity test checklist, and rollback guide for testers across Pocket, Zorro, X9E, T12, and GX12.
 - **[Ecosystem Context & Background](docs/FIRMWARE_COMPARISON.md)**: Background on open-source FlySky firmware development, OpenI6X heritage, FS-i6S hardware evolution, and the unified `ferrox` Rust architecture.
 - **[Hardware Reference & Pinout](docs/HARDWARE_REFERENCE.md)**: Detailed schematics, pin mappings, power latch, FT6236 touch protocol, ST7567 LCD timings, `J15`/`H1`/`J4`/`PC1..PC4` headers, and dual-MCU profiles.
 
