@@ -6,6 +6,7 @@ members = [
     "boards/ferrox-i6s",
     "boards/ferrox-i6x",
     "boards/ferrox-pocket",
+    "boards/ferrox-zorro",
 ]
 resolver = "2"
 

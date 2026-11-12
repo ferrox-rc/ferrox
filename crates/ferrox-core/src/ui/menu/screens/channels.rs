@@ -474,7 +474,8 @@ mod tests {
             dr_change: None,
             pot_change: None,
         };
+        let expected_next = storage.next_available_aux_source(0, crate::board::ActiveBoard::AUX_SOURCES);
         update_aux_channels(&mut ctrl, &mut lcd, &keys_up, &mut storage, &mut buzzer);
-        assert_eq!(storage.active_model.freeform_ch1_4[0], 1); // 1: Roll
+        assert_eq!(storage.active_model.freeform_ch1_4[0], expected_next);
     }
 }

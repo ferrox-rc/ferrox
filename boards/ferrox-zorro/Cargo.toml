@@ -1,0 +1,23 @@
+[package]
+name = "ferrox-zorro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ferrox-zorro"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+ferrox-core = { path = "../../crates/ferrox-core", default-features = false, features = ["board-zorro"] }
+ferrox-stm32f4 = { path = "../../crates/ferrox-stm32f4", default-features = false, features = ["board-zorro"] }
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7"
+stm32f4 = { version = "0.15", features = ["stm32f407", "rt"] }
+
+[features]
+default = []
+edgetx-bootloader = ["ferrox-stm32f4/edgetx-bootloader"]

@@ -224,6 +224,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrox-zorro"
+version = "1.0.0-rc.2"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "ferrox-core",
+ "ferrox-stm32f4",
+ "stm32f4",
+]
+
+[[package]]
 name = "float-cmp"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

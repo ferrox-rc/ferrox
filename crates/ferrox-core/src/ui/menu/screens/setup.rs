@@ -736,6 +736,23 @@ pub fn update_rx_setup(
                         buzzer.click();
                     }
                 }
+                (RfProtocol::Cc2500, 1) => {
+                    buzzer.click();
+                    let cur = crate::rf::mpm::Cc2500Protocol::from_u8(storage.active_model.rx_serial_proto);
+                    storage.active_model.rx_serial_proto = cur.next() as u8;
+                    storage::save_active_model(storage);
+                }
+                (RfProtocol::Cc2500, 2) => {
+                    buzzer.click();
+                    ctrl.request_bind = true;
+                    ctrl.state = MenuState::Closed;
+                    return;
+                }
+                (RfProtocol::Cc2500, 3) => {
+                    buzzer.click();
+                    storage.active_model.rf_power = if storage.active_model.rf_power == 0 { 1 } else { 0 };
+                    storage::save_active_model(storage);
+                }
                 _ => {}
             }
         }
@@ -832,9 +849,19 @@ pub fn update_rx_setup(
                         };
                         widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Proto:", Some(proto_val));
                     }
-                    1 => widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Mode:", Some("FRSKY D16")),
+                    1 => {
+                        let proto_mode = crate::rf::mpm::Cc2500Protocol::from_u8(storage.active_model.rx_serial_proto);
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Mode:", Some(proto_mode.name()));
+                    }
                     2 => widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "[Bind Receiver]", None),
-                    3 => widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Power:", Some("100mW (HI)")),
+                    3 => {
+                        let pwr_str = if storage.active_model.rf_power == 0 {
+                            "100mW (HI)"
+                        } else {
+                            "10mW (LOW)"
+                        };
+                        widgets::draw_list_row_right(lcd, slot, idx == ctrl.selected_item, "Power:", Some(pwr_str));
+                    }
                     _ => {}
                 }
             }

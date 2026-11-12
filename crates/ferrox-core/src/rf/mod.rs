@@ -5,6 +5,7 @@
 
 pub mod a7105;
 pub mod afhds2a;
+pub mod mpm;
 pub mod spi;
 
 use crate::mixer::SAFE_IDLE_CHANNELS;

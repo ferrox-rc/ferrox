@@ -41,7 +41,7 @@ impl Qx7FamilyProfile for BoxerSpec {
     const DIAG_SW_TITLE: &'static str = "SWITCHES (SA-SF)";
     const AUX_NAMES: &'static [&'static str] = &["SA:", "SB:", "SC:", "SD:", "S1:", "S2:", "SE:", "SF:"];
     const ADAPTIVE_CH_NAMES: &'static [&'static str] = &["A", "B", "C", "D", "1", "2", "E", "F"];
-    const AUX_SOURCES: &'static [u8] = &[0, 1, 2, 3, 4, 5, 31, 32];
+    const AUX_SOURCES: &'static [u8] = &[0, 7, 8, 9, 10, 5, 6, 31, 32];
 }
 
 impl_qx7_board_profile!(BoxerSpec);
