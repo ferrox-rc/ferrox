@@ -24,6 +24,7 @@ stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072", "rt"] }
 embedded-graphics = "0.8.1"
 
 [features]
-default = ["stm32"]
+default = ["stm32", "soaring"]
 stm32 = ["ferrox-core/stm32", "ferrox-stm32f0/stm32"]
 apm32 = ["ferrox-core/apm32", "ferrox-stm32f0/apm32"]
+soaring = ["ferrox-core/soaring"]

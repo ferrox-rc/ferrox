@@ -3,6 +3,7 @@
 //! Zero-heap, fixed-point implementation designed for deterministic real-time execution
 //! across both Cortex-M0 and Cortex-M4F targets.
 
+#[cfg(any(feature = "soaring", test))]
 pub mod f5j;
 
 /// Soaring competition discipline assigned to a model.

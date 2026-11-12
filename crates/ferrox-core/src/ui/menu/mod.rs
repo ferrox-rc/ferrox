@@ -392,7 +392,13 @@ impl MenuController {
                 screens::model::update_timer_setup(self, lcd, &nav_keys, storage, buzzer);
             }
             MenuState::SoaringSetup => {
+                #[cfg(any(feature = "soaring", test))]
                 screens::soaring::update_soaring_setup(self, lcd, &nav_keys, storage, buzzer);
+                #[cfg(not(any(feature = "soaring", test)))]
+                {
+                    let _ = (lcd, &nav_keys, storage, buzzer);
+                    self.state = MenuState::ModelSetup;
+                }
             }
             MenuState::RxSetup => {
                 screens::setup::update_rx_setup(self, lcd, &nav_keys, storage, buzzer);

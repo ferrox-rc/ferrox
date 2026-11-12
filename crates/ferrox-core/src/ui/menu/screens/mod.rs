@@ -9,4 +9,5 @@ pub mod main_menu;
 pub mod mixer;
 pub mod model;
 pub mod setup;
+#[cfg(any(feature = "soaring", test))]
 pub mod soaring;

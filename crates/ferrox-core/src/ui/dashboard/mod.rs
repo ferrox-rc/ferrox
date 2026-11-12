@@ -90,17 +90,24 @@ impl DashboardController {
         rf_ok: bool,
         is_binding: bool,
         telem: &TelemetryData,
-        f5j: &crate::soaring::f5j::F5jEngine,
+        #[cfg(any(feature = "soaring", test))] f5j: &crate::soaring::f5j::F5jEngine,
         timer_str: Option<&str>,
         timer_expired: bool,
         buzzer: &mut Buzzer,
         now_ms: u32,
     ) {
-        self.max_pages = if storage.active_model().soaring.is_f5j() {
-            6
-        } else {
-            5
-        };
+        #[cfg(any(feature = "soaring", test))]
+        {
+            self.max_pages = if storage.active_model().soaring.is_f5j() {
+                6
+            } else {
+                5
+            };
+        }
+        #[cfg(not(any(feature = "soaring", test)))]
+        {
+            self.max_pages = 5;
+        }
         if self.page >= self.max_pages {
             self.page = 0;
         }
@@ -158,7 +165,10 @@ impl DashboardController {
                     now_ms,
                 );
             }
+            #[cfg(any(feature = "soaring", test))]
             _ => pages::f5j::render(lcd, storage, telem, f5j, now_ms),
+            #[cfg(not(any(feature = "soaring", test)))]
+            _ => {}
         }
     }
 }
