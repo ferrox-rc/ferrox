@@ -117,8 +117,11 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
                 w.bits((r.bits() & !mask) | af6)
             });
 
-            // 6. SPI3 Setup: Master, SSM/SSI, CPOL=1, CPHA=1, BR = /4 (42 MHz / 4 = 10.5 MHz)
+            // 6. Reset SPI3 to clear any bootloader DMA/IRQ state, then configure Master 8-bit
+            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() | (1 << 15)));
+            rcc.apb1rstr.modify(|r, w| w.bits(r.bits() & !(1 << 15)));
             spi3.cr1.write(|w| w.bits(0));
+            spi3.cr2.write(|w| w.bits(0));
             spi3.cr1.write(|w| {
                 w.bits(
                     (1 << 9)   // SSM
@@ -126,7 +129,7 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
                     | (1 << 2) // MSTR
                     | (1 << 1) // CPOL
                     | (1 << 0) // CPHA
-                    | (0x01 << 3) // BR = /4 (10.5 MHz)
+                    | (0x02 << 3) // BR = /8 (42 MHz / 8 = 5.25 MHz, within 10 MHz ST7567 spec)
                     | (1 << 6), // SPE
                 )
             });
@@ -150,17 +153,17 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
             tim4.egr.write(|w| w.bits(1));
             tim4.cr1.modify(|r, w| w.bits(r.bits() | 0x01)); // CEN
 
-            // 8. Hardware Reset Pulse
+            // 8. Hardware Reset Pulse (ST7567 RC reset + booster settle)
             gpiod.bsrr.write(|w| w.bits(1 << (12 + 16))); // RST LOW
-            self.delay_cycles(168_000); // ~1ms
+            self.delay_cycles(168_000 * 15); // ~15ms
             gpiod.bsrr.write(|w| w.bits(1 << 12)); // RST HIGH
-            self.delay_cycles(168_000 * 50); // ~50ms
+            self.delay_cycles(168_000 * 150); // ~150ms
         }
 
         // 9. ST7567 Controller Initialization Sequence
         let seg_cmd = if H::LCD_HORIZ_INVERT { 0xA1 } else { 0xA0 };
         let com_cmd = if H::LCD_VERT_INVERT { 0xC8 } else { 0xC0 };
-        let contrast_val = (0x1C as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 0x3F) as u8;
+        let contrast_val = (0x25 as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 0x3F) as u8;
 
         self.write_cmd(0xE2); // Soft reset
         self.delay_cycles(168_000 * 10);
@@ -171,12 +174,11 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
         self.write_cmd(0xA3); // Bias = 1/6
         self.write_cmd(0x22); // Rb/Ra = 5.0
         self.write_cmd(0x2F); // Power circuits ON
-        self.write_cmd(0x24); // Internal pump control
         self.write_cmd(0x81); // Set contrast command
         self.write_cmd(contrast_val);
         self.write_cmd(0xA6); // Normal display (not inverse)
         self.write_cmd(0xAF); // Display ON
-        self.delay_cycles(168_000 * 10);
+        self.delay_cycles(168_000 * 20); // 20ms for internal DC-DC converter startup
     }
 
     fn flush(&mut self, framebuffer: &[u8]) {
