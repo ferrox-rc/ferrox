@@ -21,6 +21,69 @@ pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
 #[link_section = ".uninit"]
 static mut DFU_RETAINED_FLAG: u32 = 0;
 
+#[cfg(feature = "edgetx-bootloader")]
+const EDGETX_FLAVOUR: &str = if cfg!(feature = "board-zorro") {
+    "zorro"
+} else if cfg!(feature = "board-boxer") {
+    "boxer"
+} else if cfg!(feature = "board-tx12") {
+    "tx12mk2"
+} else if cfg!(feature = "board-qx7") {
+    "x7"
+} else if cfg!(feature = "board-tprov2") {
+    "tprov2"
+} else if cfg!(feature = "board-t12") {
+    "t12"
+} else if cfg!(feature = "board-x9d") {
+    "x9d"
+} else if cfg!(feature = "board-x9e") {
+    "x9e"
+} else if cfg!(feature = "board-gx12") {
+    "gx12"
+} else if cfg!(feature = "board-at9spro") {
+    "at9spro"
+} else {
+    "pocket"
+};
+
+#[cfg(feature = "edgetx-bootloader")]
+const fn make_fw_version_tag(flavour: &str, version: &str) -> [u8; 48] {
+    let mut buf = [0u8; 48];
+    let prefix = b"edgetx-";
+    let mut i = 0;
+    while i < prefix.len() && i < 47 {
+        buf[i] = prefix[i];
+        i += 1;
+    }
+    let fb = flavour.as_bytes();
+    let mut j = 0;
+    while j < fb.len() && i < 47 {
+        buf[i] = fb[j];
+        i += 1;
+        j += 1;
+    }
+    if i < 47 {
+        buf[i] = b'-';
+        i += 1;
+    }
+    let vb = version.as_bytes();
+    let mut k = 0;
+    while k < vb.len() && i < 47 {
+        buf[i] = vb[k];
+        i += 1;
+        k += 1;
+    }
+    buf
+}
+
+#[cfg(feature = "edgetx-bootloader")]
+#[used]
+#[link_section = ".fwversiondata"]
+static EDGETX_FW_VERSION: [u8; 48] = make_fw_version_tag(
+    EDGETX_FLAVOUR,
+    concat!("ferrox-", env!("CARGO_PKG_VERSION")),
+);
+
 const UID_BASE_ADDR: usize = 0x1FFF_7A10;
 const DFU_BOOTLOADER_ADDR: usize = 0x1FFF_0000;
 
