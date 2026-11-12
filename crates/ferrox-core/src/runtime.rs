@@ -13,7 +13,7 @@ use crate::crsf;
 use crate::curve;
 use crate::display::St7567;
 use crate::input::{self, InputState, SwitchPos};
-use crate::mixer::{self, SAFE_IDLE_CHANNELS};
+use crate::mixer;
 use crate::rf::{self, afhds2a::TelemetryData};
 use crate::safety::{self, StickMode};
 use crate::storage::{self, AdcInputMode, RadioStorage};
@@ -28,6 +28,78 @@ use crate::vario::Vario;
 use crate::watchdog;
 
 pub const MAX_POTS: usize = 7;
+
+fn mix_model_channels(
+    state: &InputState,
+    storage: &RadioStorage,
+    trims: &TrimController,
+    tank_state: &mut mixer::TankState,
+) -> [u16; mixer::NUM_CHANNELS] {
+    let model = storage.active_model();
+    let controls = state.flight_controls(StickMode::from_u8(storage.radio.stick_mode));
+    let thr_input = ((controls.throttle + mixer::MIXER_MAX) / 2).clamp(0, mixer::MIXER_MAX) as u16;
+    let throttle = if mixer::is_tank(model) {
+        thr_input
+    } else {
+        curve::evaluate_curve(
+            thr_input,
+            model.thr_curve_pts,
+            model.thr_curve_smooth != 0,
+            &model.thr_curve,
+        )
+    };
+    mixer::compute_channels(
+        controls.aileron,
+        controls.elevator,
+        throttle,
+        controls.rudder,
+        &state.aux_pots[4..],
+        &state.switches,
+        model,
+        trims,
+        storage.radio.throttle_trim,
+        tank_state,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tank_pipeline_uses_bipolar_throttle_without_curve() {
+        let mut storage = RadioStorage::default_factory();
+        storage.radio.stick_mode = StickMode::Mode2 as u8;
+        storage.active_model.wing_tail_mix = 4;
+        storage.active_model.thr_curve.fill(0);
+        let mut state = InputState {
+            gimbals: input::Gimbals {
+                lv: 500,
+                lh: 250,
+                ..Default::default()
+            },
+            pots: input::Pots::default(),
+            switches: input::Switches::new(),
+            battery_mv: 5000,
+            aux_pots: [0; 11],
+            raw: [0; crate::adc::NUM_CHANNELS],
+        };
+        let trims = TrimController::new();
+        let mut tank_state = mixer::TankState::default();
+        let channels = mix_model_channels(&state, &storage, &trims, &mut tank_state);
+        assert_eq!(&channels[..2], &[1884, 1628]);
+        state.gimbals.lv = -500;
+        let channels = mix_model_channels(&state, &storage, &trims, &mut tank_state);
+        assert_eq!(&channels[..2], &[1116, 1372]);
+        state.gimbals.lv = 0;
+        let channels = mix_model_channels(&state, &storage, &trims, &mut tank_state);
+        assert_eq!(&channels[..2], &[1372, 1628]);
+        storage.active_model.wing_tail_mix = 0;
+        let channels = mix_model_channels(&state, &storage, &trims, &mut tank_state);
+        assert_eq!(channels[2], mixer::CHANNEL_MIN_US);
+        assert!(!tank_state.reverse);
+    }
+}
 
 /// High-rate flight pipeline state and outputs.
 pub struct FlightSnapshot {
@@ -46,6 +118,7 @@ pub struct FlightPipeline {
     pub prev_active_model: u8,
     pub telem_reading_idx: u8,
     pub vario: Vario,
+    pub tank_state: mixer::TankState,
 }
 
 impl FlightPipeline {
@@ -57,6 +130,7 @@ impl FlightPipeline {
             prev_active_model: storage.radio.active_model,
             telem_reading_idx: 1,
             vario: Vario::new(),
+            tank_state: mixer::TankState::default(),
         }
     }
 
@@ -84,6 +158,7 @@ impl FlightPipeline {
             self.prev_active_model = storage.radio.active_model;
             self.prev_armed = mixer::eval_arm_switch(active_model.arm_switch, &state.switches);
             self.vario.reset();
+            self.tank_state = mixer::TankState::default();
         }
 
         // 3. Check configured Arm Switch condition and play Armed/Disarmed chimes
@@ -108,31 +183,8 @@ impl FlightPipeline {
             self.prev_armed = is_armed;
         }
 
-        let stick_mode = StickMode::from_u8(storage.radio.stick_mode);
-        let controls = state.flight_controls(stick_mode);
-
-        // 4. Evaluate active model throttle curve (normalized 0..MIXER_MAX)
-        let thr_input =
-            ((controls.throttle + mixer::MIXER_MAX) / 2).clamp(0, mixer::MIXER_MAX) as u16;
-        let thr_curved = curve::evaluate_curve(
-            thr_input,
-            active_model.thr_curve_pts,
-            active_model.thr_curve_smooth != 0,
-            &active_model.thr_curve,
-        );
-
-        // 5. Compute all 14 channels via 4-stage pipeline (D/R, Expo, Matrix Mixer, Trims, Reversing)
-        let mut rf_chs = mixer::compute_channels(
-            controls.aileron,
-            controls.elevator,
-            thr_curved,
-            controls.rudder,
-            &state.aux_pots[4..],
-            &state.switches,
-            active_model,
-            trims,
-            storage.radio.throttle_trim,
-        );
+        // 4 & 5. Condition inputs and compute all 18 output channels.
+        let mut rf_chs = mix_model_channels(&state, storage, trims, &mut self.tank_state);
 
         // 5b. Safety Handover: Process student PPM input if Trainer In is enabled
         if storage.radio.is_ppm_in_enabled() {
@@ -141,6 +193,7 @@ impl FlightPipeline {
             trainer::process_handover(trainer_switch_active, &rf_chs, &mut handover_chs);
             rf_chs = handover_chs;
         }
+        mixer::apply_tank_arming(&mut rf_chs, active_model, &state.switches);
 
         let sim_mode = usb::is_sim_mode();
 
@@ -888,7 +941,12 @@ pub fn run_preflight_check(
         let keys = crate::boot::scan_keys();
 
         let raw_adc = [state.raw[0], state.raw[1], state.raw[2], state.raw[3]];
-        let model_type = storage.active_model().model_type();
+        let model = storage.active_model();
+        let model_type = if mixer::is_tank(model) {
+            safety::ModelType::General
+        } else {
+            model.model_type()
+        };
         let stick_mode = StickMode::from_u8(storage.radio.stick_mode);
         let cal = [
             safety::ChannelCalibration::from_channel_calib(&storage.radio.sticks[0]),
@@ -898,13 +956,11 @@ pub fn run_preflight_check(
         ];
         let thr_hold = state.switches.sa == SwitchPos::Down;
 
-        let thr_result = safety::check_preflight_throttle(
-            &raw_adc,
-            Some(&cal),
-            stick_mode,
-            model_type,
-            thr_hold,
-        );
+        let thr_result = if mixer::is_tank(model) {
+            safety::check_tank_preflight(&state, stick_mode, model)
+        } else {
+            safety::check_preflight_throttle(&raw_adc, Some(&cal), stick_mode, model_type, thr_hold)
+        };
         let thr_unsafe = thr_result.is_err();
 
         // For helicopters, SA Down is the required Throttle Hold position.
@@ -931,10 +987,11 @@ pub fn run_preflight_check(
         warned = true;
 
         // Lock RF transmission to safe idle/failsafe during warning
-        rf::set_channels(&SAFE_IDLE_CHANNELS);
+        let safe_channels = mixer::safe_idle_channels(model);
+        rf::set_channels(&safe_channels);
         usb::poll(
             now,
-            &SAFE_IDLE_CHANNELS,
+            &safe_channels,
             &state.switches,
             &rf::get_telemetry(),
             state.battery_mv,
@@ -959,6 +1016,7 @@ pub fn run_preflight_check(
                     safety::PreflightError::ThrottleHigh { .. } => "THROTTLE NOT AT IDLE!",
                     safety::PreflightError::ThrottleNotCentered { .. } => "CENTER THROTTLE STICK!",
                     safety::PreflightError::ThrottleHoldDisengaged => "THROTTLE HOLD OFF!",
+                    safety::PreflightError::TankNotCentered => "CENTER DRIVE / STEER!",
                 };
                 lcd.draw_str_6x10(2, 16, msg, false);
             }
@@ -988,6 +1046,7 @@ pub fn run_preflight_check(
 
             lcd.draw_hline(0, 55, 128, true);
             let footer = match thr_result {
+                Err(safety::PreflightError::TankNotCentered) => "Center Drive/Steer [ESC]Skip",
                 Err(safety::PreflightError::ThrottleNotCentered { .. }) => {
                     "Center Thr/Safe SW [ESC]Skip"
                 }
@@ -1128,6 +1187,9 @@ pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> !
     let initial_keys = crate::boot::scan_keys();
     let bind_on_boot = (initial_keys & (1 << 12)) != 0 && !was_watchdog_reset;
 
+    if mixer::is_tank(storage.active_model()) {
+        rf::set_channels(&mixer::safe_idle_channels(storage.active_model()));
+    }
     let rf_ok = rf::init(tx_id);
     if bind_on_boot {
         rf::set_bind_mode(true);

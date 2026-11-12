@@ -486,6 +486,15 @@ pub fn update_throttle_curve(
 }
 
 #[inline(never)]
+fn wing_gvars_row(model: &crate::storage::ModelConfig) -> usize {
+    if matches!(model.wing_tail_mix, 1 | 3 | 4) {
+        2
+    } else {
+        1
+    }
+}
+
+#[inline(never)]
 pub fn update_wing_mixer(
     ctrl: &mut MenuController,
     lcd: &mut St7567,
@@ -495,13 +504,12 @@ pub fn update_wing_mixer(
 ) {
     let template = storage.active_model.wing_tail_mix;
     let has_diff = template == 1 || template == 3;
-    let gvar_item_idx = if has_diff { 2 } else { 1 };
-    let mix_items = if has_diff { 35 } else { 34 };
+    let gvar_item_idx = wing_gvars_row(&storage.active_model);
+    let mix_items = gvar_item_idx + 1 + storage::NUM_MIX_LINES;
 
     if ctrl.editing {
         if keys.cancel {
             ctrl.editing = false;
-            storage::save_active_model(storage);
             buzzer.click();
             return;
         }
@@ -514,12 +522,15 @@ pub fn update_wing_mixer(
         }
         if keys.ok {
             ctrl.editing = false;
-            storage::save_active_model(storage);
             buzzer.click();
         }
     } else {
         if keys.cancel {
-            storage::save_active_model(storage);
+            if !storage::save_active_model(storage) {
+                widgets::draw_footer(lcd, "Save failed: retry ESC");
+                buzzer.play_tone(400, 100);
+                return;
+            }
             ctrl.return_to_main_menu();
             buzzer.click();
             return;
@@ -537,8 +548,15 @@ pub fn update_wing_mixer(
         if keys.ok {
             buzzer.click();
             if ctrl.selected_item == 0 {
-                // Cycle Wing Template (0..3)
-                storage.active_model.wing_tail_mix = (storage.active_model.wing_tail_mix + 1) % 4;
+                // Recompute dynamic rows below after changing the template.
+                storage.active_model.wing_tail_mix = (storage.active_model.wing_tail_mix + 1) % 5;
+            } else if crate::mixer::is_tank(&storage.active_model) && ctrl.selected_item == 1 {
+                ctrl.selected_item = 0;
+                ctrl.scroll_offset = 0;
+                ctrl.editing = false;
+                ctrl.state = MenuState::TankSetup;
+                ctrl.waiting_release = true;
+                return;
             } else if has_diff && ctrl.selected_item == 1 {
                 ctrl.editing = true;
             } else if ctrl.selected_item == gvar_item_idx {
@@ -563,6 +581,9 @@ pub fn update_wing_mixer(
         }
     }
 
+    let has_diff = matches!(storage.active_model.wing_tail_mix, 1 | 3);
+    let gvar_item_idx = wing_gvars_row(&storage.active_model);
+    let mix_items = gvar_item_idx + 1 + storage::NUM_MIX_LINES;
     widgets::draw_header(lcd, "WING & MIXER");
 
     for slot in 0..4 {
@@ -607,9 +628,11 @@ fn render_wing_mixer_row(
     let mut b6 = [0u8; 6];
     let mut ch_buf = [0u8; 4];
     if idx == 0 {
-        let t_idx = (storage.active_model.wing_tail_mix as usize).min(3);
+        let t_idx = (storage.active_model.wing_tail_mix as usize).min(4);
         lcd.draw_str_6x10(4, y, "Wing:", is_sel);
         lcd.draw_str_6x10(36, y, TEMPLATE_NAMES[t_idx], is_sel);
+    } else if crate::mixer::is_tank(&storage.active_model) && idx == 1 {
+        lcd.draw_str_6x10(4, y, "Tank Setup: [SETUP]", is_sel);
     } else if has_diff && idx == 1 {
         let d_str = i8_to_dec(storage.active_model.template_diff, &mut b6);
         lcd.draw_str_6x10(4, y, "Diff:", is_sel);
@@ -640,6 +663,152 @@ fn render_wing_mixer_row(
 }
 
 #[inline(never)]
+pub fn update_tank_setup(
+    ctrl: &mut MenuController,
+    lcd: &mut St7567,
+    keys: &NavKeys,
+    storage: &mut RadioStorage,
+    buzzer: &mut Buzzer,
+) {
+    const LABELS: [&str; 5] = [
+        "Drive Src:",
+        "Steer Src:",
+        "Left Out:",
+        "Right Out:",
+        "Steer Wt:",
+    ];
+    if keys.cancel {
+        if ctrl.editing {
+            ctrl.editing = false;
+        } else {
+            ctrl.state = MenuState::WingMixer;
+            ctrl.selected_item = 1;
+            ctrl.scroll_offset = 0;
+            ctrl.waiting_release = true;
+            buzzer.click();
+            return;
+        }
+    } else if !ctrl.editing {
+        widgets::navigate_4slot_list(
+            &mut ctrl.selected_item,
+            &mut ctrl.scroll_offset,
+            LABELS.len(),
+            keys.up,
+            keys.down,
+            buzzer,
+        );
+        if keys.ok {
+            ctrl.editing = true;
+            buzzer.click();
+        }
+    } else {
+        let mut tank = storage.active_model.tank;
+        match ctrl.selected_item {
+            0 | 1 => {
+                let source = if ctrl.selected_item == 0 {
+                    &mut tank.drive_source
+                } else {
+                    &mut tank.steer_source
+                };
+                let source_count = SOURCE_NAMES.len();
+                if let Some(pot) = keys.pot_change {
+                    if (pot as usize) < source_count && storage.is_source_available(pot) {
+                        *source = pot;
+                        buzzer.play_tone(2400, 40);
+                    }
+                } else if keys.up {
+                    *source = storage.next_available_source(*source, source_count);
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    *source = storage.prev_available_source(*source, source_count);
+                    buzzer.play_tone(2200, 20);
+                }
+            }
+            2 | 3 => {
+                let other = if ctrl.selected_item == 2 {
+                    tank.right_channel
+                } else {
+                    tank.left_channel
+                };
+                let output = if ctrl.selected_item == 2 {
+                    &mut tank.left_channel
+                } else {
+                    &mut tank.right_channel
+                };
+                if keys.up || keys.down {
+                    loop {
+                        *output = if keys.up {
+                            if *output >= 18 {
+                                1
+                            } else {
+                                *output + 1
+                            }
+                        } else if *output <= 1 {
+                            18
+                        } else {
+                            *output - 1
+                        };
+                        if *output != other {
+                            break;
+                        }
+                    }
+                    buzzer.play_tone(2200, 20);
+                }
+            }
+            4 => adjust_clamped_i8(
+                &mut tank.steer_weight,
+                -100,
+                100,
+                1,
+                keys.up,
+                keys.down,
+                buzzer,
+            ),
+            _ => {}
+        }
+        storage.active_model.tank = tank;
+        if keys.ok {
+            ctrl.editing = false;
+            buzzer.click();
+        }
+    }
+
+    widgets::draw_header(lcd, "TANK SETUP");
+    let tank = &storage.active_model.tank;
+    let mut ch_buf = [0u8; 4];
+    let mut weight_buf = [0u8; 6];
+    for slot in 0..4 {
+        let idx = ctrl.scroll_offset + slot;
+        if idx >= LABELS.len() {
+            break;
+        }
+        let value = match idx {
+            0 => SOURCE_NAMES[(tank.drive_source as usize).min(SOURCE_NAMES.len() - 1)],
+            1 => SOURCE_NAMES[(tank.steer_source as usize).min(SOURCE_NAMES.len() - 1)],
+            2 => format_ch_str(tank.left_channel, &mut ch_buf),
+            3 => format_ch_str(tank.right_channel, &mut ch_buf),
+            _ => i8_to_dec(tank.steer_weight, &mut weight_buf),
+        };
+        widgets::draw_list_row(
+            lcd,
+            slot,
+            idx == ctrl.selected_item,
+            LABELS[idx],
+            Some(value),
+            68,
+        );
+    }
+    widgets::draw_footer(
+        lcd,
+        if ctrl.editing {
+            "[OK] Done   [UP/DN] Value"
+        } else {
+            "[OK] Edit   [ESC] Back"
+        },
+    );
+}
+
+#[inline(never)]
 pub fn update_mixer_line_edit(
     ctrl: &mut MenuController,
     lcd: &mut St7567,
@@ -654,9 +823,7 @@ pub fn update_mixer_line_edit(
         if ctrl.editing {
             ctrl.editing = false;
         } else {
-            let template = storage.active_model.wing_tail_mix;
-            let has_diff = template == 1 || template == 3;
-            let first_mix_row = if has_diff { 3 } else { 2 };
+            let first_mix_row = wing_gvars_row(&storage.active_model) + 1;
             let target_row = first_mix_row + mix_idx;
             ctrl.state = MenuState::WingMixer;
             ctrl.selected_item = target_row;
@@ -870,19 +1037,25 @@ pub fn update_global_vars(
             buzzer.play_tone(2200, 20);
         }
         if keys.ok || keys.cancel {
+            if !storage::save_active_model(storage) {
+                widgets::draw_footer(lcd, "Save failed: retry OK");
+                buzzer.play_tone(400, 100);
+                return;
+            }
             ctrl.editing = false;
-            storage::save_active_model(storage);
             buzzer.click();
         }
     } else {
         if keys.cancel {
-            storage::save_active_model(storage);
-            let template = storage.active_model.wing_tail_mix;
-            let has_diff = template == 1 || template == 3;
-            let gvar_item_idx = if has_diff { 2 } else { 1 };
+            if !storage::save_active_model(storage) {
+                widgets::draw_footer(lcd, "Save failed: retry ESC");
+                buzzer.play_tone(400, 100);
+                return;
+            }
+            let gvar_item_idx = wing_gvars_row(&storage.active_model);
             ctrl.state = MenuState::WingMixer;
             ctrl.selected_item = gvar_item_idx;
-            ctrl.scroll_offset = gvar_item_idx.saturating_sub(GVAR_COUNT);
+            ctrl.scroll_offset = gvar_item_idx.saturating_sub(3);
             ctrl.waiting_release = true;
             buzzer.click();
             return;
@@ -926,4 +1099,123 @@ pub fn update_global_vars(
         "[OK] Edit   [ESC] Back"
     };
     widgets::draw_footer(lcd, footer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nav() -> NavKeys {
+        NavKeys {
+            ok: false,
+            cancel: false,
+            up: false,
+            down: false,
+            bind: false,
+            sw_change: None,
+            dr_change: None,
+            pot_change: None,
+        }
+    }
+
+    #[test]
+    fn test_tank_menu_navigation_and_fields() {
+        let mut ctrl = MenuController::new();
+        let mut lcd = St7567::new();
+        let mut storage = RadioStorage::default_factory();
+        let mut buzzer = Buzzer::new();
+        ctrl.state = MenuState::WingMixer;
+        storage.active_model.wing_tail_mix = 3;
+        let ok = NavKeys { ok: true, ..nav() };
+        let up = NavKeys { up: true, ..nav() };
+        let down = NavKeys {
+            down: true,
+            ..nav()
+        };
+        let cancel = NavKeys {
+            cancel: true,
+            ..nav()
+        };
+        update_wing_mixer(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.wing_tail_mix, 4);
+        ctrl.selected_item = 1;
+        update_wing_mixer(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.state, MenuState::TankSetup);
+        assert_eq!(ctrl.selected_item, 0);
+        update_tank_setup(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        update_tank_setup(&mut ctrl, &mut lcd, &up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.drive_source, 4);
+        storage.radio.adc_modes[4] = storage::AdcInputMode::Off as u8;
+        update_tank_setup(&mut ctrl, &mut lcd, &up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.drive_source, 6);
+        let moved = NavKeys {
+            pot_change: Some(5),
+            ..nav()
+        };
+        update_tank_setup(&mut ctrl, &mut lcd, &moved, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.drive_source, 6);
+        storage.radio.adc_modes[4] = storage::AdcInputMode::Pot as u8;
+        update_tank_setup(&mut ctrl, &mut lcd, &moved, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.drive_source, 5);
+        storage.active_model.tank.drive_source = crate::mixer::MixSource::Gv1 as u8;
+        update_tank_setup(&mut ctrl, &mut lcd, &up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.drive_source, 46);
+        storage.active_model.tank.drive_source = crate::mixer::MixSource::Gv5 as u8;
+        update_tank_setup(&mut ctrl, &mut lcd, &up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.drive_source, 0);
+        update_tank_setup(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        assert!(!ctrl.editing);
+        ctrl.selected_item = 1;
+        update_tank_setup(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        update_tank_setup(&mut ctrl, &mut lcd, &down, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.steer_source, 3);
+        update_tank_setup(&mut ctrl, &mut lcd, &cancel, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.state, MenuState::TankSetup);
+        assert!(!ctrl.editing);
+        ctrl.selected_item = 2;
+        ctrl.editing = true;
+        update_tank_setup(&mut ctrl, &mut lcd, &up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.left_channel, 3);
+        storage.active_model.tank.left_channel = 18;
+        update_tank_setup(&mut ctrl, &mut lcd, &up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.left_channel, 1);
+        ctrl.selected_item = 3;
+        update_tank_setup(&mut ctrl, &mut lcd, &down, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.right_channel, 18);
+        ctrl.selected_item = 4;
+        ctrl.scroll_offset = 1;
+        update_tank_setup(&mut ctrl, &mut lcd, &up, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.steer_weight, 100);
+        update_tank_setup(&mut ctrl, &mut lcd, &down, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.tank.steer_weight, 99);
+        for _ in 0..200 {
+            update_tank_setup(&mut ctrl, &mut lcd, &down, &mut storage, &mut buzzer);
+        }
+        assert_eq!(storage.active_model.tank.steer_weight, -100);
+        update_tank_setup(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        update_tank_setup(&mut ctrl, &mut lcd, &cancel, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.state, MenuState::WingMixer);
+        assert_eq!(ctrl.selected_item, 1);
+        assert_eq!(ctrl.scroll_offset, 0);
+        ctrl.selected_item = 2;
+        update_wing_mixer(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.state, MenuState::GlobalVars);
+        update_global_vars(&mut ctrl, &mut lcd, &cancel, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.selected_item, 2);
+        ctrl.selected_item = 34;
+        update_wing_mixer(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.state, MenuState::MixerLineEdit);
+        assert_eq!(ctrl.page_idx, 31);
+        update_mixer_line_edit(&mut ctrl, &mut lcd, &cancel, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.state, MenuState::WingMixer);
+        assert_eq!(ctrl.selected_item, 34);
+        assert_eq!(ctrl.scroll_offset, 31);
+        ctrl.selected_item = 0;
+        ctrl.scroll_offset = 0;
+        update_wing_mixer(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.wing_tail_mix, 0);
+        ctrl.selected_item = 1;
+        update_wing_mixer(&mut ctrl, &mut lcd, &ok, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.state, MenuState::GlobalVars);
+    }
 }

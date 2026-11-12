@@ -109,7 +109,9 @@ pub fn update_aux_channels(
         let ch_label = ascii_as_str(&ch_buf);
 
         let src_idx = (storage.active_model.aux_channels[idx] as usize).min(SOURCE_NAMES.len() - 1);
-        widgets::draw_list_row(lcd, slot, is_sel, ch_label, Some(SOURCE_NAMES[src_idx]), 48);
+        let source =
+            tank_motor_label(ch_num - 1, &storage.active_model).unwrap_or(SOURCE_NAMES[src_idx]);
+        widgets::draw_list_row(lcd, slot, is_sel, ch_label, Some(source), 48);
     }
 
     let footer = if ctrl.editing {
@@ -162,13 +164,29 @@ pub fn update_channel_reverse(
         let is_rev = (storage.active_model.channel_reverse & (1 << ch)) != 0;
         let status_str = if is_rev { "REVERSE" } else { "NORMAL " };
 
-        widgets::draw_list_row(lcd, slot, is_sel, CH_NAMES[ch], Some(status_str), 76);
+        let mut label_buf = [0u8; 10];
+        let label = if crate::mixer::is_tank_motor(ch, &storage.active_model) {
+            format_channel_label(ch, &storage.active_model, &mut label_buf)
+        } else {
+            CH_NAMES[ch]
+        };
+        widgets::draw_list_row(lcd, slot, is_sel, label, Some(status_str), 76);
     }
 
     widgets::draw_footer(lcd, "[OK] Toggle   [ESC] Back");
 }
 
-/// Format dynamic channel label into a fixed buffer, e.g. "1:AIL", "2:L.ELV", "6:R.AIL", "10:VR1", "18:None".
+fn tank_motor_label(ch: usize, model: &crate::storage::ModelConfig) -> Option<&'static str> {
+    if !crate::mixer::is_tank_motor(ch, model) {
+        None
+    } else if ch + 1 == model.tank.left_channel as usize {
+        Some("L.MOT")
+    } else {
+        Some("R.MOT")
+    }
+}
+
+/// Format dynamic channel labels, including configured tank motor outputs.
 pub fn format_channel_label<'a>(
     ch: usize,
     model: &crate::storage::ModelConfig,
@@ -188,7 +206,7 @@ pub fn format_channel_label<'a>(
     buf[len] = b':';
     len += 1;
 
-    let name = match ch {
+    let name = tank_motor_label(ch, model).unwrap_or_else(|| match ch {
         0 => match model.wing_tail_mix {
             1 => "L.ELV",
             3 => "L.AIL",
@@ -214,7 +232,7 @@ pub fn format_channel_label<'a>(
             }
         }
         _ => "CH",
-    };
+    });
 
     for &b in name.as_bytes() {
         if len < buf.len() {
@@ -287,6 +305,25 @@ pub fn update_channel_monitor(
 mod tests {
     use super::*;
     use crate::storage::ModelConfig;
+
+    #[test]
+    fn test_tank_motor_labels_override_primary_and_aux_sources() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = 4;
+        let mut buf = [0u8; 10];
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:L.MOT");
+        assert_eq!(format_channel_label(1, &model, &mut buf), "2:R.MOT");
+        assert_eq!(format_channel_label(2, &model, &mut buf), "3:THR");
+        model.tank.left_channel = 6;
+        model.tank.right_channel = 18;
+        model.aux_channels[1] = 7;
+        model.aux_channels[13] = 8;
+        assert_eq!(format_channel_label(5, &model, &mut buf), "6:L.MOT");
+        assert_eq!(format_channel_label(17, &model, &mut buf), "18:R.MOT");
+        model.wing_tail_mix = 0;
+        assert_eq!(format_channel_label(5, &model, &mut buf), "6:SA");
+        assert_eq!(format_channel_label(17, &model, &mut buf), "18:SB");
+    }
 
     #[test]
     fn test_format_channel_label_normal_and_aux() {

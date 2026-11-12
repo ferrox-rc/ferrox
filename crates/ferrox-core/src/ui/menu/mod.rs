@@ -25,6 +25,7 @@ pub enum MenuState {
     DualRateExpo,
     ThrottleCurve,
     WingMixer,
+    TankSetup,
     MixerLineEdit,
     GlobalVars,
     AuxChannels,
@@ -228,7 +229,8 @@ impl MenuController {
         // Potentiometer / Jog Wheel auto-detection during source assignment
         let is_source_selection = self.editing
             && (self.state == MenuState::AuxChannels
-                || (self.state == MenuState::MixerLineEdit && self.selected_item == 1));
+                || (self.state == MenuState::MixerLineEdit && self.selected_item == 1)
+                || (self.state == MenuState::TankSetup && self.selected_item <= 1));
         let mut pot_change = None;
         let vra_mode = storage.radio.get_raw_adc_mode(4);
         let vrb_mode = storage.radio.get_raw_adc_mode(5);
@@ -357,6 +359,9 @@ impl MenuController {
             MenuState::WingMixer => {
                 screens::mixer::update_wing_mixer(self, lcd, &nav_keys, storage, buzzer);
             }
+            MenuState::TankSetup => {
+                screens::mixer::update_tank_setup(self, lcd, &nav_keys, storage, buzzer);
+            }
             MenuState::MixerLineEdit => {
                 screens::mixer::update_mixer_line_edit(self, lcd, &nav_keys, storage, buzzer);
             }
@@ -416,6 +421,61 @@ impl MenuController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tank_source_edit_selects_moved_pot() {
+        let mut ctrl = MenuController::new();
+        let mut buzzer = Buzzer::new();
+        let mut lcd = St7567::new();
+        let mut storage = RadioStorage::default_factory();
+        let mut trims = TrimController::new();
+        let switches = crate::input::Switches::new();
+        let raw_adc = [2048u16; adc::NUM_CHANNELS];
+        let rf_chs = [1500u16; crate::mixer::NUM_CHANNELS];
+        storage.active_model.wing_tail_mix = 4;
+        storage.radio.adc_modes[4] = crate::storage::AdcInputMode::Pot as u8;
+        ctrl.state = MenuState::TankSetup;
+        ctrl.editing = true;
+        let mut pots = crate::input::Pots::default();
+        ctrl.update(
+            &mut lcd,
+            0,
+            &switches,
+            &pots,
+            &mut storage,
+            &mut trims,
+            &raw_adc,
+            &rf_chs,
+            &mut buzzer,
+        );
+        pots.vr1 = 350;
+        ctrl.update(
+            &mut lcd,
+            0,
+            &switches,
+            &pots,
+            &mut storage,
+            &mut trims,
+            &raw_adc,
+            &rf_chs,
+            &mut buzzer,
+        );
+        assert_eq!(storage.active_model.tank.drive_source, 5);
+        ctrl.selected_item = 1;
+        pots.vr1 = 700;
+        ctrl.update(
+            &mut lcd,
+            0,
+            &switches,
+            &pots,
+            &mut storage,
+            &mut trims,
+            &raw_adc,
+            &rf_chs,
+            &mut buzzer,
+        );
+        assert_eq!(storage.active_model.tank.steer_source, 5);
+    }
 
     #[test]
     fn test_menu_return_to_main_menu_preserves_position() {

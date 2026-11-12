@@ -59,6 +59,9 @@ pub fn update_select(
         trims.values.yaw = storage.active_model.trims[3];
 
         // Update RF driver receiver ID, RF power, and receiver settings
+        if crate::mixer::is_tank(&storage.active_model) {
+            rf::set_channels(&crate::mixer::safe_idle_channels(&storage.active_model));
+        }
         rf::set_rx_id(storage.active_model.rx_id);
         rf::set_rf_power(storage.active_model.rf_power);
         rf::set_rx_settings(

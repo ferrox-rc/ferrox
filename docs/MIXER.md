@@ -23,7 +23,7 @@ flowchart TD
     end
 
     subgraph S3 ["Stage 3: Mixing & Templates"]
-        TPL["Aircraft Template: Normal / Elevon / V-Tail / Flaperon"]
+        TPL["Template: Normal / Elevon / V-Tail / Flaperon / Tank"]
         AUX["Aux Source Mapping (CH5..CH18)"]
         MIX["32 Freeform Mix Rules (Weight, Modulation, Offset, Mode, Switch)"]
     end
@@ -125,6 +125,33 @@ CH6 (Right Aileron) = -Roll + (Flap / 2)
 - Flap deployment is driven by the physical source assigned to **CH6** in the `Aux Channels` menu (e.g. switch `SB` for 3-position flaps, or rotary knob `VRA` for variable camber).
 
 ---
+
+### 5. Tank (Differential Drive)
+
+Select **TANK** in **Wing / Mixer**, then open **Tank Setup** immediately below
+the template row. GVars and all 32 free mixer lines remain available below it.
+
+| Field | Default | Range |
+|---|---|---|
+| Drive Src | THR | Available mixer sources |
+| Steer Src | RUD | Available mixer sources |
+| Left Out | CH1 | CH1..CH18 |
+| Right Out | CH2 | CH1..CH18, distinct from Left Out |
+| Steer Wt | +100 | -100..+100, one-percent steps |
+
+Press **OK** to edit or finish a field. **UP/DOWN** selects available sources,
+wraps output channels while skipping the other motor, or changes steering weight.
+Moving an enabled pot also selects it when editing either source. Negative
+steering weight reverses steering direction; zero disables the steering contribution.
+Selected motor channels are labelled **L.MOT** and **R.MOT**, overriding their
+normal primary/auxiliary labels.
+
+**ESC** finishes editing; another **ESC** returns to the Tank Setup row.
+Changes are saved when leaving **Wing / Mixer**. If saving fails, the menu stays
+open and displays a retry message rather than reporting success.
+Existing 128-, 348-, 364-, and 368-byte model payloads retain their saved fields
+and gain default Tank settings on migration. The model payload is now 376 bytes;
+the EEPROM slot remains 768 bytes.
 
 ## 4. Auxiliary Channel Remapping (CH5..CH18)
 

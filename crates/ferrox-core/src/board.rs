@@ -599,7 +599,7 @@ impl BoardProfile for I6sSpec {
             16..=29 => {
                 let ch_idx = (src - 12) as usize; // 4..17
                 let aux_idx = ch_idx - 4; // 0..13
-                if model.wing_tail_mix == 3 && ch_idx == 5 {
+                if (model.wing_tail_mix == 3 && ch_idx == 5) || crate::mixer::is_tank_motor(ch_idx, model) {
                     return true;
                 }
                 if model.aux_channels[aux_idx] != 0 {
@@ -1217,7 +1217,7 @@ impl BoardProfile for I6xSpec {
             16..=29 => {
                 let ch_idx = (src - 12) as usize; // 4..17
                 let aux_idx = ch_idx - 4; // 0..13
-                if model.wing_tail_mix == 3 && ch_idx == 5 {
+                if (model.wing_tail_mix == 3 && ch_idx == 5) || crate::mixer::is_tank_motor(ch_idx, model) {
                     return true;
                 }
                 if model.aux_channels[aux_idx] != 0 {
@@ -1653,7 +1653,7 @@ impl BoardProfile for PocketSpec {
             16..=29 => {
                 let ch_idx = (src - 12) as usize; // 4..17
                 let aux_idx = ch_idx - 4; // 0..13
-                if model.wing_tail_mix == 3 && ch_idx == 5 {
+                if (model.wing_tail_mix == 3 && ch_idx == 5) || crate::mixer::is_tank_motor(ch_idx, model) {
                     return true;
                 }
                 if model.aux_channels[aux_idx] != 0 {

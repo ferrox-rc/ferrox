@@ -452,7 +452,32 @@ impl MixLine {
     }
 }
 
-/// Complete profile for an individual aircraft/model (exactly 348 bytes).
+/// Bounded differential-drive mixer configuration.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct TankConfig {
+    pub drive_source: u8,
+    pub steer_source: u8,
+    pub left_channel: u8,
+    pub right_channel: u8,
+    pub steer_weight: i8,
+    pub reserved: [u8; 3],
+}
+
+impl TankConfig {
+    pub const fn default_factory() -> Self {
+        Self {
+            drive_source: 3,
+            steer_source: 4,
+            left_channel: 1,
+            right_channel: 2,
+            steer_weight: 100,
+            reserved: [0; 3],
+        }
+    }
+}
+
+/// Complete profile for an individual aircraft/model (exactly 376 bytes).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ModelConfig {
@@ -477,7 +502,7 @@ pub struct ModelConfig {
     pub rf_power: u8,     // 61: AFHDS 2A RF power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
     pub failsafe_thr: u16, // 62..64: Failsafe throttle pulse in µs (e.g. 1000)
     pub aux_channels: [u8; 14], // 64..78: Source for CH5..CH18
-    pub wing_tail_mix: u8, // 78: 0: Normal, 1: Elevon/Delta, 2: V-Tail, 3: Flaperon
+    pub wing_tail_mix: u8, // 78: 0: Normal, 1: Elevon/Delta, 2: V-Tail, 3: Flaperon, 4: Tank
     pub template_diff: i8, // 79: Differential / mix ratio (-100..+100)
     pub mixes: [MixLine; NUM_MIX_LINES], // 80..336: 32 freeform mix rules (32 * 8 = 256 bytes)
     pub failsafe_mode: u8, // 336: 0: Hold last, 1: Custom pulses
@@ -499,6 +524,7 @@ pub struct ModelConfig {
     pub telem_slots: [u8; 4], // 362..366: Configurable telemetry dashboard sensor slots (1..4)
     pub dsm_sub_proto: u8, // 366: Spektrum DSM sub-protocol (0: DSMX-11, 1: DSMX-22, 2: DSM2-11, 3: DSM2-22)
     pub _pad_gvar: u8,     // 367..368: Align to 4-byte word boundary
+    pub tank: TankConfig,  // 368..376: Differential-drive configuration
 }
 
 impl ModelConfig {
@@ -552,6 +578,7 @@ impl ModelConfig {
             telem_slots: [0, 1, 2, 3],
             dsm_sub_proto: 0,
             _pad_gvar: 0,
+            tank: TankConfig::default_factory(),
         }
     }
 
@@ -566,7 +593,7 @@ impl ModelConfig {
     }
 }
 
-/// Compact storage layout containing radio settings and active model (488 bytes).
+/// Compact storage layout containing radio settings and active model (524 bytes).
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct RadioStorage {
@@ -622,6 +649,9 @@ impl RadioStorage {
         }
         if ch <= 4 {
             return true; // CH1..CH4 primary controls
+        }
+        if crate::mixer::is_tank_motor((ch - 1) as usize, &self.active_model) {
+            return true;
         }
         let ch_idx = (ch - 1) as usize; // 4..17
         let aux_idx = ch_idx - 4; // 0..13
@@ -1082,9 +1112,26 @@ impl RadioStorage {
         if m.dr_switch > 6 {
             m.dr_switch = 0;
         }
-        if m.wing_tail_mix > 3 {
+        if m.wing_tail_mix > 4 {
             m.wing_tail_mix = 0;
         }
+        if m.tank.drive_source > crate::mixer::MixSource::Gv5 as u8 {
+            m.tank.drive_source = 3;
+        }
+        if m.tank.steer_source > crate::mixer::MixSource::Gv5 as u8 {
+            m.tank.steer_source = 4;
+        }
+        if !(1..=18).contains(&m.tank.left_channel) {
+            m.tank.left_channel = 1;
+        }
+        if !(1..=18).contains(&m.tank.right_channel) || m.tank.right_channel == m.tank.left_channel
+        {
+            m.tank.right_channel = if m.tank.left_channel == 2 { 1 } else { 2 };
+        }
+        if !(-100..=100).contains(&m.tank.steer_weight) {
+            m.tank.steer_weight = 100;
+        }
+        m.tank.reserved = [0; 3];
         if m.template_diff < -100 || m.template_diff > 100 {
             m.template_diff = 0;
         }
@@ -1179,8 +1226,11 @@ impl RadioStorage {
 
 const _: () = assert!(core::mem::size_of::<RadioConfig>() == 148);
 const _: () = assert!(core::mem::size_of::<MixLine>() == 8);
-const _: () = assert!(core::mem::size_of::<ModelConfig>() == 368);
-const _: () = assert!(core::mem::size_of::<RadioStorage>() == 516);
+const _: () = assert!(core::mem::size_of::<TankConfig>() == 8);
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 376);
+const _: () = assert!(core::mem::offset_of!(ModelConfig, tank) == 368);
+const _: () = assert!(HEADER_SIZE + core::mem::size_of::<ModelConfig>() <= MODEL_SLOT_SIZE);
+const _: () = assert!(core::mem::size_of::<RadioStorage>() == 524);
 
 static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 
@@ -1481,6 +1531,35 @@ pub fn unpack_legacy_v1_model(v1: &LegacyModelConfigV1) -> ModelConfig {
     v2
 }
 
+fn supported_model_len(len: usize) -> bool {
+    matches!(len, 128 | 348 | 364 | 368) || len == core::mem::size_of::<ModelConfig>()
+}
+
+/// Decode and migrate a model payload without changing existing fields.
+fn decode_model_payload(hdr: &SlotHeader, payload: &[u8]) -> Result<ModelConfig, StorageError> {
+    hdr.is_valid(payload.len())?;
+    if !supported_model_len(payload.len()) {
+        return Err(StorageError::LengthMismatch(hdr.len));
+    }
+    if crc16(payload) != hdr.crc16 {
+        return Err(StorageError::CrcMismatch);
+    }
+    if payload.len() == 128 {
+        let legacy =
+            unsafe { core::ptr::read_unaligned(payload.as_ptr() as *const LegacyModelConfigV1) };
+        return Ok(unpack_legacy_v1_model(&legacy));
+    }
+    let mut model = ModelConfig::default_for_index(0);
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            payload.as_ptr(),
+            &mut model as *mut ModelConfig as *mut u8,
+            payload.len(),
+        );
+    }
+    Ok(model)
+}
+
 /// Helper to read a raw C struct from an EEPROM slot with 8-byte framing and CRC16 verification.
 pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
     #[cfg(test)]
@@ -1499,56 +1578,15 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
 
         let expected_size = core::mem::size_of::<T>();
 
-        // Check if this is a ModelConfig request and the slot holds legacy v1 (128 bytes)
-        if expected_size == core::mem::size_of::<ModelConfig>()
-            && hdr.len == 128
-            && hdr.magic == SLOT_MAGIC
-            && hdr.flags == 0
-        {
-            // Read 128 bytes of legacy model
-            let mut v1 = core::mem::MaybeUninit::<LegacyModelConfigV1>::uninit();
-            let v1_bytes =
-                unsafe { core::slice::from_raw_parts_mut(v1.as_mut_ptr() as *mut u8, 128) };
-            EepromI2c::read(addr + HEADER_SIZE as u16, v1_bytes)?;
-
-            // Verify CRC-16 of legacy payload
-            let computed_crc = crc16(v1_bytes);
-            if computed_crc != hdr.crc16 {
-                return Err(StorageError::CrcMismatch);
+        if expected_size == core::mem::size_of::<ModelConfig>() {
+            hdr.is_valid(hdr.len as usize)?;
+            if !supported_model_len(hdr.len as usize) {
+                return Err(StorageError::LengthMismatch(hdr.len));
             }
-
-            let legacy_model = unsafe { v1.assume_init() };
-            let v2_model = unpack_legacy_v1_model(&legacy_model);
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    &v2_model as *const ModelConfig as *const T,
-                    dst as *mut T,
-                    1,
-                );
-            }
-
-            // In-place upgrade: re-save slot as v2 (368 bytes) with updated CRC-16 envelope
-            let _ = save_slot(addr, &v2_model);
-
-            return Ok(());
-        }
-
-        // Check if this is a ModelConfig request and the slot holds legacy 348 or 364 bytes
-        if expected_size == core::mem::size_of::<ModelConfig>()
-            && (hdr.len == 348 || hdr.len == 364)
-            && hdr.magic == SLOT_MAGIC
-            && hdr.flags == 0
-        {
-            let old_len = hdr.len as usize;
+            let len = hdr.len as usize;
             let mut buf = [0u8; core::mem::size_of::<ModelConfig>()];
-            EepromI2c::read(addr + HEADER_SIZE as u16, &mut buf[..old_len])?;
-            let computed_crc = crc16(&buf[..old_len]);
-            if computed_crc != hdr.crc16 {
-                return Err(StorageError::CrcMismatch);
-            }
-            let mut model =
-                unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) };
-            model.telem_slots = [0, 1, 2, 3];
+            EepromI2c::read(addr + HEADER_SIZE as u16, &mut buf[..len])?;
+            let model = decode_model_payload(&hdr, &buf[..len])?;
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     &model as *const ModelConfig as *const T,
@@ -1556,7 +1594,9 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                     1,
                 );
             }
-            let _ = save_slot(addr, &model);
+            if len != expected_size {
+                let _ = save_slot(addr, &model);
+            }
             return Ok(());
         }
 
@@ -1640,10 +1680,7 @@ pub fn peek_model_name(slot_idx: usize) -> Option<[u8; 10]> {
         let hdr = SlotHeader::parse(unsafe {
             &*(buf[0..HEADER_SIZE].as_ptr() as *const [u8; HEADER_SIZE])
         });
-        if hdr.magic != SLOT_MAGIC || hdr.flags != 0 {
-            return None;
-        }
-        if hdr.len != (core::mem::size_of::<ModelConfig>() as u16) && hdr.len != 128 {
+        if hdr.is_valid(hdr.len as usize).is_err() || !supported_model_len(hdr.len as usize) {
             return None;
         }
 
@@ -1862,9 +1899,9 @@ mod tests {
 
     #[test]
     fn test_model_config_size_and_rf_power() {
-        assert_eq!(core::mem::size_of::<ModelConfig>(), 368);
+        assert_eq!(core::mem::size_of::<ModelConfig>(), 376);
         assert_eq!(core::mem::size_of::<RadioConfig>(), 148);
-        assert_eq!(core::mem::size_of::<RadioStorage>(), 516);
+        assert_eq!(core::mem::size_of::<RadioStorage>(), 524);
 
         let default_m = ModelConfig::default_for_index(0);
         assert_eq!(default_m.rf_power, 0);
@@ -1960,6 +1997,134 @@ mod tests {
         }
         assert_eq!(v2.gvars, [0; 5]);
         assert_eq!(v2.telem_slots, [0, 1, 2, 3]);
+        assert_eq!(v2.tank, TankConfig::default_factory());
+        let payload = unsafe {
+            core::slice::from_raw_parts(&v1 as *const LegacyModelConfigV1 as *const u8, 128)
+        };
+        let hdr = model_header(payload);
+        assert_eq!(decode_model_payload(&hdr, payload), Ok(v2));
+        assert_model_envelope_rejected(hdr, payload);
+    }
+
+    fn model_header(payload: &[u8]) -> SlotHeader {
+        SlotHeader {
+            magic: SLOT_MAGIC,
+            version: SCHEMA_VERSION,
+            flags: 0,
+            len: payload.len() as u16,
+            crc16: crc16(payload),
+        }
+    }
+
+    fn assert_model_envelope_rejected(mut hdr: SlotHeader, payload: &[u8]) {
+        hdr.crc16 ^= 1;
+        assert_eq!(
+            decode_model_payload(&hdr, payload),
+            Err(StorageError::CrcMismatch)
+        );
+        hdr.crc16 ^= 1;
+        hdr.version = SCHEMA_VERSION + 1;
+        assert_eq!(
+            decode_model_payload(&hdr, payload),
+            Err(StorageError::VersionMismatch(SCHEMA_VERSION + 1))
+        );
+        hdr.version = SCHEMA_VERSION;
+        hdr.flags = 0xff;
+        assert_eq!(
+            decode_model_payload(&hdr, payload),
+            Err(StorageError::EmptySlot)
+        );
+        hdr.flags = 0;
+        hdr.len -= 1;
+        assert_eq!(
+            decode_model_payload(&hdr, payload),
+            Err(StorageError::LengthMismatch(hdr.len))
+        );
+    }
+
+    #[test]
+    fn test_tank_model_payload_migrations() {
+        let mut original = ModelConfig::default_for_index(4);
+        original.rx_id = 0x1234_5678;
+        original.wing_tail_mix = 3;
+        original.trims = [1, -2, 3, -4];
+        original.vario_sink_deadband = 9;
+        original.gvars = [100, -200, 300, -400, 500];
+        original.telem_slots = [7, 8, 9, 10];
+        original.dsm_sub_proto = 3;
+        original.mixes[31].target_ch = 18;
+        original.mixes[31].source = 4;
+        original.tank.left_channel = 17;
+        original.tank.right_channel = 18;
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                &original as *const ModelConfig as *const u8,
+                core::mem::size_of::<ModelConfig>(),
+            )
+        };
+        for len in [348, 364, 368, 376] {
+            let payload = &bytes[..len];
+            let hdr = model_header(payload);
+            let decoded = decode_model_payload(&hdr, payload).unwrap();
+            let decoded_bytes = unsafe {
+                core::slice::from_raw_parts(&decoded as *const ModelConfig as *const u8, len)
+            };
+            assert_eq!(decoded_bytes, payload);
+            if len < 376 {
+                assert_eq!(decoded.tank, TankConfig::default_factory());
+            }
+            if len == 348 {
+                assert_eq!(decoded.vario_sink_deadband, 5);
+                assert_eq!(decoded.vario_motor_mute, 1);
+                assert_eq!(decoded.telem_slots, [0, 1, 2, 3]);
+            } else if len == 364 {
+                assert_eq!(decoded.telem_slots, [7, 8, 2, 3]);
+                assert_eq!(decoded.dsm_sub_proto, 0);
+            }
+            assert_model_envelope_rejected(hdr, payload);
+        }
+        assert_eq!(
+            decode_model_payload(&model_header(&bytes[..350]), &bytes[..350]),
+            Err(StorageError::LengthMismatch(350))
+        );
+    }
+
+    #[test]
+    fn test_tank_sanitize_and_configured_outputs() {
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.wing_tail_mix = 4;
+        storage.active_model.tank = TankConfig {
+            drive_source: 255,
+            steer_source: 255,
+            left_channel: 0,
+            right_channel: 19,
+            steer_weight: -128,
+            reserved: [255; 3],
+        };
+        storage.sanitize();
+        assert_eq!(storage.active_model.wing_tail_mix, 4);
+        assert_eq!(storage.active_model.tank, TankConfig::default_factory());
+        storage.active_model.tank.left_channel = 2;
+        storage.active_model.tank.right_channel = 2;
+        storage.active_model.tank.drive_source = crate::mixer::MixSource::Gv5 as u8;
+        storage.active_model.tank.steer_source = 0;
+        storage.active_model.tank.steer_weight = -100;
+        storage.sanitize();
+        assert_eq!(storage.active_model.tank.left_channel, 2);
+        assert_eq!(storage.active_model.tank.right_channel, 1);
+        assert_eq!(
+            storage.active_model.tank.drive_source,
+            crate::mixer::MixSource::Gv5 as u8
+        );
+        assert_eq!(storage.active_model.tank.steer_source, 0);
+        assert_eq!(storage.active_model.tank.steer_weight, -100);
+        storage.active_model.tank.left_channel = 17;
+        storage.active_model.tank.right_channel = 18;
+        assert!(storage.is_channel_configured(17));
+        assert!(storage.is_channel_configured(18));
+        storage.active_model.wing_tail_mix = 0;
+        assert!(!storage.is_channel_configured(17));
+        assert!(!storage.is_channel_configured(18));
     }
 
     #[test]
