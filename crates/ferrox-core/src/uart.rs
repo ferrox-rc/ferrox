@@ -40,13 +40,20 @@ pub fn is_half_duplex() -> bool {
     HALF_DUPLEX_ACTIVE.load(Ordering::Relaxed)
 }
 
+/// Baud rate index for MULTI-Module DSM (100,000 baud 8E2).
+pub const BAUD_IDX_MULTI_100K_8E2: u8 = 5;
+/// Baud rate index for Spektrum Satellite Trainer (115,200 baud 8N1).
+pub const BAUD_IDX_DSM_SAT_115K_8N1: u8 = 6;
+
 pub fn get_brr_for_baud(baud_idx: u8) -> u16 {
     match baud_idx {
-        0 => 417,
-        1 => 115,
-        2 => 114,
-        3 => 52,
-        4 => 26,
+        0 => 417, // 115,200 baud (CRSF / ELRS @ 48MHz APB)
+        1 => 115, // 400,000 baud
+        2 => 114, // 416,666 baud
+        3 => 52,  // 921,600 baud
+        4 => 26,  // 1,843,200 baud
+        5 => 480, // 100,000 baud (MULTI-Module DSM 8E2)
+        6 => 417, // 115,200 baud (Spektrum Satellite 8N1)
         _ => 115,
     }
 }

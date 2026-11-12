@@ -16,8 +16,8 @@ embedded-graphics = "0.8.1"
 
 [features]
 default = []
-board-i6s = ["touch", "rf-afhds2a", "rf-crsf", "rf-dsm"]
-board-i6x = ["rf-afhds2a", "rf-crsf", "rf-dsm"]
+board-i6s = ["touch", "rf-afhds2a", "rf-crsf", "rf-dsm", "dsm-fwd-prog"]
+board-i6x = ["rf-afhds2a", "rf-crsf", "rf-dsm", "dsm-fwd-prog"]
 board-pocket = ["rf-crsf", "rf-dsm", "dsm-fwd-prog"]
 board-pocket-cc2500 = ["board-pocket", "rf-cc2500"]
 board-boxer = ["rf-crsf", "rf-dsm", "dsm-fwd-prog"]

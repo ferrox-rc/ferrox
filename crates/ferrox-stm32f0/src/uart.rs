@@ -153,9 +153,18 @@ impl SerialPort for I6xSerialPort {
                 2 => 114,
                 3 => 52,
                 4 => 26,
+                5 => 480, // 100,000 baud (MULTI-Module DSM 8E2)
+                6 => 417, // 115,200 baud (Spektrum Satellite 8N1)
                 _ => 115,
             };
             usart2.brr.write(|w| w.bits(brr));
+
+            // CR2: STOP bits (bit 13:12: 00 = 1 stop bit, 10 = 2 stop bits)
+            if baud_idx == 5 {
+                usart2.cr2.write(|w| w.bits(2 << 12)); // 2 stop bits
+            } else {
+                usart2.cr2.write(|w| w.bits(0));
+            }
 
             if half_duplex {
                 usart2.cr3.write(|w| w.bits((1 << 3) | (1 << 6) | (1 << 7)));
@@ -192,9 +201,13 @@ impl SerialPort for I6xSerialPort {
             cortex_m::peripheral::NVIC::unmask(pac::Interrupt::USART2);
 
             // Enable USART, TX, RX, TCIE
-            usart2
-                .cr1
-                .write(|w| w.bits((1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)));
+            // If baud_idx == 5 (100k 8E2): M0=1 (bit 12, 9 data bits), PCE=1 (bit 10, parity enable), PS=0 (even parity)
+            let cr1_flags = if baud_idx == 5 {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6) | (1 << 10) | (1 << 12)
+            } else {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)
+            };
+            usart2.cr1.write(|w| w.bits(cr1_flags));
         }
     }
 
@@ -386,9 +399,18 @@ impl SerialPort for I6sSerialPort {
                 2 => 114,
                 3 => 52,
                 4 => 26,
+                5 => 480, // 100,000 baud (MULTI-Module DSM 8E2)
+                6 => 417, // 115,200 baud (Spektrum Satellite 8N1)
                 _ => 115,
             };
             usart1.brr.write(|w| w.bits(brr));
+
+            // CR2: STOP bits (bit 13:12: 00 = 1 stop bit, 10 = 2 stop bits)
+            if baud_idx == 5 {
+                usart1.cr2.write(|w| w.bits(2 << 12)); // 2 stop bits
+            } else {
+                usart1.cr2.write(|w| w.bits(0));
+            }
 
             if half_duplex {
                 usart1.cr3.write(|w| w.bits((1 << 3) | (1 << 6) | (1 << 7)));
@@ -424,9 +446,14 @@ impl SerialPort for I6sSerialPort {
             cp.NVIC.set_priority(pac::Interrupt::USART1, 0x40);
             cortex_m::peripheral::NVIC::unmask(pac::Interrupt::USART1);
 
-            usart1
-                .cr1
-                .write(|w| w.bits((1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)));
+            // Enable USART, TX, RX, TCIE
+            // If baud_idx == 5 (100k 8E2): M0=1 (bit 12, 9 data bits), PCE=1 (bit 10, parity enable), PS=0 (even parity)
+            let cr1_flags = if baud_idx == 5 {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6) | (1 << 10) | (1 << 12)
+            } else {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)
+            };
+            usart1.cr1.write(|w| w.bits(cr1_flags));
         }
     }
 
