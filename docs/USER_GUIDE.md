@@ -534,13 +534,16 @@ For RadioMaster Pocket, GX12, Boxer, Zorro, TX12, and Jumper T12 running the sto
 
 1. **Build or download** the bootloader-compatible `-sd.bin` binary. EdgeTX Bootloader expects the `.bin` to start with a 32 KiB bootloader region (`0x08000000..0x08007FFF`) before the application vector table at `0x08008000` (expect **~134 KiB** total, rather than the ~102 KiB raw app binary):
    ```bash
-   # Recommended helper script (links at 0x08008000 and prepends 32 KiB pad):
-   ./tools/build-sd-bin.sh <board>   # e.g. pocket, zorro, boxer, gx12, tx12, t12, x9e
+   # Windows (Command Prompt or PowerShell):
+   .\tools\build-sd-bin.bat <board>   # e.g. zorro, pocket, boxer, tx12, gx12, t12, x9e
+   # Or PowerShell directly:
+   .\tools\build-sd-bin.ps1 <board>
 
-   # Or manually:
-   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "<board>,edgetx-bootloader" -- -O binary app.bin
-   dd if=/dev/zero bs=1024 count=32 | tr '\000' '\377' > pad32k.bin
-   cat pad32k.bin app.bin > ferrox-<board>-sd.bin
+   # Linux / macOS:
+   ./tools/build-sd-bin.sh <board>
+
+   # Cross-platform (Python):
+   python tools/build-sd-bin.py <board>
    ```
 2. Copy `ferrox-<board>-sd.bin` into the `/FIRMWARE/` folder on your microSD card.
 3. Push and hold **both horizontal trims inward** while pressing the power button to enter the EdgeTX Bootloader.

@@ -18,27 +18,27 @@ Welcome to the pilot hardware testing program for **Ferrox**! This guide is desi
 You can either download a pre-built `-sd.bin` test build provided by the development team, or build it yourself from source.
 
 > [!NOTE]
-> EdgeTX Bootloader seeks **32 KiB (32,768 bytes)** into any `.bin` file on the SD card before validating the Cortex-M vector table and writing flash at `0x08008000`. Use `./tools/build-sd-bin.sh` (which builds with `edgetx-bootloader` and prepends the 32 KiB pad) so your output is ~134 KiB rather than an unpadded ~102 KiB raw binary.
+> EdgeTX Bootloader seeks **32 KiB (32,768 bytes)** into any `.bin` file on the SD card before validating the Cortex-M vector table and writing flash at `0x08008000`. Use the build scripts in `tools/` (which build with `edgetx-bootloader` and prepend the 32 KiB pad) so your output is ~134 KiB rather than an unpadded ~102 KiB raw binary.
 
 ```bash
 # Ensure llvm-tools-preview and cargo-binutils are installed:
 rustup component add llvm-tools-preview
 cargo install cargo-binutils
 
-# Build bootloader-ready SD binary (~134 KiB):
-./tools/build-sd-bin.sh pocket   # RadioMaster Pocket -> ferrox-pocket-sd.bin
-./tools/build-sd-bin.sh zorro    # RadioMaster Zorro  -> ferrox-zorro-sd.bin
-./tools/build-sd-bin.sh x9e      # FrSky Taranis X9E  -> ferrox-x9e-sd.bin
-./tools/build-sd-bin.sh t12      # Jumper T12         -> ferrox-t12-sd.bin
-./tools/build-sd-bin.sh gx12     # RadioMaster GX12   -> ferrox-gx12-sd.bin
+# 1. On Windows (Command Prompt or PowerShell):
+.\tools\build-sd-bin.bat zorro    # RadioMaster Zorro  -> ferrox-zorro-sd.bin
+.\tools\build-sd-bin.bat pocket   # RadioMaster Pocket -> ferrox-pocket-sd.bin
+# (or use .\tools\build-sd-bin.ps1 <board>)
+
+# 2. On Linux / macOS:
+./tools/build-sd-bin.sh zorro     # RadioMaster Zorro  -> ferrox-zorro-sd.bin
+./tools/build-sd-bin.sh pocket    # RadioMaster Pocket -> ferrox-pocket-sd.bin
+
+# 3. Cross-platform via Python:
+python tools/build-sd-bin.py zorro
 ```
 
-If you prefer running the steps manually (e.g. for `zorro`):
-```bash
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "zorro,edgetx-bootloader" -- -O binary app.bin
-dd if=/dev/zero bs=1024 count=32 | tr '\000' '\377' > pad32k.bin
-cat pad32k.bin app.bin > ferrox-zorro-sd.bin
-```
+Supported boards: `pocket`, `boxer`, `zorro`, `tx12`, `gx12`, `t12`, `x9e`, `x9d`, `qx7`, `tprov2`, `at9spro`.
 
 ---
 
