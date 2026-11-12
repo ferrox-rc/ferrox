@@ -434,4 +434,15 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
         }
         Ok(())
     }
+
+    fn init_sd_readonly(&mut self) -> bool {
+        if self.using_sd {
+            return true;
+        }
+        self.sd_card.init()
+    }
+
+    fn read_raw_sector(&mut self, lba: u32, buf: &mut [u8; 512]) -> Result<(), ()> {
+        self.sd_card.read_sector(lba, buf)
+    }
 }

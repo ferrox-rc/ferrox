@@ -38,11 +38,13 @@ pub mod board;
 pub use board::{ActiveBoard, BoardProfile};
 
 pub mod adc;
+pub mod audio;
 pub mod boot;
 pub mod buzzer;
 pub mod calib;
 pub mod chip;
 pub mod crsf;
+pub mod fat;
 pub mod curve;
 pub mod display;
 #[cfg(feature = "rf-dsm")]

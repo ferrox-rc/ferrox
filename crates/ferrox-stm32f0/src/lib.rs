@@ -93,6 +93,7 @@ pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext {
             power: None,
             touch: None,
             watchdog: None,
+            audio: None,
         }
     }
 }
@@ -140,6 +141,7 @@ pub fn create_i6s_context() -> ferrox_core::hal::PlatformContext {
             power: Some(&mut POWER),
             touch: Some(&mut TOUCH),
             watchdog: None,
+            audio: None,
         }
     }
 }

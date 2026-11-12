@@ -25,6 +25,49 @@ impl ToneOutput for NullToneOutput {
     fn off(&mut self) {}
 }
 
+/// Hardware PCM/DAC audio streaming driver (e.g., 12-bit DAC + DMA on STM32F4).
+pub trait AudioOutput {
+    /// Initialize audio DAC/DMA hardware (kept muted until playback starts).
+    fn init(&mut self);
+
+    /// Configure sample rate, unmute amplifier, and start DMA streaming.
+    fn start(&mut self, sample_rate_hz: u32) -> bool;
+
+    /// Stop DMA streaming, mute amplifier, and release shared pin if needed.
+    fn stop(&mut self);
+
+    /// Non-blocking write of 12-bit unsigned PCM samples (`0..=4095`, midpoint `2048`).
+    /// Returns the number of samples accepted into the hardware buffer.
+    fn write_samples(&mut self, samples: &[u16]) -> usize;
+
+    /// Number of 12-bit samples that can be written immediately without blocking.
+    fn free_space(&self) -> usize;
+
+    /// Returns true while audio playback is active or queued in DMA.
+    fn is_playing(&self) -> bool;
+}
+
+/// Dummy no-op PCM audio output for targets without DAC audio.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct NullAudioOutput;
+
+impl AudioOutput for NullAudioOutput {
+    fn init(&mut self) {}
+    fn start(&mut self, _sample_rate_hz: u32) -> bool {
+        false
+    }
+    fn stop(&mut self) {}
+    fn write_samples(&mut self, _samples: &[u16]) -> usize {
+        0
+    }
+    fn free_space(&self) -> usize {
+        0
+    }
+    fn is_playing(&self) -> bool {
+        false
+    }
+}
+
 /// Hardware LCD display bus flush and backlight driver.
 pub trait DisplayBus {
     /// Initialize GPIOs and controller registers.
@@ -71,6 +114,17 @@ pub trait StorageBus {
     #[allow(clippy::result_unit_err)]
     fn append_telemetry_sector(&mut self, _sector: &[u8; 512]) -> Result<(), ()> {
         Ok(())
+    }
+
+    /// Initialize SD card for read-only FAT access (e.g. /SOUNDS/ playback), if present.
+    fn init_sd_readonly(&mut self) -> bool {
+        false
+    }
+
+    /// Read a raw 512-byte sector at `lba` from the SD card, if present.
+    #[allow(clippy::result_unit_err)]
+    fn read_raw_sector(&mut self, _lba: u32, _buf: &mut [u8; 512]) -> Result<(), ()> {
+        Err(())
     }
 }
 
@@ -521,6 +575,7 @@ pub struct PlatformContext {
     pub power: Option<&'static mut dyn PowerDriver>,
     pub touch: Option<&'static mut dyn TouchDriver>,
     pub watchdog: Option<&'static mut dyn WatchdogDriver>,
+    pub audio: Option<&'static mut dyn AudioOutput>,
 }
 
 impl PlatformContext {
@@ -542,6 +597,9 @@ impl PlatformContext {
         if let Some(t) = self.touch {
             register_touch_driver(t);
         }
+        if let Some(a) = self.audio {
+            crate::audio::register_audio_output(a);
+        }
     }
 
     /// Construct a dummy PlatformContext backed by static Null drivers (for unit testing).
@@ -559,6 +617,7 @@ impl PlatformContext {
         static mut NULL_POWER: NullPowerDriver = NullPowerDriver;
         static mut NULL_TOUCH: NullTouchDriver = NullTouchDriver;
         static mut NULL_WDG: NullWatchdog = NullWatchdog;
+        static mut NULL_AUDIO: NullAudioOutput = NullAudioOutput;
 
         unsafe {
             Self {
@@ -575,6 +634,7 @@ impl PlatformContext {
                 power: Some(&mut NULL_POWER),
                 touch: Some(&mut NULL_TOUCH),
                 watchdog: Some(&mut NULL_WDG),
+                audio: Some(&mut NULL_AUDIO),
             }
         }
     }

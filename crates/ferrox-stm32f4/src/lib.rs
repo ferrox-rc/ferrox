@@ -28,6 +28,7 @@ const _: () = {
 };
 
 pub mod adc;
+pub mod audio;
 pub mod buzzer;
 pub mod chip;
 pub mod descriptor;
@@ -42,6 +43,7 @@ pub mod uart;
 pub mod watchdog;
 
 pub use adc::Stm32f4AdcDriver;
+pub use audio::Stm32f4AudioDriver;
 pub use buzzer::DacToneBuzzer;
 pub use chip::{
     check_and_clear_reset_flags, enter_dfu_bootloader, init_system_clock, Stm32f4SystemDriver,
@@ -78,6 +80,7 @@ macro_rules! define_qx7_context {
             static mut KEYS: $crate::Qx7KeyDriver<$hal> = $crate::Qx7KeyDriver::new();
             static mut UART: $crate::PocketSerialPort<$hal> = $crate::PocketSerialPort::new();
             static mut POWER: $crate::Stm32f4PowerDriver<$hal> = $crate::Stm32f4PowerDriver::new();
+            static mut AUDIO: $crate::Stm32f4AudioDriver = $crate::Stm32f4AudioDriver::new();
 
             unsafe {
                 ferrox_core::watchdog::register_watchdog(
@@ -98,6 +101,7 @@ macro_rules! define_qx7_context {
                     power: Some(&mut POWER),
                     touch: None,
                     watchdog: None,
+                    audio: Some(&mut AUDIO),
                 }
             }
         }

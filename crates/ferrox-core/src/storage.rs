@@ -24,6 +24,27 @@ pub fn register_storage_bus(bus: &'static mut dyn StorageBus) {
     }
 }
 
+/// Initialize the SD card for read-only FAT access (e.g. `/SOUNDS/` playback), if present.
+pub fn init_sd_readonly() -> bool {
+    unsafe {
+        match STORAGE_BUS {
+            Some(ref mut bus) => bus.init_sd_readonly(),
+            None => false,
+        }
+    }
+}
+
+/// Read a raw 512-byte sector at `lba` from the SD card, if present.
+#[allow(clippy::result_unit_err)]
+pub fn read_raw_sd_sector(lba: u32, buf: &mut [u8; 512]) -> Result<(), ()> {
+    unsafe {
+        match STORAGE_BUS {
+            Some(ref mut bus) => bus.read_raw_sector(lba, buf),
+            None => Err(()),
+        }
+    }
+}
+
 pub const FLASH_MAGIC: u32 = 0x4653_4B59; // "FSKY"
 pub const CONFIG_VERSION: u32 = 5;
 pub const NUM_MODELS: usize = 20;

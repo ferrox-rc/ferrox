@@ -52,6 +52,9 @@ impl ToneOutput for DacToneBuzzer {
     }
 
     fn on(&mut self, freq_hz: u16) {
+        if crate::audio::is_active() {
+            return;
+        }
         if freq_hz == 0 {
             self.off();
             return;
@@ -76,6 +79,9 @@ impl ToneOutput for DacToneBuzzer {
     }
 
     fn off(&mut self) {
+        if crate::audio::is_active() {
+            return;
+        }
         let tim5 = unsafe { &*pac::TIM5::ptr() };
         let gpioe = unsafe { &*pac::GPIOE::ptr() };
 

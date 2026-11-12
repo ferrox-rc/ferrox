@@ -320,6 +320,7 @@ pub struct BackgroundIdleManager {
     pub trim_dirty: bool,
     pub trim_save_cooldown_ms: u16,
     pub prev_instant_trim_active: bool,
+    pub audio_callouts: crate::audio::CalloutScheduler,
     pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
 }
 
@@ -374,6 +375,7 @@ impl BackgroundIdleManager {
             trim_dirty: false,
             trim_save_cooldown_ms: 0,
             prev_instant_trim_active: false,
+            audio_callouts: crate::audio::CalloutScheduler::new(),
             board_idle: ActiveBoard::create_idle_state(),
         }
     }
@@ -1086,6 +1088,7 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     buzzer.init();
     buzzer.enabled = storage.radio.audio_enabled != 0;
     buzzer.tone_style = crate::buzzer::ToneStyle::from_u8(storage.radio.tone_style);
+    crate::audio::init();
 
     // 5. Initialize ST7567 128×64 LCD (clears framebuffer and flushes before turning on backlight)
     let mut lcd = St7567::new();
@@ -1285,5 +1288,20 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
             &mut calib_wizard,
             rf_ok,
         );
+
+        // Tier 3: Non-blocking WAV/PCM voice playback & periodic telemetry callouts
+        if storage.radio.audio_enabled != 0 {
+            let alt_m = (flight_snapshot.telem.last_alt_ms != 0
+                && now.wrapping_sub(flight_snapshot.telem.last_alt_ms) < 5000)
+                .then_some(flight_snapshot.telem.alt_m);
+            idle_manager.audio_callouts.maybe_announce(
+                now,
+                10,
+                flight_snapshot.telem.connected,
+                alt_m,
+                -(flight_snapshot.telem.rssi as i8),
+            );
+            crate::audio::tick(80);
+        }
     }
 }
