@@ -41,7 +41,7 @@ Depending on your transmitter hardware, Ferrox provides dedicated, responsive in
 
 ## 2. Multi-Page Flight Dashboard
 
-The main flight screen features 5 switchable display pages cycled by tapping **`[BIND]`** or pressing **`[UP]`** / **`[DOWN]`**. All 5 pages share a pixel-perfect uniform layout:
+The main flight screen features 5 switchable display pages (plus an automatic 6th **F5J Graphic Altitude** page when Soaring F5J mode is active on the model) cycled by tapping **`[BIND]`** or pressing **`[UP]`** / **`[DOWN]`**. All pages share a pixel-perfect uniform layout:
 - **Top Status Bar (`y = 0..10`)**: Displays active model type icon (12x12 MDI glyph), active model name, centered RF/telemetry status (`RF:OK`, `R:XX%`, `BIND`, `U:SIM`, `NO RF`), and right-aligned power indicator with steady filtered battery voltage (`X.YYV`) and procedural solid battery gauge (`[===]`).
 - **Top Divider (`y = 11`)**: Full-width horizontal line (`Line(0, 11) -> (127, 11)`).
 - **Content Area (`y = 12..54`)**: Page-specific controls, split channels, gauges, and telemetry.
@@ -290,7 +290,9 @@ Hold **`[OK]` for 1.2 seconds** from any flight screen to open the Settings Menu
     - **`Sink DB:`**: Sink deadband threshold in 0.1 m/s increments (`0.5m/s` to `5.0m/s`, default `1.5m/s`).
     - **`Sink Mode:`**: Acoustic sink behavior (`BEEP` for periodic sink chirps, `CONT` for continuous low drone, or `SILENT` for lift-only soaring).
     - **`Motor Mute:`**: Automatically mutes vario audio whenever throttle stick exceeds 10% (`YES`/`NO`, default `YES`), ensuring quiet power climbs.
-- **Field 8: Reset Defaults (`[OK Defaults]`)**:
+- **Field 8: Soaring Setup (`Soaring: OFF / F5J / F3K`)**:
+  - Press **`[OK]`** to enter the **Soaring / F5J Competition Setup Screen (`SOARING / F5J SETUP`)** (see [Section 11](#11-soaring--competition-tools-f5j) for full operating instructions).
+- **Field 9: Reset Defaults (`[OK Defaults]`)**:
   - Press **`[OK]`** to restore default trims, standard channel directions, linear curves, and mixer parameters for this model slot.
 
 ### Submenu 3: Dual Rate & Expo (`DUAL RATE/EXPO`)
@@ -731,3 +733,70 @@ In **`SERIAL`** or **`COMPOSITE`** mode, the radio exposes a standard virtual se
   ```json
   {"vbat":5.18,"rssi":98,"rx_v":5.02,"tx":15820,"rx":15798,"err":22,"ch":[1500,1500,1150,1500,1000,1000,1500,1500,1000,1000,1500,1500,1500,1500]}
   ```
+
+---
+
+## 11. Soaring & Competition Tools (F5J)
+
+Ferrox includes a built-in, zero-heap **F5J Competition & Graphic Altitude Engine** inspired by the *SoarETX BW* and *Stiganas* competition workflows. Because the engine runs natively in compiled firmware rather than an interpreted Lua VM, it requires zero SD card scripts, avoids instruction-limit timeouts, and introduces zero frame jitter across both STM32F0 and STM32F4 transmitters.
+
+### 11.1 Enabling & Configuring Soaring (`Model Setup -> Soaring`)
+
+Navigate to **`MAIN MENU -> MODEL SETUP -> Soaring`** to configure F5J rules per model slot:
+
+| Parameter | Default | Range / Options | Description |
+| :--- | :---: | :--- | :--- |
+| **`Mode:`** | `OFF` | `OFF`, `F5J`, `F3K` | Selects soaring discipline. Setting `F5J` automatically unlocks Dashboard Page 6/6. |
+| **`Motor Ch:`** | `CH3` | `CH1..CH18` | Channel monitored for motor launch detection (e.g., `CH3` standard or `CH7` on 6-servo M-tail/wing setups). |
+| **`Work Time:`** | `10m` | `1m..99m` | Official competition working time target for audio countdown alerts (typically `10m` prelims, `15m` fly-off). |
+| **`On Thr:`** | `-80%` | `-90%..+90%` | Motor channel percentage threshold that latches launch start (`> -80%`). |
+| **`Off Thr:`** | `-90%` | `-100%..(On-5%)` | Hysteresis threshold below which motor shutoff is recognized (`< -90%`). |
+| **`Min Climb:`** | `15m` | `5m..100m` | Minimum altitude climb gate before automatic touchdown detection activates (prevents ground false triggers). |
+| **`Land Alt:`** | `5m` | `1m..20m` | Maximum ground window height (absorbs barometric drift). |
+| **`Hold Secs:`** | `3s` | `1s..15s` | Consecutive seconds altitude must stay flat (`<= 0.2m` delta) to confirm touchdown. |
+| **`Audio Cues:`** | `ON` | `ON` / `OFF` | Enables buzzer cadence beeps for motor runtime, 10s window completion, and working time intervals. |
+
+---
+
+### 11.2 Reading Dashboard Page 6/6 (`F5J Graphic Altitude`)
+
+Whenever **`Mode:`** is set to **`F5J`**, an extra 6th dashboard page becomes available via **`[UP]`/`[DOWN]`** (or **`[PAGE]`**):
+
+```text
++-------------------------------------------------------------+
+| [G] F5J GLIDER            R: 99%              8.20V   [===] | <- Top Status Bar (TX Batt & Link)
+|-------------------------------------------------------------|
+| F5J:142 M:286 m:48                                [GLD 7:42]| <- Launch Height, Max, Min & Phase Badge
+| 286m |                                               R:5.1V | <- Auto-scaled Y-axis & RX Batt
+|      |           [MAX]  :                                   |
+|      |            /^\   :                                   | <- Connected 110-sample altitude curve
+|      |      /\   /   \  :   /\                              |    with 3x3 peak/valley boxes + dotted lines
+|      |     /  \_/     \_:__/  \__   [MIN]                   |
+|   0m |____/_____________:________\_[]______________________ | <- Baseline (y=57)
+|                   5m   10m                             15m  | <- Fixed 15-minute timeline
++-------------------------------------------------------------+
+```
+
+- **Top Telemetry Summary (`F5J:` / `M:` / `m:`):**
+  - **`F5J:`**: Live climb peak during motor/window phases, frozen permanently at the official FAI start height once the 10-second window closes. Displays `!` if a motor restart occurred.
+  - **`M:`**: Overall maximum thermal altitude (`MAX`) reached during the flight.
+  - **`m:`**: Lowest real-flight glide altitude (`MIN`), ignoring the first 90 seconds after the F5J start window so initial climb isn't counted as your lowest save.
+- **Phase & Duration Badge (Top Right):** Inverted high-contrast badge displaying active state and elapsed time:
+  - **`RDY`**: Ready on ground; barometric launch reference (`0.0m`) tracks ground level until throttle exceeds `On Thr`.
+  - **`MOT`**: Motor running (automatically enters window at `30.0s` or earlier if motor cut).
+  - **`WIN`**: 10-second post-motor zoom measurement window counting upwards.
+  - **`GLD`**: Free thermal glide phase.
+  - **`LND`**: Touchdown detected and duration frozen (`-1s` lead-in offset).
+
+---
+
+### 11.3 FAI F5J 5-Phase Flight Lifecycle & Audio Cadence
+
+1. **Launch (`MOT`):** Moving the assigned motor channel above `On Thr` zeroes the flight graph, starts the 15-minute recording timeline (`8.18s` per column), and begins tracking peak altitude. The buzzer chimes at `5s`, `10s`, `15s`, `20s`, and counts every second from `21s` through `29s`.
+2. **10-Second Zoom Window (`WIN`):** When the motor stops (manually or automatically at `30s`), Ferrox double-beeps and monitors altitude for `10.0s`. If the glider zooms higher on residual energy, `F5J` height continues updating. At `10.0s`, a high tone freezes the official **`F5J`** start height.
+3. **Free Glide (`GLD`):** Working-time audio cues sound every minute (`>2m` left), every `15s` (`1m–2m` left), every `5s` (`10s–55s` left), and once per second during the final 10 seconds.
+4. **Automatic Touchdown Detection (`LND`):** Once the glider climbs above **`Min Climb`** (`15m`), Ferrox watches for ground settlement (`alt <= Land Alt` with `|delta| <= 0.2m` for `Hold Secs` consecutive seconds). Upon confirmation, a chime plays, chart sampling stops, and the final duration (`touchdown_ms - launch_ms - 1s`) locks cleanly on screen.
+5. **Motor Restart & Reset:**
+   - Restarting the motor during `WIN`, `GLD`, or `LND` immediately begins a new flight trace and marks the flight with `!` (restart = 0 contest score under FAI rules).
+   - Holding **`[CANCEL]` (`[ESC]`) for >= 1.0 second** (or toggling an assigned timer reset switch) clears the graph and returns the engine cleanly to **`RDY`** for the next round.
+
