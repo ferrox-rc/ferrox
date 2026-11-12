@@ -20,6 +20,7 @@ MEMORY
 }
 
 _stack_start = ORIGIN(RAM) + LENGTH(RAM);
+_stext = ORIGIN(FLASH) + 0x200;
 "#
     } else {
         r#"/* Memory map for RadioMaster Pocket (STM32F407VET6) standalone DFU/SWD */
@@ -43,6 +44,22 @@ _stack_start = ORIGIN(RAM) + LENGTH(RAM);
         .unwrap()
         .write_all(memory_x_content.as_bytes())
         .unwrap();
+
+    if env::var("CARGO_FEATURE_EDGETX_BOOTLOADER").is_ok() {
+        let fwversion_x = r#"SECTIONS
+{
+  .fwversiondata : ALIGN(4)
+  {
+    KEEP(*(.fwversiondata));
+  } > FLASH
+} INSERT AFTER .vector_table;
+"#;
+        File::create(out.join("fwversion.x"))
+            .unwrap()
+            .write_all(fwversion_x.as_bytes())
+            .unwrap();
+        println!("cargo:rustc-link-arg=-Tfwversion.x");
+    }
 
     println!("cargo:rustc-link-search={}", out.display());
     println!("cargo:rerun-if-changed=build.rs");
