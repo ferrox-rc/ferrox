@@ -38,12 +38,14 @@ pub mod board;
 pub use board::{ActiveBoard, BoardProfile};
 
 pub mod adc;
+#[cfg(any(feature = "voice-audio", test))]
 pub mod audio;
 pub mod boot;
 pub mod buzzer;
 pub mod calib;
 pub mod chip;
 pub mod crsf;
+#[cfg(any(feature = "voice-audio", test))]
 pub mod fat;
 pub mod curve;
 pub mod display;

@@ -598,7 +598,10 @@ impl PlatformContext {
             register_touch_driver(t);
         }
         if let Some(a) = self.audio {
+            #[cfg(any(feature = "voice-audio", test))]
             crate::audio::register_audio_output(a);
+            #[cfg(not(any(feature = "voice-audio", test)))]
+            let _ = a;
         }
     }
 
