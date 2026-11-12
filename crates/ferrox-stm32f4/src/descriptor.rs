@@ -56,9 +56,11 @@ impl PinDef {
             let rcc = &*pac::RCC::ptr();
             rcc.ahb1enr
                 .modify(|r, w| w.bits(r.bits() | self.rcc_ahb1_bit()));
+            let _ = rcc.ahb1enr.read().bits();
             let gpio = &*self.gpio_ptr();
             let shift = self.pin * 2;
-            gpio.moder.modify(|r, w| w.bits(r.bits() & !(0x03 << shift)));
+            gpio.moder
+                .modify(|r, w| w.bits(r.bits() & !(0x03 << shift)));
             gpio.pupdr
                 .modify(|r, w| w.bits((r.bits() & !(0x03 << shift)) | (0x01 << shift)));
         }
@@ -69,6 +71,7 @@ impl PinDef {
             let rcc = &*pac::RCC::ptr();
             rcc.ahb1enr
                 .modify(|r, w| w.bits(r.bits() | self.rcc_ahb1_bit()));
+            let _ = rcc.ahb1enr.read().bits();
             let gpio = &*self.gpio_ptr();
             let shift = self.pin * 2;
             gpio.moder
@@ -246,7 +249,7 @@ pub trait Qx7HalDescriptor: 'static {
     const SW_SH: SwitchDef = SwitchDef::None;
 
     /// Status LED pin.
-    const LED_STATUS: PinDef = PinDef::new(Port::E, 2);
+    const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::E, 2));
 
     /// Internal RF power and bootloader control pins.
     const INT_RF_PWR: PinDef = PinDef::new(Port::C, 4);
@@ -280,7 +283,7 @@ impl Qx7HalDescriptor for BoxerHal {
     };
     const SW_SE: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 14));
     const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
-    const LED_STATUS: PinDef = PinDef::new(Port::A, 7);
+    const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::A, 7));
 }
 
 /// RadioMaster Zorro HAL Descriptor.
@@ -311,7 +314,7 @@ impl Qx7HalDescriptor for Tx12Hal {
         high: PinDef::new(Port::E, 1),
         low: PinDef::new(Port::D, 14),
     };
-    const LED_STATUS: PinDef = PinDef::new(Port::A, 7);
+    const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::A, 7));
 }
 
 /// FrSky Taranis Q X7 / X7S ACCESS HAL Descriptor.
@@ -350,7 +353,7 @@ impl Qx7HalDescriptor for Qx7Hal {
     };
     const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 14));
     const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
-    const LED_STATUS: PinDef = PinDef::new(Port::B, 1);
+    const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::B, 1));
     const INT_RF_PWR: PinDef = PinDef::new(Port::C, 5);
     const INT_RF_BOOTCMD: Option<PinDef> = None;
 }
@@ -390,7 +393,7 @@ impl Qx7HalDescriptor for TProV2Hal {
     const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::G, 1));
     const SW_SG: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::G, 10));
     const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::G, 9));
-    const LED_STATUS: PinDef = PinDef::new(Port::B, 1);
+    const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::B, 1));
     const INT_RF_PWR: PinDef = PinDef::new(Port::C, 6);
     const INT_RF_BOOTCMD: Option<PinDef> = None;
 }
@@ -429,6 +432,7 @@ impl Qx7HalDescriptor for X9dHal {
         low: PinDef::new(Port::E, 0),
     };
     const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
+    const LED_STATUS: Option<PinDef> = None;
 }
 
 /// FrSky Taranis X9E Tray Radio HAL Descriptor.
@@ -451,6 +455,7 @@ impl Qx7HalDescriptor for X9eHal {
         low: PinDef::new(Port::E, 0),
     };
     const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
+    const LED_STATUS: Option<PinDef> = None;
 }
 
 /// RadioLink AT9S Pro HAL Descriptor.
@@ -465,6 +470,7 @@ impl Qx7HalDescriptor for At9sProHal {
     const LCD_HORIZ_INVERT: bool = false;
     const ROTENC_PIN_B: u8 = 11;
     const ROTENC_INVERT: bool = false;
+    const KEY_MDL: Option<PinDef> = None;
     const SW_SE: SwitchDef = SwitchDef::ThreePos {
         high: PinDef::new(Port::E, 14),
         low: PinDef::new(Port::E, 7),
@@ -475,6 +481,7 @@ impl Qx7HalDescriptor for At9sProHal {
         low: PinDef::new(Port::E, 0),
     };
     const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
+    const LED_STATUS: Option<PinDef> = None;
 }
 
 /// RadioMaster GX12 HAL Descriptor.
@@ -492,5 +499,5 @@ impl Qx7HalDescriptor for Gx12Hal {
     const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
     const SW_SG: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 7));
     const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
-    const LED_STATUS: PinDef = PinDef::new(Port::A, 7);
+    const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::A, 7));
 }

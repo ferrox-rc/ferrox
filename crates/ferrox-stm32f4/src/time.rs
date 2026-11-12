@@ -38,4 +38,3 @@ pub fn delay_ms(ms: u32) {
 fn SysTick() {
     ferrox_core::time::tick_ms();
 }
-

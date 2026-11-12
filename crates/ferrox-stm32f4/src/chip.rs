@@ -18,8 +18,10 @@ impl Default for Stm32f4SystemDriver {
 
 pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
 
+use core::mem::MaybeUninit;
+
 #[link_section = ".uninit"]
-static mut DFU_RETAINED_FLAG: u32 = 0;
+static mut DFU_RETAINED_FLAG: MaybeUninit<u32> = MaybeUninit::uninit();
 
 #[cfg(feature = "edgetx-bootloader")]
 const EDGETX_FLAVOUR: &str = if cfg!(feature = "board-zorro") {
@@ -131,20 +133,24 @@ impl SystemDriver for Stm32f4SystemDriver {
 
     fn has_retained_dfu_flag(&mut self) -> bool {
         unsafe {
-            let flag = core::ptr::read_volatile(core::ptr::addr_of!(DFU_RETAINED_FLAG));
+            let flag =
+                core::ptr::read_volatile(core::ptr::addr_of!(DFU_RETAINED_FLAG).cast::<u32>());
             flag == DFU_MAGIC_FLAG
         }
     }
 
     fn set_retained_dfu_flag(&mut self) {
         unsafe {
-            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG), DFU_MAGIC_FLAG);
+            core::ptr::write_volatile(
+                core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(),
+                DFU_MAGIC_FLAG,
+            );
         }
     }
 
     fn clear_retained_dfu_flag(&mut self) {
         unsafe {
-            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG), 0);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(), 0);
         }
     }
 
@@ -188,14 +194,8 @@ pub fn init_system_clock() {
             // 5. Configure PLL: HSE (12 MHz) / 12 * 336 / 2 = 168 MHz SYSCLK; / 7 = 48 MHz USB
             // PLLM = 12 (bits 0..5), PLLN = 336 (bits 6..14), PLLP = 0 (/2, bits 16..17),
             // PLLSRC = 1 (HSE, bit 22), PLLQ = 7 (bits 24..27)
-            rcc.pllcfgr.write(|w| {
-                w.bits(
-                    12 | (336 << 6)
-                        | (0 << 16)
-                        | (1 << 22)
-                        | (7 << 24),
-                )
-            });
+            rcc.pllcfgr
+                .write(|w| w.bits(12 | (336 << 6) | (0 << 16) | (1 << 22) | (7 << 24)));
 
             // 6. Enable PLL (PLLON = bit 24)
             rcc.cr.modify(|r, w| w.bits(r.bits() | (1 << 24)));
@@ -205,19 +205,21 @@ pub fn init_system_clock() {
                 timeout -= 1;
             }
 
-            // 7. Configure Prescalers: HPRE = /1 (168MHz), PPRE1 = /4 (42MHz), PPRE2 = /2 (84MHz)
-            // RCC_CFGR: bits 10..12 = 0b101 (/4), bits 13..15 = 0b100 (/2)
-            let cfgr = rcc.cfgr.read().bits();
-            let clean_cfgr = cfgr & !(0xF0 | (0x07 << 10) | (0x07 << 13));
-            rcc.cfgr
-                .write(|w| w.bits(clean_cfgr | (0x05 << 10) | (0x04 << 13)));
+            if timeout > 0 {
+                // 7. Configure Prescalers: HPRE = /1 (168MHz), PPRE1 = /4 (42MHz), PPRE2 = /2 (84MHz)
+                // RCC_CFGR: bits 10..12 = 0b101 (/4), bits 13..15 = 0b100 (/2)
+                let cfgr = rcc.cfgr.read().bits();
+                let clean_cfgr = cfgr & !(0xF0 | (0x07 << 10) | (0x07 << 13));
+                rcc.cfgr
+                    .write(|w| w.bits(clean_cfgr | (0x05 << 10) | (0x04 << 13)));
 
-            // 8. Select PLL as system clock source (SW = 0b10)
-            rcc.cfgr.modify(|r, w| w.bits((r.bits() & !0x03) | 0x02));
+                // 8. Select PLL as system clock source (SW = 0b10)
+                rcc.cfgr.modify(|r, w| w.bits((r.bits() & !0x03) | 0x02));
 
-            timeout = 100_000;
-            while (rcc.cfgr.read().bits() & 0x0C) != 0x08 && timeout > 0 {
-                timeout -= 1;
+                timeout = 100_000;
+                while (rcc.cfgr.read().bits() & 0x0C) != 0x08 && timeout > 0 {
+                    timeout -= 1;
+                }
             }
         }
 
@@ -237,7 +239,8 @@ pub fn check_and_clear_reset_flags() -> bool {
     let was_warm_reset = (csr & ((1 << 28) | (1 << 29) | (1 << 30))) != 0;
 
     // Clear reset flags by setting RMVF (bit 24)
-    rcc.csr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 24)) });
+    rcc.csr
+        .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 24)) });
 
     was_warm_reset
 }
@@ -247,15 +250,17 @@ unsafe fn rcc_deinit() {
 
     // Turn on HSI (16 MHz)
     rcc.cr.modify(|r, w| w.bits(r.bits() | (1 << 0)));
-    while (rcc.cr.read().bits() & (1 << 1)) == 0 {}
+    let mut timeout = 100_000u32;
+    while (rcc.cr.read().bits() & (1 << 1)) == 0 && timeout > 0 {
+        timeout -= 1;
+    }
 
     // Reset CFGR
     rcc.cfgr.write(|w| w.bits(0x0000_0000));
 
     // Disable HSE, CSS, PLL
-    rcc.cr.modify(|r, w| {
-        w.bits(r.bits() & !((1 << 16) | (1 << 19) | (1 << 24)))
-    });
+    rcc.cr
+        .modify(|r, w| w.bits(r.bits() & !((1 << 16) | (1 << 19) | (1 << 24))));
 
     // Reset CIR
     rcc.cir.write(|w| w.bits(0x0000_0000));
@@ -280,6 +285,7 @@ pub fn enter_dfu_bootloader() -> ! {
         cp.SYST.disable_counter();
         cp.SYST.disable_interrupt();
         cp.SYST.clear_current();
+        cp.SCB.icsr.write(1 << 25); // PENDSTCLR
 
         for i in 0..8 {
             cp.NVIC.icer[i].write(0xFFFF_FFFF);
@@ -291,7 +297,9 @@ pub fn enter_dfu_bootloader() -> ! {
 
         // Remap System Memory to 0x0000_0000 via SYSCFG_MEMRMP (MEM_MODE = 0b01)
         let syscfg = &*pac::SYSCFG::ptr();
-        syscfg.memrm.modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
+        syscfg
+            .memrm
+            .modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
 
         cortex_m::asm::dsb();
         cortex_m::asm::isb();

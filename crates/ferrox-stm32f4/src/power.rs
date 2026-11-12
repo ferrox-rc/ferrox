@@ -37,15 +37,15 @@ impl<H: Qx7HalDescriptor> PowerDriver for Stm32f4PowerDriver<H> {
             gpiod.bsrr.write(|w| w.bits(1 << 0));
 
             // Configure PD1 (PWR_SWITCH) as input (MODER bits 3:2 = 0b00) with pull-up (PUPDR bits 3:2 = 0b01)
-            gpiod
-                .moder
-                .modify(|r, w| w.bits(r.bits() & !(0x03 << 2)));
+            gpiod.moder.modify(|r, w| w.bits(r.bits() & !(0x03 << 2)));
             gpiod
                 .pupdr
                 .modify(|r, w| w.bits((r.bits() & !(0x03 << 2)) | (0x01 << 2)));
 
             // Configure Status LED and turn it on to indicate power-on
-            H::LED_STATUS.enable_clock_and_output(true);
+            if let Some(led) = H::LED_STATUS {
+                led.enable_clock_and_output(true);
+            }
         }
     }
 
@@ -65,7 +65,9 @@ impl<H: Qx7HalDescriptor> PowerDriver for Stm32f4PowerDriver<H> {
             let gpiod = &*pac::GPIOD::ptr();
 
             // Turn off status LED
-            H::LED_STATUS.set_low();
+            if let Some(led) = H::LED_STATUS {
+                led.set_low();
+            }
 
             // Release PD0 power latch
             gpiod.bsrr.write(|w| w.bits(1 << (0 + 16)));
@@ -84,10 +86,12 @@ impl<H: Qx7HalDescriptor> PowerDriver for Stm32f4PowerDriver<H> {
     }
 
     fn set_leds(&mut self, on: bool) {
-        if on {
-            H::LED_STATUS.set_high();
-        } else {
-            H::LED_STATUS.set_low();
+        if let Some(led) = H::LED_STATUS {
+            if on {
+                led.set_high();
+            } else {
+                led.set_low();
+            }
         }
     }
 }

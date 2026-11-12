@@ -39,17 +39,55 @@ impl<H: Qx7HalDescriptor> St7567SpiBus<H> {
             gpioa.bsrr.write(|w| w.bits(1 << (15 + 16)));
 
             // Wait until TX buffer empty (TXE = bit 1 in SPI_SR)
-            while (spi3.sr.read().bits() & (1 << 1)) == 0 {}
+            let mut timeout = 50_000u32;
+            while (spi3.sr.read().bits() & (1 << 1)) == 0 && timeout > 0 {
+                timeout -= 1;
+            }
+            if timeout > 0 {
+                let dr = core::ptr::addr_of!(spi3.dr) as *mut u8;
+                core::ptr::write_volatile(dr, byte);
 
-            // Send byte
-            let dr = core::ptr::addr_of!(spi3.dr) as *mut u8;
-            core::ptr::write_volatile(dr, byte);
-
-            // Wait until transmission finished (BSY = bit 7 in SPI_SR)
-            while (spi3.sr.read().bits() & (1 << 7)) != 0 {}
+                // Wait until transmission finished (BSY = bit 7 in SPI_SR)
+                timeout = 50_000;
+                while (spi3.sr.read().bits() & (1 << 7)) != 0 && timeout > 0 {
+                    timeout -= 1;
+                }
+                let _ = spi3.dr.read().bits();
+            }
 
             // Deassert NCS (PA15 HIGH)
             gpioa.bsrr.write(|w| w.bits(1 << 15));
+        }
+    }
+
+    pub fn write_data_burst(&self, data: &[u8]) {
+        let gpioa = unsafe { &*pac::GPIOA::ptr() };
+        let gpioc = unsafe { &*pac::GPIOC::ptr() };
+        let spi3 = unsafe { &*pac::SPI3::ptr() };
+
+        unsafe {
+            gpioc.bsrr.write(|w| w.bits(1 << 11)); // A0 = HIGH (Data)
+            gpioa.bsrr.write(|w| w.bits(1 << (15 + 16))); // NCS LOW
+
+            let dr = core::ptr::addr_of!(spi3.dr) as *mut u8;
+            for &byte in data {
+                let mut timeout = 50_000u32;
+                while (spi3.sr.read().bits() & (1 << 1)) == 0 && timeout > 0 {
+                    timeout -= 1;
+                }
+                if timeout == 0 {
+                    break;
+                }
+                core::ptr::write_volatile(dr, byte);
+            }
+
+            let mut timeout = 50_000u32;
+            while (spi3.sr.read().bits() & (1 << 7)) != 0 && timeout > 0 {
+                timeout -= 1;
+            }
+            let _ = spi3.dr.read().bits();
+
+            gpioa.bsrr.write(|w| w.bits(1 << 15)); // NCS HIGH
         }
     }
 
@@ -85,18 +123,14 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
             gpioa
                 .moder
                 .modify(|r, w| w.bits((r.bits() & !(0x03 << 30)) | (0x01 << 30)));
-            gpioa
-                .ospeedr
-                .modify(|r, w| w.bits(r.bits() | (0x03 << 30)));
+            gpioa.ospeedr.modify(|r, w| w.bits(r.bits() | (0x03 << 30)));
             gpioa.bsrr.write(|w| w.bits(1 << 15)); // Default HIGH (deselected)
 
             // 3. PC11 (A0/DC): GPIO Output, High Speed
             gpioc
                 .moder
                 .modify(|r, w| w.bits((r.bits() & !(0x03 << 22)) | (0x01 << 22)));
-            gpioc
-                .ospeedr
-                .modify(|r, w| w.bits(r.bits() | (0x03 << 22)));
+            gpioc.ospeedr.modify(|r, w| w.bits(r.bits() | (0x03 << 22)));
 
             // 4. PD12 (RST): GPIO Output
             gpiod
@@ -108,9 +142,9 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
             gpioc.moder.modify(|r, w| {
                 w.bits((r.bits() & !((0x03 << 20) | (0x03 << 24))) | (0x02 << 20) | (0x02 << 24))
             });
-            gpioc.ospeedr.modify(|r, w| {
-                w.bits(r.bits() | (0x03 << 20) | (0x03 << 24))
-            });
+            gpioc
+                .ospeedr
+                .modify(|r, w| w.bits(r.bits() | (0x03 << 20) | (0x03 << 24)));
             gpioc.afrh.modify(|r, w| {
                 let mask = (0x0F << 8) | (0x0F << 16);
                 let af6 = (0x06 << 8) | (0x06 << 16);
@@ -143,9 +177,8 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
             tim4.psc.write(|w| w.bits(83));
             tim4.arr.write(|w| w.bits(999));
             tim4.ccr2().write(|w| w.bits(999)); // Initial 100% duty
-            tim4.ccmr1_output().modify(|r, w| {
-                w.bits((r.bits() & !(0x7F << 8)) | (0x06 << 12) | (1 << 11))
-            });
+            tim4.ccmr1_output()
+                .modify(|r, w| w.bits((r.bits() & !(0x7F << 8)) | (0x06 << 12) | (1 << 11)));
             tim4.ccer.modify(|r, w| w.bits(r.bits() | (1 << 4)));
             tim4.egr.write(|w| w.bits(1));
             tim4.cr1.modify(|r, w| w.bits(r.bits() | 0x01)); // CEN
@@ -189,9 +222,7 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
             self.write_cmd(col_offset & 0x0F);
 
             let page_offset = page * cols_per_page;
-            for x in 0..cols_per_page {
-                self.write_byte(framebuffer[page_offset + x], true);
-            }
+            self.write_data_burst(&framebuffer[page_offset..page_offset + cols_per_page]);
         }
     }
 

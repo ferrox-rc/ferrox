@@ -37,15 +37,7 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
         unsafe {
             // 1. Enable Clocks: GPIOA, GPIOB, GPIOC, GPIOD, GPIOE, DMA2 (AHB1) + ADC1 (APB2)
             rcc.ahb1enr.modify(|r, w| {
-                w.bits(
-                    r.bits()
-                        | (1 << 0)
-                        | (1 << 1)
-                        | (1 << 2)
-                        | (1 << 3)
-                        | (1 << 4)
-                        | (1 << 22),
-                )
+                w.bits(r.bits() | (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 22))
             });
             rcc.apb2enr.modify(|r, w| w.bits(r.bits() | (1 << 8)));
 
@@ -68,7 +60,10 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
             // 4. Configure DMA2 Stream 4 (Channel 0): Circular, 16-bit, Memory increment
             let stream4 = &dma2.st[4];
             stream4.cr.write(|w| w.bits(0)); // Disable stream
-            while stream4.cr.read().bits() & 0x01 != 0 {} // Wait disabled
+            let mut dma_timeout = 50_000u32;
+            while (stream4.cr.read().bits() & 0x01) != 0 && dma_timeout > 0 {
+                dma_timeout -= 1;
+            }
 
             dma2.hifcr.write(|w| w.bits(0x3D << 0)); // Clear Stream 4 flags
 
@@ -101,11 +96,8 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
             // 7 conversions: SQR1 L = 6 (L = N - 1)
             adc1.sqr1.write(|w| w.bits(6 << 20));
             // SQR3: SQ1=IN0 (RV), SQ2=IN1 (RH), SQ3=IN2 (LV), SQ4=IN3 (LH), SQ5=IN8 (PB0), SQ6=IN6 (PA6)
-            adc1.sqr3.write(|w| {
-                w.bits(
-                    0 | (1 << 5) | (2 << 10) | (3 << 15) | (8 << 20) | (6 << 25),
-                )
-            });
+            adc1.sqr3
+                .write(|w| w.bits(0 | (1 << 5) | (2 << 10) | (3 << 15) | (8 << 20) | (6 << 25)));
             // SQR2: SQ7=IN10 (PC0 VBAT)
             adc1.sqr2.write(|w| w.bits(10 << 0));
 
@@ -173,11 +165,7 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
             dest[5] = H::SW_SB.read_virtual_adc();
 
             // S1 Pot (dest[6])
-            dest[6] = if H::S1_INVERT {
-                4095 - raw_s1
-            } else {
-                raw_s1
-            };
+            dest[6] = if H::S1_INVERT { 4095 - raw_s1 } else { raw_s1 };
 
             // S2 Pot (dest[7])
             dest[7] = if H::HAS_S2 {

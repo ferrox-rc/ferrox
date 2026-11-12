@@ -64,9 +64,9 @@ impl<H: Qx7HalDescriptor> KeyDriver for Qx7KeyDriver<H> {
         // 4. Configure Rotary Encoder Pins on GPIOE: PE9 (Enc A) + PE{ROTENC_PIN_B} (Enc B)
         unsafe {
             let pin_b = H::ROTENC_PIN_B;
-            gpioe.moder.modify(|r, w| {
-                w.bits(r.bits() & !((0x03 << 18) | (0x03 << (pin_b * 2))))
-            });
+            gpioe
+                .moder
+                .modify(|r, w| w.bits(r.bits() & !((0x03 << 18) | (0x03 << (pin_b * 2)))));
             gpioe.pupdr.modify(|r, w| {
                 w.bits(
                     (r.bits() & !((0x03 << 18) | (0x03 << (pin_b * 2))))

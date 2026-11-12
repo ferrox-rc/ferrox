@@ -41,9 +41,21 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
 
     fn spi_transfer_byte(&self, byte: u8) -> u8 {
         let spi2 = unsafe { &*pac::SPI2::ptr() };
-        while (spi2.sr.read().bits() & (1 << 1)) == 0 {} // TXE
+        let mut timeout = 100_000u32;
+        while (spi2.sr.read().bits() & (1 << 1)) == 0 && timeout > 0 {
+            timeout -= 1;
+        }
+        if timeout == 0 {
+            return 0xFF;
+        }
         spi2.dr.write(|w| unsafe { w.bits(byte as u32) });
-        while (spi2.sr.read().bits() & (1 << 0)) == 0 {} // RXNE
+        timeout = 100_000;
+        while (spi2.sr.read().bits() & (1 << 0)) == 0 && timeout > 0 {
+            timeout -= 1;
+        }
+        if timeout == 0 {
+            return 0xFF;
+        }
         spi2.dr.read().bits() as u8
     }
 
@@ -70,7 +82,7 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
     }
 
     fn wait_ready(&self) -> bool {
-        for _ in 0..50_000 {
+        for _ in 0..250_000 {
             if self.spi_transfer_byte(0xFF) == 0xFF {
                 return true;
             }
@@ -90,30 +102,36 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
         }
 
         // 2. Enable SPI2 clock (bit 14 of APB1ENR)
-        rcc.apb1enr.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 14)) });
+        rcc.apb1enr
+            .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 14)) });
 
         // 3. Configure CS pin as output, drive high
         H::SD_CS.enable_clock_and_output(true);
 
-        // 4. Configure SCK, MISO, MOSI as AF5 (SPI2)
+        // 4. Configure SCK, MISO, MOSI as AF5 (SPI2) with High Speed
         let configure_spi_pin = |pin_def: PinDef| {
             rcc.ahb1enr
                 .modify(|r, w| unsafe { w.bits(r.bits() | pin_def.rcc_ahb1_bit()) });
+            let _ = rcc.ahb1enr.read().bits();
             let gpio = unsafe { &*pin_def.gpio_ptr() };
             let pin = pin_def.pin;
             let shift = pin * 2;
             gpio.moder
                 .modify(|r, w| unsafe { w.bits((r.bits() & !(0x03 << shift)) | (0x02 << shift)) });
+            gpio.ospeedr
+                .modify(|r, w| unsafe { w.bits((r.bits() & !(0x03 << shift)) | (0x02 << shift)) });
             gpio.pupdr
                 .modify(|r, w| unsafe { w.bits((r.bits() & !(0x03 << shift)) | (0x01 << shift)) });
             if pin < 8 {
                 let af_shift = pin * 4;
-                gpio.afrl
-                    .modify(|r, w| unsafe { w.bits((r.bits() & !(0x0F << af_shift)) | (0x05 << af_shift)) });
+                gpio.afrl.modify(|r, w| unsafe {
+                    w.bits((r.bits() & !(0x0F << af_shift)) | (0x05 << af_shift))
+                });
             } else {
                 let af_shift = (pin - 8) * 4;
-                gpio.afrh
-                    .modify(|r, w| unsafe { w.bits((r.bits() & !(0x0F << af_shift)) | (0x05 << af_shift)) });
+                gpio.afrh.modify(|r, w| unsafe {
+                    w.bits((r.bits() & !(0x0F << af_shift)) | (0x05 << af_shift))
+                });
             }
         };
 
@@ -123,7 +141,8 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
 
         // 5. Initialize SPI2 at slow speed: APB1 / 128 = 42MHz / 128 = ~328 kHz, Master, 8-bit, Mode 0
         // CR1: MSTR (bit 2), BR = 0b110 (bits 5..3 = 6 -> /128), SSM (bit 9), SSI (bit 8), SPE (bit 6)
-        spi2.cr1.write(|w| unsafe { w.bits((1 << 2) | (0b110 << 3) | (1 << 9) | (1 << 8) | (1 << 6)) });
+        spi2.cr1
+            .write(|w| unsafe { w.bits((1 << 2) | (0b110 << 3) | (1 << 9) | (1 << 8) | (1 << 6)) });
 
         // 6. Send >= 80 dummy clocks with CS high to allow SD card internal reset
         self.cs_high();
@@ -172,6 +191,9 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
                 initialized = true;
                 break;
             }
+            unsafe {
+                (&*pac::IWDG::ptr()).kr.write(|w| w.bits(0xAAAA));
+            }
             cortex_m::asm::delay(168_000); // 1 ms delay
         }
 
@@ -194,21 +216,28 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
         }
 
         // 11. Switch SPI2 to high speed: APB1 / 4 = 42MHz / 4 = 10.5 MHz (BR = 0b001)
-        spi2.cr1.modify(|r, w| unsafe {
-            w.bits((r.bits() & !(0x07 << 3)) | (0b001 << 3))
-        });
+        spi2.cr1
+            .modify(|r, w| unsafe { w.bits((r.bits() & !(0x07 << 3)) | (0b001 << 3)) });
 
         self.is_initialized = true;
         true
     }
 
     /// Read a single 512-byte sector from the SD card.
-    pub fn read_sector(&mut self, sector_num: u32, buf: &mut [u8; SD_SECTOR_SIZE]) -> Result<(), ()> {
+    pub fn read_sector(
+        &mut self,
+        sector_num: u32,
+        buf: &mut [u8; SD_SECTOR_SIZE],
+    ) -> Result<(), ()> {
         if !self.is_initialized {
             return Err(());
         }
 
-        let addr = if self.is_sdhc { sector_num } else { sector_num * 512 };
+        let addr = if self.is_sdhc {
+            sector_num
+        } else {
+            sector_num.checked_mul(512).ok_or(())?
+        };
 
         if self.send_cmd(17, addr, 0xFF) != 0x00 {
             self.cs_high();
@@ -218,7 +247,7 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
 
         // Wait for data start token (0xFE)
         let mut token = 0xFF;
-        for _ in 0..10_000 {
+        for _ in 0..100_000 {
             token = self.spi_transfer_byte(0xFF);
             if token != 0xFF {
                 break;
@@ -251,7 +280,11 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
             return Err(());
         }
 
-        let addr = if self.is_sdhc { sector_num } else { sector_num * 512 };
+        let addr = if self.is_sdhc {
+            sector_num
+        } else {
+            sector_num.checked_mul(512).ok_or(())?
+        };
 
         if self.send_cmd(24, addr, 0xFF) != 0x00 {
             self.cs_high();

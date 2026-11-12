@@ -37,7 +37,8 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
 
     fn send_start(&self) -> Result<(), ()> {
         let i2c1 = unsafe { &*pac::I2C1::ptr() };
-        i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 8)) }); // START
+        i2c1.cr1
+            .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 8)) }); // START
         let mut timeout = 100_000u32;
         while (i2c1.sr1.read().bits() & (1 << 0)) == 0 {
             // SB bit
@@ -60,7 +61,8 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
             timeout -= 1;
             if (i2c1.sr1.read().bits() & (1 << 10)) != 0 {
                 // AF bit (NACK)
-                i2c1.sr1.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
+                i2c1.sr1
+                    .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
                 return Err(());
             }
             if timeout == 0 {
@@ -91,7 +93,8 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
             timeout -= 1;
             if (i2c1.sr1.read().bits() & (1 << 10)) != 0 {
                 // AF bit (NACK)
-                i2c1.sr1.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
+                i2c1.sr1
+                    .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
                 return Err(());
             }
             if timeout == 0 {
@@ -103,7 +106,8 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
 
     fn send_stop(&self) {
         let i2c1 = unsafe { &*pac::I2C1::ptr() };
-        i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 9)) }); // STOP
+        i2c1.cr1
+            .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 9)) }); // STOP
     }
 
     fn poll_ack(&self) -> bool {
@@ -146,12 +150,14 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
                     .modify(|r, w| w.bits((r.bits() & !(0x03 << shift)) | (0x01 << shift)));
                 if pin < 8 {
                     let af_shift = pin * 4;
-                    gpio.afrl
-                        .modify(|r, w| w.bits((r.bits() & !(0x0F << af_shift)) | (0x04 << af_shift)));
+                    gpio.afrl.modify(|r, w| {
+                        w.bits((r.bits() & !(0x0F << af_shift)) | (0x04 << af_shift))
+                    });
                 } else {
                     let af_shift = (pin - 8) * 4;
-                    gpio.afrh
-                        .modify(|r, w| w.bits((r.bits() & !(0x0F << af_shift)) | (0x04 << af_shift)));
+                    gpio.afrh.modify(|r, w| {
+                        w.bits((r.bits() & !(0x0F << af_shift)) | (0x04 << af_shift))
+                    });
                 }
             };
 
@@ -165,7 +171,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
 
             // Configure I2C1: APB1 = 42 MHz
             i2c1.cr2.write(|w| w.bits(42)); // 42 MHz
-            // Fast Mode (400 kHz), Duty = 0 (2:1): CCR = 42MHz / (3 * 400kHz) = 35
+                                            // Fast Mode (400 kHz), Duty = 0 (2:1): CCR = 42MHz / (3 * 400kHz) = 35
             i2c1.ccr.write(|w| w.bits(0x8000 | 35));
             // TRISE = (300ns * 42MHz) + 1 = 14
             i2c1.trise.write(|w| w.bits(14));
@@ -177,59 +183,79 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
     }
 
     fn read_i2c(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {
+        if buf.is_empty() {
+            return Ok(());
+        }
         let i2c1 = unsafe { &*pac::I2C1::ptr() };
 
         self.wait_while_busy();
-        self.send_start()?;
-        self.send_addr(EEPROM_ADDR, false)?;
+        if let Err(e) = (|| -> Result<(), ()> {
+            self.send_start()?;
+            self.send_addr(EEPROM_ADDR, false)?;
 
-        // Send 16-bit word address
-        self.write_byte((addr >> 8) as u8)?;
-        self.write_byte((addr & 0xFF) as u8)?;
+            // Send 16-bit word address
+            self.write_byte((addr >> 8) as u8)?;
+            self.write_byte((addr & 0xFF) as u8)?;
 
-        // Restart in Read mode
-        self.send_start()?;
-        self.send_addr(EEPROM_ADDR, true)?;
+            // Restart in Read mode
+            self.send_start()?;
 
-        let len = buf.len();
-        if len == 1 {
-            // Disable ACK before single byte read
-            i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
+            let len = buf.len();
+            if len == 1 {
+                // RM0090 EV6_1: clear ACK and set STOP atomically with ADDR clear
+                cortex_m::interrupt::free(|_| -> Result<(), ()> {
+                    self.send_addr(EEPROM_ADDR, true)?;
+                    i2c1.cr1
+                        .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
+                    self.send_stop();
+                    Ok(())
+                })?;
+
+                let mut timeout = 100_000u32;
+                while (i2c1.sr1.read().bits() & (1 << 6)) == 0 {
+                    timeout -= 1;
+                    if timeout == 0 {
+                        return Err(());
+                    }
+                }
+                buf[0] = i2c1.dr.read().bits() as u8;
+                i2c1.cr1
+                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) });
+                return Ok(());
+            }
+
+            self.send_addr(EEPROM_ADDR, true)?;
+            // Multiple bytes read
+            i2c1.cr1
+                .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) }); // ACK enabled
+            for (i, byte) in buf.iter_mut().enumerate() {
+                if i == len - 1 {
+                    // Disable ACK and send STOP on last byte
+                    i2c1.cr1
+                        .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
+                    self.send_stop();
+                }
+
+                let mut timeout = 100_000u32;
+                while (i2c1.sr1.read().bits() & (1 << 6)) == 0 {
+                    // RXNE bit
+                    timeout -= 1;
+                    if timeout == 0 {
+                        return Err(());
+                    }
+                }
+                *byte = i2c1.dr.read().bits() as u8;
+            }
+
+            i2c1.cr1
+                .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) }); // Restore ACK
+            Ok(())
+        })() {
             self.send_stop();
-
-            let mut timeout = 100_000u32;
-            while (i2c1.sr1.read().bits() & (1 << 6)) == 0 {
-                timeout -= 1;
-                if timeout == 0 {
-                    return Err(());
-                }
-            }
-            buf[0] = i2c1.dr.read().bits() as u8;
-            i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) });
-            return Ok(());
+            i2c1.cr1
+                .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) });
+            return Err(e);
         }
-
-        // Multiple bytes read
-        i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) }); // ACK enabled
-        for (i, byte) in buf.iter_mut().enumerate() {
-            if i == len - 1 {
-                // Disable ACK and send STOP on last byte
-                i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) });
-                self.send_stop();
-            }
-
-            let mut timeout = 100_000u32;
-            while (i2c1.sr1.read().bits() & (1 << 6)) == 0 {
-                // RXNE bit
-                timeout -= 1;
-                if timeout == 0 {
-                    return Err(());
-                }
-            }
-            *byte = i2c1.dr.read().bits() as u8;
-        }
-
-        i2c1.cr1.modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) }); // Restore ACK
         Ok(())
     }
 
@@ -244,16 +270,22 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
             let chunk_size = bytes_in_page.min(total - offset);
 
             self.wait_while_busy();
-            self.send_start()?;
-            self.send_addr(EEPROM_ADDR, false)?;
+            if let Err(e) = (|| -> Result<(), ()> {
+                self.send_start()?;
+                self.send_addr(EEPROM_ADDR, false)?;
 
-            // Send word address
-            self.write_byte((cur_addr >> 8) as u8)?;
-            self.write_byte((cur_addr & 0xFF) as u8)?;
+                // Send word address
+                self.write_byte((cur_addr >> 8) as u8)?;
+                self.write_byte((cur_addr & 0xFF) as u8)?;
 
-            // Stream page chunk
-            for &byte in &buf[offset..offset + chunk_size] {
-                self.write_byte(byte)?;
+                // Stream page chunk
+                for &byte in &buf[offset..offset + chunk_size] {
+                    self.write_byte(byte)?;
+                }
+                Ok(())
+            })() {
+                self.send_stop();
+                return Err(e);
             }
             self.send_stop();
 
@@ -262,8 +294,10 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
                 return Err(());
             }
 
-            cur_addr += chunk_size as u16;
             offset += chunk_size;
+            if offset < total {
+                cur_addr = cur_addr.checked_add(chunk_size as u16).ok_or(())?;
+            }
         }
 
         Ok(())
@@ -313,7 +347,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
 
             // If updating partial sector, read previous sector contents first
             if chunk_size < SD_SECTOR_SIZE {
-                let _ = self.sd_card.read_sector(sector_idx, &mut sector_buf);
+                self.sd_card.read_sector(sector_idx, &mut sector_buf)?;
             }
 
             sector_buf[sector_offset..sector_offset + chunk_size]
@@ -394,7 +428,8 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
             if !gap.is_telem_sector_safe(self.active_telem_sector) {
                 return Ok(());
             }
-            self.sd_card.write_sector(self.active_telem_sector, sector)?;
+            self.sd_card
+                .write_sector(self.active_telem_sector, sector)?;
             self.active_telem_sector = self.active_telem_sector.saturating_add(1);
         }
         Ok(())

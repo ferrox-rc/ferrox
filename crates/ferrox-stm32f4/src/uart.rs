@@ -36,9 +36,8 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
 
         unsafe {
             // Enable GPIOB, GPIOC, GPIOD, DMA2 (AHB1) and USART1 (APB2)
-            rcc.ahb1enr.modify(|r, w| {
-                w.bits(r.bits() | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 22))
-            });
+            rcc.ahb1enr
+                .modify(|r, w| w.bits(r.bits() | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 22)));
             rcc.apb2enr.modify(|r, w| w.bits(r.bits() | (1 << 4)));
 
             // Internal RF Boot pin (if present): GPIO Output, driven LOW (normal operation)
@@ -59,9 +58,9 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
             gpiob.moder.modify(|r, w| {
                 w.bits((r.bits() & !((0x03 << 12) | (0x03 << 14))) | (0x02 << 12) | (0x02 << 14))
             });
-            gpiob.ospeedr.modify(|r, w| {
-                w.bits(r.bits() | (0x03 << 12) | (0x03 << 14))
-            });
+            gpiob
+                .ospeedr
+                .modify(|r, w| w.bits(r.bits() | (0x03 << 12) | (0x03 << 14)));
             gpiob.afrl.modify(|r, w| {
                 let mask = (0x0F << 24) | (0x0F << 28);
                 let af7 = (0x07 << 24) | (0x07 << 28);
@@ -72,7 +71,7 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
 
     fn set_power_polarity(&mut self, _active_high: bool) {}
 
-    fn set_uart_enabled(&mut self, enabled: bool, baud_idx: u8, _half_duplex: bool) {
+    fn set_uart_enabled(&mut self, enabled: bool, baud_idx: u8, half_duplex: bool) {
         let usart1 = unsafe { &*pac::USART1::ptr() };
         let dma2 = unsafe { &*pac::DMA2::ptr() };
 
@@ -106,13 +105,17 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
             // Disable USART1 while reconfiguring
             usart1.cr1.write(|w| w.bits(0));
             usart1.cr2.write(|w| w.bits(cr2_extra));
-            usart1.cr3.write(|w| w.bits(1 << 6)); // DMAR = 1 (DMA Receiver Enable)
+            let hdsel = if half_duplex { 1 << 3 } else { 0 };
+            usart1.cr3.write(|w| w.bits((1 << 6) | hdsel)); // DMAR = 1, optional HDSEL
             usart1.brr.write(|w| w.bits(brr));
 
             // Configure DMA2 Stream 2 (Channel 4): Circular, Memory increment, Byte size
             let stream2 = &dma2.st[2];
             stream2.cr.write(|w| w.bits(0));
-            while stream2.cr.read().bits() & 0x01 != 0 {}
+            let mut dma_timeout = 50_000u32;
+            while (stream2.cr.read().bits() & 0x01) != 0 && dma_timeout > 0 {
+                dma_timeout -= 1;
+            }
 
             dma2.lifcr.write(|w| w.bits(0x3D << 16)); // Clear Stream 2 flags
 
@@ -163,6 +166,9 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
             while (usart1.sr.read().bits() & (1 << 7)) == 0 && timeout > 0 {
                 timeout -= 1;
             }
+            if timeout == 0 {
+                return;
+            }
             unsafe {
                 let dr = core::ptr::addr_of!(usart1.dr) as *mut u8;
                 core::ptr::write_volatile(dr, b);
@@ -181,7 +187,7 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
 
         unsafe {
             if RX_TAIL != head {
-                let b = RX_DMA_BUF[RX_TAIL];
+                let b = core::ptr::read_volatile(&RX_DMA_BUF[RX_TAIL]);
                 RX_TAIL = (RX_TAIL + 1) % RX_BUF_SIZE;
                 Some(b)
             } else {
