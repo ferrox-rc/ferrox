@@ -15,27 +15,29 @@ Welcome to the pilot hardware testing program for **Ferrox**! This guide is desi
 
 ## 1. Preparing the Test Binary
 
-You can either download a pre-built `-sd.bin` test build provided by the development team, or build it yourself from source:
+You can either download a pre-built `-sd.bin` test build provided by the development team, or build it yourself from source.
+
+> [!NOTE]
+> EdgeTX Bootloader seeks **32 KiB (32,768 bytes)** into any `.bin` file on the SD card before validating the Cortex-M vector table and writing flash at `0x08008000`. Use `./tools/build-sd-bin.sh` (which builds with `edgetx-bootloader` and prepends the 32 KiB pad) so your output is ~134 KiB rather than an unpadded ~102 KiB raw binary.
 
 ```bash
 # Ensure llvm-tools-preview and cargo-binutils are installed:
 rustup component add llvm-tools-preview
 cargo install cargo-binutils
 
-# 1. RadioMaster Pocket:
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+# Build bootloader-ready SD binary (~134 KiB):
+./tools/build-sd-bin.sh pocket   # RadioMaster Pocket -> ferrox-pocket-sd.bin
+./tools/build-sd-bin.sh zorro    # RadioMaster Zorro  -> ferrox-zorro-sd.bin
+./tools/build-sd-bin.sh x9e      # FrSky Taranis X9E  -> ferrox-x9e-sd.bin
+./tools/build-sd-bin.sh t12      # Jumper T12         -> ferrox-t12-sd.bin
+./tools/build-sd-bin.sh gx12     # RadioMaster GX12   -> ferrox-gx12-sd.bin
+```
 
-# 2. RadioMaster Zorro:
-cargo objcopy -p ferrox-zorro --bin ferrox-zorro --release --target thumbv7em-none-eabihf --features edgetx-bootloader -- -O binary ferrox-zorro-sd.bin
-
-# 3. FrSky Taranis X9E (Wide 212x64 LCD):
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "x9e,edgetx-bootloader" -- -O binary ferrox-x9e-sd.bin
-
-# 4. Jumper T12:
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "t12,edgetx-bootloader" -- -O binary ferrox-t12-sd.bin
-
-# 5. RadioMaster GX12:
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "gx12,edgetx-bootloader" -- -O binary ferrox-gx12-sd.bin
+If you prefer running the steps manually (e.g. for `zorro`):
+```bash
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "zorro,edgetx-bootloader" -- -O binary app.bin
+dd if=/dev/zero bs=1024 count=32 | tr '\000' '\377' > pad32k.bin
+cat pad32k.bin app.bin > ferrox-zorro-sd.bin
 ```
 
 ---

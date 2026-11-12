@@ -243,13 +243,15 @@ You can flash Ferrox using either of two methods:
 
 For RadioMaster Pocket, GX12, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
 
-1. **Build or download** the bootloader-compatible `-sd.bin` binary (`cargo objcopy` builds and extracts `.bin` in one step):
+1. **Build or download** the bootloader-compatible `-sd.bin` binary. EdgeTX Bootloader expects the `.bin` to start with a 32 KiB bootloader region (`0x08000000..0x08007FFF`) before the application vector table at `0x08008000` (expect **~134 KiB** total, rather than the ~102 KiB raw app binary):
    ```bash
-   # RadioMaster Pocket:
-   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
+   # Recommended helper script (links at 0x08008000 and prepends 32 KiB pad):
+   ./tools/build-sd-bin.sh <board>   # e.g. pocket, zorro, boxer, gx12, tx12, t12, x9e
 
-   # Other EdgeTX STM32F4 targets (replace <board> with gx12, boxer, zorro, tx12, or t12):
-   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "<board>,edgetx-bootloader" -- -O binary ferrox-<board>-sd.bin
+   # Or manually:
+   cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features "<board>,edgetx-bootloader" -- -O binary app.bin
+   dd if=/dev/zero bs=1024 count=32 | tr '\000' '\377' > pad32k.bin
+   cat pad32k.bin app.bin > ferrox-<board>-sd.bin
    ```
 2. Copy `ferrox-<board>-sd.bin` to the `/FIRMWARE/` folder on your microSD card.
 3. Hold **both horizontal trims inward** while powering ON to enter the EdgeTX Bootloader.
@@ -305,11 +307,13 @@ Build and convert your target binary to `.bin`:
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi -- -O binary ferrox-i6s.bin
 cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -O binary ferrox-i6x.bin
 
-# RadioMaster Pocket (direct DFU vs EdgeTX SD bootloader):
+# RadioMaster Pocket (direct DFU @ 0x08000000):
 cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --features "pocket,edgetx-bootloader" -- -O binary ferrox-pocket-sd.bin
 
-# Other Cortex-M4F Targets (replace <board> with gx12, boxer, zorro, tx12, qx7, tprov2, t12, x9d, x9e, or at9spro):
+# EdgeTX SD Bootloader image (~134 KiB with 32 KiB padding):
+./tools/build-sd-bin.sh pocket   # or boxer, zorro, tx12, gx12, t12, x9e...
+
+# Other Cortex-M4F Targets (direct DFU @ 0x08000000):
 cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
 ```
 
