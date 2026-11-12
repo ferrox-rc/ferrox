@@ -21,8 +21,10 @@ pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
 /// Retained magic word in `.uninit` SRAM to signal DFU entry across a software reset.
 /// Stored in `.uninit` so startup code does not zero it and the initial stack frame at
 /// `_stack_start` (`0x2000_4000`) does not overwrite it before `check_sram_dfu_entry()`.
+use core::mem::MaybeUninit;
+
 #[link_section = ".uninit"]
-static mut DFU_RETAINED_FLAG: u32 = 0;
+static mut DFU_RETAINED_FLAG: MaybeUninit<u32> = MaybeUninit::uninit();
 
 /// Memory addresses for supported STM32F0 / APM32F0 chips.
 #[cfg(feature = "apm32")]
@@ -78,20 +80,24 @@ impl SystemDriver for Stm32f0SystemDriver {
 
     fn has_retained_dfu_flag(&mut self) -> bool {
         unsafe {
-            let flag = core::ptr::read_volatile(core::ptr::addr_of!(DFU_RETAINED_FLAG));
+            let flag =
+                core::ptr::read_volatile(core::ptr::addr_of!(DFU_RETAINED_FLAG).cast::<u32>());
             flag == DFU_MAGIC_FLAG
         }
     }
 
     fn set_retained_dfu_flag(&mut self) {
         unsafe {
-            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG), DFU_MAGIC_FLAG);
+            core::ptr::write_volatile(
+                core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(),
+                DFU_MAGIC_FLAG,
+            );
         }
     }
 
     fn clear_retained_dfu_flag(&mut self) {
         unsafe {
-            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG), 0);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(), 0);
         }
     }
 
@@ -139,18 +145,20 @@ pub fn init_system_clock() {
                 timeout -= 1;
             }
 
-            // 7. Select PLL as system clock source (SW = 0b10)
-            let cfgr = rcc.cfgr.read().bits();
-            rcc.cfgr.write(|w| w.bits((cfgr & !0x03) | 0x02));
+            if timeout > 0 {
+                // 7. Select PLL as system clock source (SW = 0b10)
+                let cfgr = rcc.cfgr.read().bits();
+                rcc.cfgr.write(|w| w.bits((cfgr & !0x03) | 0x02));
 
-            // 8. Wait for PLL to be used as system clock source (SWS = 0b1000)
-            timeout = 100_000;
-            while (rcc.cfgr.read().bits() & 0x0C) != 0x08 && timeout > 0 {
-                timeout -= 1;
+                // 8. Wait for PLL to be used as system clock source (SWS = 0b1000)
+                timeout = 100_000;
+                while (rcc.cfgr.read().bits() & 0x0C) != 0x08 && timeout > 0 {
+                    timeout -= 1;
+                }
+
+                // 9. Select PLL (48 MHz) as USB clock source (USBSW = 1 in RCC_CFGR3 bit 7)
+                rcc.cfgr3.modify(|_, w| w.usbsw().pllclk());
             }
-
-            // 9. Select PLL (48 MHz) as USB clock source (USBSW = 1 in RCC_CFGR3 bit 7)
-            rcc.cfgr3.modify(|_, w| w.usbsw().pllclk());
         }
 
         // 10. Enable LSI (40 kHz internal oscillator) and wait for stability
@@ -194,7 +202,10 @@ unsafe fn rcc_deinit() {
 
     // Turn on HSI
     rcc.cr.modify(|_, w| w.hsion().set_bit());
-    while rcc.cr.read().hsirdy().bit_is_clear() {}
+    let mut timeout = 100_000u32;
+    while rcc.cr.read().hsirdy().bit_is_clear() && timeout > 0 {
+        timeout -= 1;
+    }
 
     // Reset CFGR
     rcc.cfgr.write(|w| w.bits(0x0000_0000));
@@ -220,9 +231,8 @@ unsafe fn rcc_deinit() {
 
     // Reset peripheral clocks except SYSCFG, SRAM, and GPIOB..GPIOF (preserving PB15 power latch,
     // PB4 LCD RST, and PC9/PF3 LCD backlight while leaving GPIOA in reset state for USB DFU).
-    rcc.ahbenr.write(|w| {
-        w.bits(0x0000_0014 | (1 << 18) | (1 << 19) | (1 << 20) | (1 << 21) | (1 << 22))
-    });
+    rcc.ahbenr
+        .write(|w| w.bits(0x0000_0014 | (1 << 18) | (1 << 19) | (1 << 20) | (1 << 21) | (1 << 22)));
     rcc.apb2enr.write(|w| w.bits(0x0000_0001)); // SYSCFGEN
     rcc.apb1enr.write(|w| w.bits(0x0000_0000));
 }
@@ -241,6 +251,8 @@ pub fn enter_dfu_bootloader() -> ! {
 
         cp.NVIC.icer[0].write(0xFFFF_FFFF);
         cp.NVIC.icpr[0].write(0xFFFF_FFFF);
+        // Clear any pending SysTick exception in SCB.ICSR (PENDSTCLR = bit 25)
+        cp.SCB.icsr.write(1 << 25);
 
         cortex_m::interrupt::disable();
 

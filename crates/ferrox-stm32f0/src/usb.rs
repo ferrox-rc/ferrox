@@ -29,7 +29,7 @@ const RX_COUNT_64: u16 = 0x8400; // BLSIZE=1, NUM_BLOCK=1 -> (1+1)*32 = 64 bytes
 
 // Endpoint register bit masks
 const EP_KEEP_MASK: u16 = 0x070F; // EP_TYPE | EP_KIND | EP_ADDR
-const EP_CTR_MASK: u16 = 0x8080;  // Preserves CTR_RX and CTR_TX when written as 1
+const EP_CTR_MASK: u16 = 0x8080; // Preserves CTR_RX and CTR_TX when written as 1
 
 const STAT_DISABLED: u16 = 0;
 const STAT_STALL: u16 = 1;
@@ -178,7 +178,7 @@ unsafe fn ep0_send_next() {
 }
 
 unsafe fn ep0_start_in(data: &[u8], req_len: u16) {
-    let send_len = data.len().min(req_len as usize);
+    let send_len = data.len().min(req_len as usize).min(CONTROL_DATA.len());
     CONTROL_DATA[..send_len].copy_from_slice(&data[..send_len]);
     CONTROL_DATA_LEN = send_len;
     CONTROL_DATA_POS = 0;
@@ -243,7 +243,7 @@ impl UsbDriver for Stm32f0UsbDriver {
                 .write(|w| w.bits((1 << (11 + 16)) | (1 << (12 + 16))));
 
             for _ in 0..25 {
-                cortex_m::asm::delay(160_000); // 10 ms at 48 MHz
+                cortex_m::asm::delay(480_000); // 10 ms at 48 MHz
                 ferrox_core::watchdog::feed();
             }
 
@@ -260,12 +260,12 @@ impl UsbDriver for Stm32f0UsbDriver {
                 return;
             }
 
-            gpioa.moder.modify(|r, w| {
-                w.bits(r.bits() & !((0b11 << 22) | (0b11 << 24)))
-            });
-            gpioa.pupdr.modify(|r, w| {
-                w.bits(r.bits() & !((0b11 << 22) | (0b11 << 24)))
-            });
+            gpioa
+                .moder
+                .modify(|r, w| w.bits(r.bits() & !((0b11 << 22) | (0b11 << 24))));
+            gpioa
+                .pupdr
+                .modify(|r, w| w.bits(r.bits() & !((0b11 << 22) | (0b11 << 24))));
 
             // 5. Initialize USB hardware registers
             usb.cntr.modify(|_, w| w.pdwn().clear_bit());
@@ -320,15 +320,16 @@ impl UsbDriver for Stm32f0UsbDriver {
             }
 
             // 1. Process deferred reset timer (DFU / Reboot)
-            match SERIAL_HANDLER.pending_reset() {
+            let pending = cortex_m::interrupt::free(|_| SERIAL_HANDLER.pending_reset());
+            match pending {
                 ResetAction::Reboot(at) => {
-                    if now_ms >= at {
+                    if now_ms.wrapping_sub(at) < 0x8000_0000 {
                         cortex_m::peripheral::SCB::sys_reset();
                     }
                 }
                 ResetAction::Dfu(at) => {
-                    if now_ms >= at {
-                        ferrox_core::chip::enter_dfu_bootloader();
+                    if now_ms.wrapping_sub(at) < 0x8000_0000 {
+                        ferrox_core::chip::reboot_to_dfu();
                     }
                 }
                 ResetAction::None => {}
@@ -348,20 +349,32 @@ impl UsbDriver for Stm32f0UsbDriver {
 
             // 3. Serial CDC-ACM handling & telemetry streaming
             if mode == UsbMode::Serial || mode == UsbMode::Composite {
-                SERIAL_HANDLER.update(now_ms, rf_chs, telem, battery_mv);
+                cortex_m::interrupt::free(|_| {
+                    SERIAL_HANDLER.update(now_ms, rf_chs, telem, battery_mv);
 
-                if SERIAL_HANDLER.is_streaming() && now_ms.wrapping_sub(LAST_TELEM_POLL_MS) >= 100 {
-                    LAST_TELEM_POLL_MS = now_ms;
-                    SERIAL_HANDLER.send_telemetry_line(rf_chs, telem, battery_mv);
-                }
+                    if SERIAL_HANDLER.is_streaming()
+                        && now_ms.wrapping_sub(LAST_TELEM_POLL_MS) >= 100
+                    {
+                        LAST_TELEM_POLL_MS = now_ms;
+                        SERIAL_HANDLER.send_telemetry_line(rf_chs, telem, battery_mv);
+                    }
+                });
 
                 let reg = ep_read(2);
-                if ((reg >> 4) & 0x03) == STAT_NAK && SERIAL_HANDLER.has_pending_tx() {
-                    let mut chunk = [0u8; CDC_PACKET_SIZE];
-                    let count = SERIAL_HANDLER.pop_tx(&mut chunk);
-                    if count > 0 {
-                        ep_send(2, EP2_TX_OFF, &chunk[..count]);
-                    }
+                if ((reg >> 4) & 0x03) == STAT_NAK {
+                    let count = cortex_m::interrupt::free(|_| {
+                        if SERIAL_HANDLER.has_pending_tx() {
+                            let mut chunk = [0u8; CDC_PACKET_SIZE];
+                            let n = SERIAL_HANDLER.pop_tx(&mut chunk);
+                            if n > 0 {
+                                ep_send(2, EP2_TX_OFF, &chunk[..n]);
+                            }
+                            n
+                        } else {
+                            0
+                        }
+                    });
+                    let _ = count;
                 }
             }
         }

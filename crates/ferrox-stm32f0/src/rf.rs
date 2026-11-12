@@ -7,8 +7,6 @@ pub const RF_MODE_RX_EN: u8 = 0b0000_0001;
 pub const RF_MODE_TX_EN: u8 = 0b0000_0010;
 pub const RF_MODE_OFF: u8 = 0b0000_0011;
 
-static mut ANTENNA_STATE: u8 = 0;
-
 pub struct Stm32f0RfBus;
 
 impl Stm32f0RfBus {
@@ -61,7 +59,8 @@ impl RfBus for Stm32f0RfBus {
                     (0b11 << 24) | // PE12
                     (0b11 << 26) | // PE13
                     (0b11 << 28) | // PE14
-                    (0b11 << 30)   // PE15
+                    (0b11 << 30)
+                    // PE15
                 );
             let moder_set = (0b01 << 16)   // PE8 Output
                 | (0b01 << 18)             // PE9 Output
@@ -70,7 +69,7 @@ impl RfBus for Stm32f0RfBus {
                 | (0b01 << 24)             // PE12 Output (CSN)
                 | (0b10 << 26)             // PE13 AF (SCK)
                 | (0b10 << 28)             // PE14 AF (MISO)
-                | (0b10 << 30);            // PE15 AF (MOSI)
+                | (0b10 << 30); // PE15 AF (MOSI)
             gpioe.moder.write(|w| w.bits(moder_cleared | moder_set));
 
             // High speed for SPI pins PE13, PE14, PE15
@@ -127,8 +126,9 @@ impl RfBus for Stm32f0RfBus {
             let mut drain = 16;
             while spi1.sr.read().rxne().bit_is_set() && drain > 0 {
                 drain -= 1;
-                let _ =
-                    core::ptr::read_volatile(core::ptr::addr_of!((*pac::SPI1::ptr()).dr) as *const u8);
+                let _ = core::ptr::read_volatile(
+                    core::ptr::addr_of!((*pac::SPI1::ptr()).dr) as *const u8
+                );
             }
         }
     }
@@ -234,14 +234,18 @@ impl RfBus for Stm32f0RfBus {
     }
 
     fn switch_antenna(&mut self) {
+        use core::sync::atomic::{AtomicU8, Ordering};
+        static ANTENNA: AtomicU8 = AtomicU8::new(0);
         unsafe {
             let gpioe = &*pac::GPIOE::ptr();
-            if ANTENNA_STATE == 0 {
-                gpioe.bsrr.write(|w| w.bits((1 << 10) | (1 << (11 + 16))));
-                ANTENNA_STATE = 1;
-            } else {
+            let prev = ANTENNA.load(Ordering::Relaxed);
+            if prev == 0 {
+                // init() starts on Antenna 0 (PE10=1, PE11=0), so first switch selects Antenna 1
                 gpioe.bsrr.write(|w| w.bits((1 << (10 + 16)) | (1 << 11)));
-                ANTENNA_STATE = 0;
+                ANTENNA.store(1, Ordering::Relaxed);
+            } else {
+                gpioe.bsrr.write(|w| w.bits((1 << 10) | (1 << (11 + 16))));
+                ANTENNA.store(0, Ordering::Relaxed);
             }
         }
     }
