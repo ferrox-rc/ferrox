@@ -1123,7 +1123,6 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     } else {
         crate::ui::splash::draw_splash(&mut lcd);
         lcd.flush();
-        buzzer.chime_welcome();
     }
 
     // 6. Start deterministic 2.0s Hardware Watchdog (IWDG) via PAC
@@ -1219,6 +1218,9 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     // 10. Hold splash screen for ~1200ms (1.2s) total elapsed time since LCD initialization,
     // continuously advancing buzzer playback to maintain musical cadence
     if !was_watchdog_reset && !calib_wizard.is_active() {
+        let _ = buzzer_last_ms;
+        buzzer.chime_welcome();
+        buzzer_last_ms = time::millis();
         while time::millis().wrapping_sub(splash_start_ms) < 1200 {
             watchdog::feed();
             let now = time::millis();
