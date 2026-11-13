@@ -60,6 +60,10 @@ try {
     [System.IO.File]::WriteAllBytes($OutFile, $outBytes)
 
     Write-Host "Created $OutFile : $totalSize bytes ($padSize B bootloader pad + $($appBytes.Length) B app)"
+    $latestCommit = (& git log -1 --oneline 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $latestCommit) {
+        Write-Host "Commit  : $latestCommit"
+    }
 }
 finally {
     if (Test-Path $tempApp) {
