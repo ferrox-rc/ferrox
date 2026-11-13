@@ -45,12 +45,12 @@ pub mod buzzer;
 pub mod calib;
 pub mod chip;
 pub mod crsf;
-#[cfg(any(feature = "voice-audio", test))]
-pub mod fat;
 pub mod curve;
 pub mod display;
 #[cfg(feature = "rf-dsm")]
 pub mod dsm;
+#[cfg(any(feature = "voice-audio", test))]
+pub mod fat;
 pub mod hal;
 pub mod input;
 pub mod mixer;
