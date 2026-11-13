@@ -236,7 +236,7 @@ impl RfBus for Stm32f0RfBus {
     fn switch_antenna(&mut self) {
         use core::sync::atomic::{AtomicU8, Ordering};
         static ANTENNA: AtomicU8 = AtomicU8::new(0);
-        unsafe {
+        cortex_m::interrupt::free(|_| unsafe {
             let gpioe = &*pac::GPIOE::ptr();
             let prev = ANTENNA.load(Ordering::Relaxed);
             if prev == 0 {
@@ -247,7 +247,7 @@ impl RfBus for Stm32f0RfBus {
                 gpioe.bsrr.write(|w| w.bits((1 << 10) | (1 << (11 + 16))));
                 ANTENNA.store(0, Ordering::Relaxed);
             }
-        }
+        });
     }
 
     fn enable_gio2_irq(&mut self) {

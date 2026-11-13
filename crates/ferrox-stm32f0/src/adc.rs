@@ -150,7 +150,9 @@ impl AdcDriver for Stm32f0AdcDriver {
                 timeout -= 1;
             }
 
-            let _ = Self::capture_and_rearm(ch_count);
+            if timeout > 0 {
+                let _ = Self::capture_and_rearm(ch_count);
+            }
         }
     }
 }
