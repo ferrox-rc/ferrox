@@ -40,6 +40,12 @@ python tools/build-sd-bin.py zorro
 
 Supported boards: `pocket`, `boxer`, `zorro`, `tx12`, `gx12`, `t12`, `x9e`, `x9d`, `qx7`, `tprov2`, `at9spro`.
 
+> [!TIP]
+> Before posting a test report, record the exact branch and commit you built from:
+> ```bash
+> git branch --show-current && git rev-parse --short HEAD
+> ```
+
 ---
 
 ## 2. Flashing via EdgeTX SD Bootloader (Recommended)
