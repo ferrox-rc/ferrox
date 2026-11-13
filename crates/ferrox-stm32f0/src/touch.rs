@@ -47,11 +47,11 @@ impl TouchDriver for Stm32f0TouchDriver {
                 w.bits((val & !(3 << 24)) | (1 << 24))
             });
 
-            // Pulse TOUCH_RST LOW for 20 ms
+            // Pulse TOUCH_RST LOW for 20 ms at 48 MHz
             gpioa.bsrr.write(|w| w.bits(1 << (15 + 16)));
-            cortex_m::asm::delay(160_000);
+            cortex_m::asm::delay(960_000);
             gpioa.bsrr.write(|w| w.bits(1 << 15));
-            cortex_m::asm::delay(320_000);
+            cortex_m::asm::delay(960_000);
 
             // PB8 (SCL), PB9 (SDA) -> AF1, Open-Drain, High-Speed
             gpiob.moder.modify(|r, w| {
@@ -82,7 +82,7 @@ impl TouchDriver for Stm32f0TouchDriver {
                     (2 << 20) // SCLDEL
                     | (1 << 16) // SDADEL
                     | (3 << 8)  // SCLH
-                    | 6,        // SCLL
+                    | 6, // SCLL
                 )
             });
 
@@ -116,22 +116,51 @@ impl TouchDriver for Stm32f0TouchDriver {
                     .set_bit()
             });
 
+            let reset_i2c1 = || {
+                i2c1.cr1.modify(|_, w| w.pe().clear_bit());
+                // RM0091 §26.4.3: PE must remain 0 for at least 3 APB clock cycles
+                cortex_m::asm::nop();
+                cortex_m::asm::nop();
+                cortex_m::asm::nop();
+                cortex_m::asm::nop();
+                i2c1.icr.write(|w| w.bits(0x3F38));
+                i2c1.cr1.modify(|_, w| w.pe().set_bit());
+            };
+
             let mut timeout = 10_000u32;
-            while i2c1.isr.read().txis().bit_is_clear() && timeout > 0 {
+            loop {
+                let isr = i2c1.isr.read();
+                if isr.nackf().bit_is_set() || isr.berr().bit_is_set() || isr.arlo().bit_is_set() {
+                    reset_i2c1();
+                    return None;
+                }
+                if isr.txis().bit_is_set() {
+                    break;
+                }
                 timeout -= 1;
-            }
-            if timeout == 0 {
-                return None;
+                if timeout == 0 {
+                    reset_i2c1();
+                    return None;
+                }
             }
 
             i2c1.txdr.write(|w| w.txdata().bits(0x00));
 
             timeout = 10_000;
-            while i2c1.isr.read().tc().bit_is_clear() && timeout > 0 {
+            loop {
+                let isr = i2c1.isr.read();
+                if isr.nackf().bit_is_set() || isr.berr().bit_is_set() || isr.arlo().bit_is_set() {
+                    reset_i2c1();
+                    return None;
+                }
+                if isr.tc().bit_is_set() {
+                    break;
+                }
                 timeout -= 1;
-            }
-            if timeout == 0 {
-                return None;
+                if timeout == 0 {
+                    reset_i2c1();
+                    return None;
+                }
             }
 
             // Read 7 bytes
@@ -151,11 +180,23 @@ impl TouchDriver for Stm32f0TouchDriver {
             let mut buf = [0u8; 7];
             for byte in buf.iter_mut() {
                 timeout = 10_000;
-                while i2c1.isr.read().rxne().bit_is_clear() && timeout > 0 {
+                loop {
+                    let isr = i2c1.isr.read();
+                    if isr.nackf().bit_is_set()
+                        || isr.berr().bit_is_set()
+                        || isr.arlo().bit_is_set()
+                    {
+                        reset_i2c1();
+                        return None;
+                    }
+                    if isr.rxne().bit_is_set() {
+                        break;
+                    }
                     timeout -= 1;
-                }
-                if timeout == 0 {
-                    return None;
+                    if timeout == 0 {
+                        reset_i2c1();
+                        return None;
+                    }
                 }
                 *byte = i2c1.rxdr.read().rxdata().bits();
             }

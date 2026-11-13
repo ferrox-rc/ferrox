@@ -1,28 +1,36 @@
 # FERROX USER GUIDE & OPERATIONS MANUAL
 
-A comprehensive guide to operating the `ferrox` firmware on supported transmitters (FlySky FS-i6S and FlySky FS-i6X).
+A comprehensive guide to operating the `ferrox` firmware across all supported transmitters:
+- **FlySky**: FS-i6X, FS-i6S
+- **RadioMaster**: Pocket, Boxer, Zorro, TX12 MKII
+- **Jumper**: T12, T12 Pro, T-Pro V2
+- **FrSky**: Taranis Q X7 / Q X7S, Taranis X9D / X9D+, Taranis X9E
+- **RadioLink**: AT9S Pro, AT10II
 
 ---
 
-## 1. Physical Controls & Faceplate Layout
-![FlySky FS-I6S](img/IMG_20261025_185240.jpg)
+## 1. Physical Controls & Navigation Paradigms
 
-### Keypad & Navigation Buttons
-- **`[UP]`** / **`[DOWN]`**:
-  - **On Flight Screen**: Cycles through the 5 dashboard pages (`1/5` -> `2/5` -> `3/5` -> `4/5` -> `5/5` with `[DOWN]`, and reverse with `[UP]`).
-  - **In Menus & Editors**: Navigate menu items, cycle characters, increment/decrement values.
-  - **Auto-Repeat**: Holding **`[UP]`** or **`[DOWN]`** for >= 300 ms automatically repeats every **70 ms** for rapid scrolling through lists, swift character selection, and fast curve point editing.
-- **`[OK]`**: Enter submenu, toggle setting, confirm values, advance character cursor in naming editor.
-  - **Hold `[OK]` for 1.2 seconds** on any flight dashboard page: Opens the **Settings Menu**.
-  - **Hold `[OK]` during Power-On**: Launches **Stick Calibration** immediately.
-- **`[CANCEL]` (`[ESC]`)**:
-  - **On Flight Screen (Hold >= 1.0s)**: Opens the **HUD Timer Reset Modal** with a real-time progress bar. Holding for 1.0s resets the flight timer back to its configured duration (or 0:00 for count-up), sounds a high chime, and flashes a `"TIMER RESET!"` confirmation. Releasing early aborts without resetting.
-  - **In Menus**: Return to previous screen, exit edit mode, abort calibration, or complete one-way receiver binding.
-- **`[BIND]` (Dedicated Button with Clean Separation Logic)**:
-  - **Tap (`< 1.0s`) on Flight Screen**: Cycles through the 5 flight dashboard pages (`1/5` -> `2/5` -> `3/5` -> `4/5` -> `5/5` -> `1/5`).
-  - **Hold (`>= 1.0s`) on Flight Screen**: Initiates AFHDS 2A receiver binding.
-  - **Hold during Power-On**: Launches AFHDS 2A binding subprogram immediately at boot.
-  - **In Menus & Editors**: Functions as **`[TAB]` / Cursor Advance** (advances name characters or curve points) without triggering RF binding.
+Depending on your transmitter hardware, Ferrox provides dedicated, responsive input drivers:
+
+### 1.1 Touchscreen Navigation (FlySky FS-i6S)
+- **Swipe Gestures**: Swipe UP / DOWN on the flight dashboard to cycle pages (`1/5` through `5/5`). Swipe LEFT / RIGHT to switch sub-pages or telemetry sensors.
+- **Center Screen Tap**: Tapping the center of any flight dashboard page opens the **Settings Menu**.
+- **Virtual Trims**: Touch targets on the left, right, and bottom screen perimeters adjust elevator, throttle, rudder, and aileron digital trims.
+- **Front Buttons**: Left front (`PA9`) serves as `[CANCEL]`; right front (`PA10`) serves as `[OK]`.
+
+### 1.2 Matrix Keypad & Optical Jog Wheel (FlySky FS-i6X)
+- **`[UP]`** / **`[DOWN]`**: Cycle dashboard pages and menu items. Auto-repeats every 70 ms after holding >= 300 ms.
+- **Optical Jog Wheel**: Turn clockwise to increment values or scroll down; turn counter-clockwise to decrement or scroll up.
+- **`[OK]`**: Confirm selection or enter submenus. Hold for 1.2s on flight dashboard to open the **Settings Menu**.
+- **`[CANCEL]`**: Exit submenu, cancel editing, or hold >= 1.0s on flight screen to reset flight timer.
+
+### 1.3 Rotary Scroll Wheel with Push Button (Pocket, T12, X9D, X9E, AT9S Pro)
+- **Scroll Wheel**: Turn clockwise to scroll down/increment; turn counter-clockwise to scroll up/decrement.
+- **Wheel Click (`[ENTER]` / `[OK]`)**: Press the scroll wheel to select a menu row, toggle settings, or enter character edit mode.
+- **`[PAGE]`**: Tap `PAGE` to cycle flight dashboard pages (`1/5` through `5/5`). Hold `PAGE` to jump directly into Telemetry or Model Setup.
+- **`[EXIT]` / `[RTN]`: Return to previous menu or cancel editing. Hold `EXIT` on flight dashboard to reset flight timer.
+- **`[SYS]` / `[MDL]` Buttons**: Direct one-tap jump into Radio System Setup or Model Configuration.
 
 ### Power-On Startup & Splash Screen
 - **Ferrox-RC Splash Screen**: When the transmitter powers on, the LCD immediately displays the 28x27 Ferrox-RC kinetic delta emblem, firmware identifier (`ferrox`), and build version for 1200 ms while ADC, DMA, and RF peripherals initialize in the background.
@@ -33,7 +41,7 @@ A comprehensive guide to operating the `ferrox` firmware on supported transmitte
 
 ## 2. Multi-Page Flight Dashboard
 
-The main flight screen features 5 switchable display pages cycled by tapping **`[BIND]`** or pressing **`[UP]`** / **`[DOWN]`**. All 5 pages share a pixel-perfect uniform layout:
+The main flight screen features 5 switchable display pages (plus an automatic 6th **F5J Graphic Altitude** page when Soaring F5J mode is active on the model) cycled by tapping **`[BIND]`** or pressing **`[UP]`** / **`[DOWN]`**. All pages share a pixel-perfect uniform layout:
 - **Top Status Bar (`y = 0..10`)**: Displays active model type icon (12x12 MDI glyph), active model name, centered RF/telemetry status (`RF:OK`, `R:XX%`, `BIND`, `U:SIM`, `NO RF`), and right-aligned power indicator with steady filtered battery voltage (`X.YYV`) and procedural solid battery gauge (`[===]`).
 - **Top Divider (`y = 11`)**: Full-width horizontal line (`Line(0, 11) -> (127, 11)`).
 - **Content Area (`y = 12..54`)**: Page-specific controls, split channels, gauges, and telemetry.
@@ -248,29 +256,43 @@ Hold **`[OK]` for 1.2 seconds** from any flight screen to open the Settings Menu
   - **Switch Auto-Detection**: Simply toggle the desired physical switch while editing to auto-detect and select it.
   - **Flight Safety & Acoustic Feedback**: Arming plays a rising tone chirp; disarming plays a falling tone chirp.
   - **Timer Integration**: Disarming pauses and unlatches the flight timer so the pilot can inspect total flight duration. Re-arming for the next flight automatically resets the timer back to its configured duration!
-- **Field 3: Timer Duration (`Timer:`)**:
-  - Configure the countdown timer in 30-second increments up to 60:00 (e.g. `05:00`), or set to `OFF` (0:00) to operate as a count-up stopwatch.
-- **Field 4: Timer Trigger (`T-Trig:`)**:
-  - Select the event that starts and runs the timer:
-    - **`OFF`**: Timer disabled.
-    - **`THs (RUN)`**: Throttle Switch mode: runs only while throttle stick > 5% (> -900), pauses when brought back to idle.
-    - **`THt (LTCH)`**: Throttle Trigger / Latched mode: starts counting when throttle stick first exceeds 5%, and continues running non-stop throughout zero-throttle glides or multirotor descents.
-    - **`ALWAYS ON`**: Continuous timer whenever the radio is powered on.
-    - **Switch Conditions (`SA^` through `SDv`, plus `SE^..SFv`)**: Runs while the specified switch condition is active.
-  - **Switch Auto-Detection**: Flipping any physical switch while editing `T-Trig` automatically sets that switch as the trigger.
-- **Field 5: Model Copy / Duplicate (`Copy -> Mxx`)**:
+- **Field 3: Timers (1..4) Setup (`Timers (1..4): [SETUP]`)**:
+  - Press **`[OK]`** to enter the dedicated **4-Timer Engine Setup Screen**:
+    - **`Timer:`**: Select active timer to configure (`TIMER 1` through `TIMER 4`). Each timer maintains its own target duration, trigger mode, run/stop/reset switches, and audio chime configuration.
+    - **`Target:`**: Configurable in 30-second increments up to 60:00 (e.g. `05:00`), or `00:00 (UP)` to operate as a count-up stopwatch. When a countdown target expires, the timer automatically shifts into overtime count-up (`+00:01`, `+00:02`).
+    - **`Mode:`**:
+      - **`LEVEL`**: Timer runs while the configured start condition is satisfied AND the stop switch is inactive.
+      - **`LATCH`**: Rising edge of the Start Switch latches the timer into running state; rising edge of the Stop Switch pauses it. Enables momentary buttons or separate switches to control run and pause independently.
+    - **`Start:`**: Trigger event that runs the timer:
+      - **`OFF`**: Timer disabled.
+      - **`THs (RUN)`**: Runs while throttle stick > 5% (> -900), pauses at idle.
+      - **`THt (LTCH)`**: Latches running the moment throttle stick first exceeds 5% and remains running throughout zero-throttle glides.
+      - **`ALWAYS`**: Continuous timer running whenever the model is armed or radio powered.
+      - **Switch Conditions (`SA^`..`SWMv`)**: Any physical switch position with live switch-flick auto-detection.
+    - **`Stop:`**: Optional independent Stop/Pause switch (`NONE` or `SA^`..`SWMv` with switch-flick auto-detection).
+    - **`Reset:`**: Optional dedicated Reset switch (`NONE` or `SA^`..`SWMv` with switch-flick auto-detection). Instantly resets the timer back to its target duration.
+    - **`Beeps:`**: Enable or disable audio countdown beeps (10s countdown, minute interval beeps, and expiry alarm).
+    - **`Action:`**: `[Reset]` action manually resets the selected timer.
+  - **Dashboard Reset Shortcuts**:
+    - Pressing an assigned Reset switch immediately resets the timer with a confirmation beep.
+    - Holding **`[CANCEL]` (`[ESC]`) for >= 1.0 second** from the main flight dashboard resets all active timers.
+    - Re-arming the model automatically resets timers with the arm reset flag enabled.
+- **Field 4: Model Copy / Duplicate (`Copy -> Mxx`)**:
   - Select a target model slot (`M01`..`M20`) and press **`[OK]`** to clone the current model's name, trims, curves, mixer lines, and protocol settings for safe experimentation.
-- **Field 6: Variometer Setup (`Vario: [SETUP]`)**:
+- **Field 5: Protocol Setup (`Protocol: [SETUP]`)**:
+  - Press **`[OK]`** to enter the RF protocol and receiver configuration screen (`AFHDS 2A`, `CRSF/ELRS`, `CC2500/MPM`, `Spektrum DSM`).
+- **Field 6: Telemetry Setup (`Telemetry: [SETUP]`)**:
+  - Press **`[OK]`** to customize the 2x2 telemetry sensor tiles on Page 5 of the dashboard.
+- **Field 7: Variometer Setup (`Vario: [SETUP]`)**:
   - Press **`[OK]`** to open the dedicated **Variometer Setup Screen (`VARIO SETUP`)** for acoustic soaring and thermal hunting feedback:
     - **`Switch:`**: Assigns an activation switch (`NONE`, `SA^`..`SFv`). Includes **Switch Auto-Detection** (simply flip the physical switch to assign).
     - **`Climb DB:`**: Climb deadband threshold in 0.1 m/s increments (`0.1m/s` to `1.5m/s`, default `0.2m/s`). Climb audio is muted below this vertical speed to eliminate atmospheric noise.
     - **`Sink DB:`**: Sink deadband threshold in 0.1 m/s increments (`0.5m/s` to `5.0m/s`, default `1.5m/s`).
     - **`Sink Mode:`**: Acoustic sink behavior (`BEEP` for periodic sink chirps, `CONT` for continuous low drone, or `SILENT` for lift-only soaring).
     - **`Motor Mute:`**: Automatically mutes vario audio whenever throttle stick exceeds 10% (`YES`/`NO`, default `YES`), ensuring quiet power climbs.
-    - **`[Test Tone]`**: Interactive live acoustic preview of climb pulses, deadband silence, and sink tones while in the setup menu.
-- **Field 7: Bind RX (`[OK Bind]`)**:
-  - Displays currently bound receiver ID (`Rx: XXXXXXXX`). Press **`[OK]`** to initiate receiver binding directly from Model Setup.
-- **Field 8: Reset Defaults (`[OK Defaults]`)**:
+- **Field 8: Soaring Setup (`Soaring: OFF / F5J / F3K`)**:
+  - Press **`[OK]`** to enter the **Soaring / F5J Competition Setup Screen (`SOARING / F5J SETUP`)** (see [Section 11](#11-soaring--competition-tools-f5j) for full operating instructions).
+- **Field 9: Reset Defaults (`[OK Defaults]`)**:
   - Press **`[OK]`** to restore default trims, standard channel directions, linear curves, and mixer parameters for this model slot.
 
 ### Submenu 3: Dual Rate & Expo (`DUAL RATE/EXPO`)
@@ -500,44 +522,107 @@ The firmware provides 4 convenient ways to initiate AFHDS 2A binding with clean 
 
 ## 8. Firmware Flashing, Full Flash Backup, & DFU Recovery
 
-The FlySky FS-i6S can be backed up and flashed directly over USB without specialized hardware programmer probes:
+All supported transmitters can be backed up and flashed directly over USB or via microSD card without specialized programmer probes. All supported chips feature read-only hardware ROM bootloaders, making them **100% unbrickable**.
 
-### 1. Enter Factory ROM DFU Bootloader
+You have two flashing paths:
+- **Method A (EdgeTX Radios - SD Bootloader):** Flash directly from the radio menu without PC drivers or DFU tools.
+- **Method B (Universal - Direct USB DFU):** Direct factory ROM flashing with raw 1:1 backup and restore.
 
-#### A. Initial Flash from Stock FlySky Factory Firmware (R60 Bootloader Access)
-The stock FlySky factory firmware does not include the software key-check logic to jump into the DFU bootloader. Therefore, entering DFU mode for the very first time requires access to the hardware `BOOT0` line:
-1. Ensure the transmitter is switched **OFF** and remove the rear case screws.
-2. Carefully separate the rear case. Be aware of the battery wires connected between the two halves. Once separated, locate the two unpopulated solder pads labeled **`R60`** on the back of the motherboard (near the microcontroller). It is best to connect the USB cable to the rear case now.
-3. Momentarily bridge/short the two `R60` pads using tweezers, a jumper wire, or a screwdriver tip.
-4. While holding the bridge across `R60`, have the USB cable connected to your PC and switch the transmitter power switch **ON**.
-5. Bridging `R60` pulls the MCU's `BOOT0` pin to 3.3V, causing the chip to boot directly into its factory ROM DFU bootloader (`0483:df11` for STM32, `314b:0106` for APM32). The transmitter screen remains blank, and the PC detects the device as `STM32 BOOTLOADER`.
-6. Once powered on, you can remove the bridge across `R60`. You do not need to keep it bridged while flashing.
+---
 
-#### B. Upgrading from OpenI6X or ferrox (No Disassembly Needed)
-Once custom firmware has been flashed to the radio, hardware pad bridging is never needed again:
-- With the transmitter powered off, hold **Roll Left + Yaw Right** inward towards the power switch while switching on the radio.
-- The LCD screen remains blank, and the transmitter enumerates over USB as `0483:df11` (STM32 BOOTLOADER).
+### Method A: Testing via EdgeTX SD Bootloader (No Drivers Needed)
 
-### 2. Backup Entire Flash (CRITICAL BEFORE FIRST FLASH)
-Before flashing any custom firmware, pull your entire 128 KB on-chip Flash memory to a local file for 100% safe, instant reversion:
+For RadioMaster Pocket, GX12, Boxer, Zorro, TX12, and Jumper T12 running the stock EdgeTX bootloader:
+
+1. **Build or download** the bootloader-compatible `-sd.bin` binary. EdgeTX Bootloader expects the `.bin` to start with a 32 KiB bootloader region (`0x08000000..0x08007FFF`) before the application vector table at `0x08008000` (expect **~134 KiB** total, rather than the ~102 KiB raw app binary):
+   ```bash
+   # Windows (Command Prompt or PowerShell):
+   .\tools\build-sd-bin.bat <board>   # e.g. zorro, pocket, boxer, tx12, gx12, t12, x9e
+   # Or PowerShell directly:
+   .\tools\build-sd-bin.ps1 <board>
+
+   # Linux / macOS:
+   ./tools/build-sd-bin.sh <board>
+
+   # Cross-platform (Python):
+   python tools/build-sd-bin.py <board>
+   ```
+2. Copy `ferrox-<board>-sd.bin` into the `/FIRMWARE/` folder on your microSD card.
+3. Push and hold **both horizontal trims inward** while pressing the power button to enter the EdgeTX Bootloader.
+4. Select **Write Firmware**, choose `ferrox-<board>-sd.bin`, and confirm.
+5. Ferrox will boot instantly!
+6. **To revert:** Power down, hold both horizontal trims inward again, and select your stock EdgeTX `.bin` from `/FIRMWARE/`.
+
+---
+
+### Method B: Testing via Direct USB DFU (Silicon-Level Backup & Restore)
+
+#### 1. Enter Factory ROM DFU Bootloader
+
+- **RadioMaster Pocket / Jumper / FrSky (STM32F4):**
+  1. Power the radio **OFF** and remove the microSD card.
+  2. Plug a USB-C data cable into the **top USB port** (data/simulator port, not battery charging).
+  3. The screen and LEDs will remain dark; the MCU boots directly into ST System ROM DFU mode (`0483:df11`).
+- **FlySky FS-i6X (STM32F072 / APM32F072):**
+  1. Power the radio **OFF**.
+  2. Push both horizontal trims inward towards the power switch (**Roll Left + Yaw Right**), then slide the power switch ON.
+  3. Plug in the USB cable.
+- **FlySky FS-i6S (STM32F072 / APM32F072):**
+  1. Power the radio **OFF**.
+  2. Press and hold both front/rear tactile push-buttons (**`PA9` + `PA10`**), then press the power buttons.
+  3. Plug in the USB cable.
+
+> Verify DFU connection: Run `dfu-util -l`. You should see `Found DFU: [0483:df11]` (or `[314b:0106]` for APM32).
+
+#### 2. Backup Stock Flash (CRITICAL BEFORE FIRST FLASH)
+
+Pull your entire internal on-chip Flash memory to a local file for 100% safe, instant reversion:
 ```bash
-# Backup complete 128 KB on-chip Flash (firmware + calibration + models)
-dfu-util -a 0 -s 0x08000000:131072 -U stock_backup.bin
+# RadioMaster Pocket / Jumper T12 / FrSky X9D / X9E (512 KB Flash):
+dfu-util -a 0 -s 0x08000000:524288 -U stock_backup_pocket.bin
+
+# FlySky FS-i6X & FS-i6S (128 KB Flash):
+dfu-util -a 0 -s 0x08000000:131072 -U stock_backup_flysky.bin
+
+# FlySky with APM32 clone chip:
+dfu-util -a 0 -d 314b:0106 -s 0x08000000:131072 -U stock_backup_flysky.bin
 ```
 
-### 3. Flash ferrox Firmware
-Flash the compiled binary via `dfu-util`:
-```bash
-# For FlySky FS-i6S:
-dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
+#### 3. Build & Flash ferrox Firmware
 
-# For FlySky FS-i6X (STM32F072):
+If building from source instead of using a pre-built release `.bin`, note that `cargo build-*` outputs an ELF file. Use `cargo objcopy` (`cargo install cargo-binutils` with `rustup component add llvm-tools-preview`) to produce the raw `.bin` file required by `dfu-util`:
+```bash
+# RadioMaster Pocket (Direct DFU):
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
+
+# FlySky FS-i6X / FS-i6S:
+cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -O binary ferrox-i6x.bin
+cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi -- -O binary ferrox-i6s.bin
+
+# Other STM32F4 targets (e.g. t12, x9d, x9e, gx12):
+cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
+```
+
+Flash the `.bin` binary corresponding to your radio:
+```bash
+# RadioMaster Pocket:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-pocket.bin
+
+# FlySky FS-i6X:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6x.bin
 
-# For FlySky FS-i6X (APM32F072):
-dfu-util -a 0 -d 314b:0106 -s 0x08000000:leave -D ferrox-i6x.bin
+# FlySky FS-i6S:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-i6s.bin
+
+# Jumper T12:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-t12.bin
+
+# FrSky Taranis X9D+:
+dfu-util -a 0 -s 0x08000000:leave -D ferrox-x9d.bin
 ```
-The radio will immediately reboot into the new firmware upon completion.
+*(For APM32 chips, append `-d 314b:0106` before `-s`).*
+
+The `:leave` flag exits DFU and boots directly into Ferrox.
 
 > [!WARNING]
 > ### Troubleshooting DFU State Error: `DFU state(10) = dfuERROR`
@@ -560,10 +645,15 @@ The radio will immediately reboot into the new firmware upon completion.
 >
 > *(Note: The message `Warning: Invalid DFU suffix signature` is also completely harmless: raw `.bin` files created by compilers omit the optional 16-byte PC DFU CRC trailer).*
 
-### 4. Restore / Revert Anytime
+#### 4. Restore / Revert Anytime
+
 You can restore your original stock or OpenI6X backup file at any time:
 ```bash
-dfu-util -a 0 -s 0x08000000:leave -D stock_backup.bin
+# Restore RadioMaster Pocket / Jumper / FrSky:
+dfu-util -a 0 -s 0x08000000:leave -D stock_backup_pocket.bin
+
+# Restore FlySky FS-i6X / FS-i6S:
+dfu-util -a 0 -s 0x08000000:leave -D stock_backup_flysky.bin
 ```
 
 ---
@@ -648,3 +738,70 @@ In **`SERIAL`** or **`COMPOSITE`** mode, the radio exposes a standard virtual se
   ```json
   {"vbat":5.18,"rssi":98,"rx_v":5.02,"tx":15820,"rx":15798,"err":22,"ch":[1500,1500,1150,1500,1000,1000,1500,1500,1000,1000,1500,1500,1500,1500]}
   ```
+
+---
+
+## 11. Soaring & Competition Tools (F5J)
+
+Ferrox includes a built-in, zero-heap **F5J Competition & Graphic Altitude Engine** inspired by the *SoarETX BW* and *Stiganas* competition workflows. Because the engine runs natively in compiled firmware rather than an interpreted Lua VM, it requires zero SD card scripts, avoids instruction-limit timeouts, and introduces zero frame jitter across both STM32F0 and STM32F4 transmitters.
+
+### 11.1 Enabling & Configuring Soaring (`Model Setup -> Soaring`)
+
+Navigate to **`MAIN MENU -> MODEL SETUP -> Soaring`** to configure F5J rules per model slot:
+
+| Parameter | Default | Range / Options | Description |
+| :--- | :---: | :--- | :--- |
+| **`Mode:`** | `OFF` | `OFF`, `F5J`, `F3K` | Selects soaring discipline. Setting `F5J` automatically unlocks Dashboard Page 6/6. |
+| **`Motor Ch:`** | `CH3` | `CH1..CH18` | Channel monitored for motor launch detection (e.g., `CH3` standard or `CH7` on 6-servo M-tail/wing setups). |
+| **`Work Time:`** | `10m` | `1m..99m` | Official competition working time target for audio countdown alerts (typically `10m` prelims, `15m` fly-off). |
+| **`On Thr:`** | `-80%` | `-90%..+90%` | Motor channel percentage threshold that latches launch start (`> -80%`). |
+| **`Off Thr:`** | `-90%` | `-100%..(On-5%)` | Hysteresis threshold below which motor shutoff is recognized (`< -90%`). |
+| **`Min Climb:`** | `15m` | `5m..100m` | Minimum altitude climb gate before automatic touchdown detection activates (prevents ground false triggers). |
+| **`Land Alt:`** | `5m` | `1m..20m` | Maximum ground window height (absorbs barometric drift). |
+| **`Hold Secs:`** | `3s` | `1s..15s` | Consecutive seconds altitude must stay flat (`<= 0.2m` delta) to confirm touchdown. |
+| **`Audio Cues:`** | `ON` | `ON` / `OFF` | Enables buzzer cadence beeps for motor runtime, 10s window completion, and working time intervals. |
+
+---
+
+### 11.2 Reading Dashboard Page 6/6 (`F5J Graphic Altitude`)
+
+Whenever **`Mode:`** is set to **`F5J`**, an extra 6th dashboard page becomes available via **`[UP]`/`[DOWN]`** (or **`[PAGE]`**):
+
+```text
++-------------------------------------------------------------+
+| [G] F5J GLIDER            R: 99%              8.20V   [===] | <- Top Status Bar (TX Batt & Link)
+|-------------------------------------------------------------|
+| F5J:142 M:286 m:48                                [GLD 7:42]| <- Launch Height, Max, Min & Phase Badge
+| 286m |                                               R:5.1V | <- Auto-scaled Y-axis & RX Batt
+|      |           [MAX]  :                                   |
+|      |            /^\   :                                   | <- Connected 110-sample altitude curve
+|      |      /\   /   \  :   /\                              |    with 3x3 peak/valley boxes + dotted lines
+|      |     /  \_/     \_:__/  \__   [MIN]                   |
+|   0m |____/_____________:________\_[]______________________ | <- Baseline (y=57)
+|                   5m   10m                             15m  | <- Fixed 15-minute timeline
++-------------------------------------------------------------+
+```
+
+- **Top Telemetry Summary (`F5J:` / `M:` / `m:`):**
+  - **`F5J:`**: Live climb peak during motor/window phases, frozen permanently at the official FAI start height once the 10-second window closes. Displays `!` if a motor restart occurred.
+  - **`M:`**: Overall maximum thermal altitude (`MAX`) reached during the flight.
+  - **`m:`**: Lowest real-flight glide altitude (`MIN`), ignoring the first 90 seconds after the F5J start window so initial climb isn't counted as your lowest save.
+- **Phase & Duration Badge (Top Right):** Inverted high-contrast badge displaying active state and elapsed time:
+  - **`RDY`**: Ready on ground; barometric launch reference (`0.0m`) tracks ground level until throttle exceeds `On Thr`.
+  - **`MOT`**: Motor running (automatically enters window at `30.0s` or earlier if motor cut).
+  - **`WIN`**: 10-second post-motor zoom measurement window counting upwards.
+  - **`GLD`**: Free thermal glide phase.
+  - **`LND`**: Touchdown detected and duration frozen (`-1s` lead-in offset).
+
+---
+
+### 11.3 FAI F5J 5-Phase Flight Lifecycle & Audio Cadence
+
+1. **Launch (`MOT`):** Moving the assigned motor channel above `On Thr` zeroes the flight graph, starts the 15-minute recording timeline (`8.18s` per column), and begins tracking peak altitude. The buzzer chimes at `5s`, `10s`, `15s`, `20s`, and counts every second from `21s` through `29s`.
+2. **10-Second Zoom Window (`WIN`):** When the motor stops (manually or automatically at `30s`), Ferrox double-beeps and monitors altitude for `10.0s`. If the glider zooms higher on residual energy, `F5J` height continues updating. At `10.0s`, a high tone freezes the official **`F5J`** start height.
+3. **Free Glide (`GLD`):** Working-time audio cues sound every minute (`>2m` left), every `15s` (`1m–2m` left), every `5s` (`10s–55s` left), and once per second during the final 10 seconds.
+4. **Automatic Touchdown Detection (`LND`):** Once the glider climbs above **`Min Climb`** (`15m`), Ferrox watches for ground settlement (`alt <= Land Alt` with `|delta| <= 0.2m` for `Hold Secs` consecutive seconds). Upon confirmation, a chime plays, chart sampling stops, and the final duration (`touchdown_ms - launch_ms - 1s`) locks cleanly on screen.
+5. **Motor Restart & Reset:**
+   - Restarting the motor during `WIN`, `GLD`, or `LND` immediately begins a new flight trace and marks the flight with `!` (restart = 0 contest score under FAI rules).
+   - Holding **`[CANCEL]` (`[ESC]`) for >= 1.0 second** (or toggling an assigned timer reset switch) clears the graph and returns the engine cleanly to **`RDY`** for the next round.
+

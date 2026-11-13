@@ -477,13 +477,7 @@ fn render_device_row(
 }
 
 #[inline(never)]
-fn draw_name_and_val_right(
-    lcd: &mut St7567,
-    y: i32,
-    name: &str,
-    val_str: &str,
-    is_sel: bool,
-) {
+fn draw_name_and_val_right(lcd: &mut St7567, y: i32, name: &str, val_str: &str, is_sel: bool) {
     let val_x = 124i32.saturating_sub((val_str.len() as i32) * 6);
     let max_name_chars = 20usize.saturating_sub(val_str.len() + 1).max(5);
     let name_disp = &name[..name.len().min(max_name_chars)];
@@ -579,8 +573,7 @@ fn render_param_row(
         cmd_buf[1 + t_len] = b']';
         let c_str = crate::ui::format::ascii_as_str(&cmd_buf[..2 + t_len]);
         lcd.draw_str_6x10(6, y, c_str, is_sel);
-    } else if p_type == crsf::protocol::CRSF_TYPE_INFO
-        || p_type == crsf::protocol::CRSF_TYPE_STRING
+    } else if p_type == crsf::protocol::CRSF_TYPE_INFO || p_type == crsf::protocol::CRSF_TYPE_STRING
     {
         let info = p.info_str(&engine.string_pool);
         if info.is_empty() {
@@ -606,11 +599,7 @@ fn render_param_row(
         }
     } else if p.is_integer() {
         let mut num_buf = [0u8; 12];
-        let val_to_show = if is_sel && editing {
-            edit_val
-        } else {
-            p.value
-        };
+        let val_to_show = if is_sel && editing { edit_val } else { p.value };
         let num_len = crate::ui::format::i32_to_dec(val_to_show, &mut num_buf);
         let num_str = crate::ui::format::ascii_as_str(&num_buf[..num_len]);
         let unit_str = p.unit_str(&engine.string_pool);

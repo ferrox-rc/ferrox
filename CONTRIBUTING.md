@@ -63,25 +63,33 @@ We adhere to [Conventional Commits](https://www.conventionalcommits.org/):
 To guarantee mathematical precision and prevent regressions across protocol state machines, all pull requests and contributions must satisfy the **Dual Verification Requirement**:
 
 ### 1. Run Host Unit Tests
-Execute automated unit tests locally on your host development environment for both target board profiles:
+Execute automated unit tests locally on your host development environment across target board profiles:
 ```bash
-# Test FS-i6S board profile
-cargo test-host-i6s
-
-# Test FS-i6X board profile
-cargo test-host-i6x
+# Test key board profiles:
+cargo test -p ferrox-core --lib --features board-i6x --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-pocket --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-t12 --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-x9d --target x86_64-unknown-linux-gnu -- --test-threads=1
+cargo test -p ferrox-core --lib --features board-at9spro --target x86_64-unknown-linux-gnu -- --test-threads=1
 ```
 All unit tests must pass with 0 failures before opening a pull request. When introducing new mathematical formulas, mixing modes, or communication protocols, include corresponding unit tests in the appropriate module.
 
 ### 2. Verify Bare-Metal Builds
-Verify that the firmware compiles cleanly for each physical Cortex-M0 target without errors or compiler warnings:
+Verify that the firmware compiles cleanly across both Cortex-M0 and Cortex-M4F targets without errors or compiler warnings:
 ```bash
-# Build FS-i6S release binary
+# Cortex-M0 Targets (FlySky):
 cargo build-i6s
-
-# Build FS-i6X release binary
 cargo build-i6x
+
+# Cortex-M4F Targets (RadioMaster, Jumper, FrSky, RadioLink):
+cargo build-pocket
+cargo build-pocket-sd
+cargo build-t12
+cargo build-x9d
+cargo build-x9e
+cargo build-at9spro
 ```
 
 For comprehensive details on our dual-target harness architecture, peripheral mocking, and adversarial verification methodology, refer to the **[Testing Methodology & Verification Guide](docs/TESTING.md)**.
+
 

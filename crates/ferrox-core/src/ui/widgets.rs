@@ -6,16 +6,18 @@ use crate::display::St7567;
 /// Draw a standardized top header banner with title and underline divider.
 #[inline(never)]
 pub fn draw_header(lcd: &mut St7567, title: &str) {
-    let x = ((128i32 - title.len() as i32 * 6) / 2).max(2);
+    let screen_w = crate::display::st7567::WIDTH as i32;
+    let x = ((screen_w - title.len() as i32 * 6) / 2).max(2);
     lcd.draw_str_6x10(x, 2, title, false);
-    lcd.draw_hline(0, 11, 128, true);
+    lcd.draw_hline(0, 11, screen_w as u32, true);
 }
 
 /// Draw a standardized bottom footer with small font (4x6) and divider line at y = 55,
 /// matching the flight pages' 8-pixel footer height and baseline at y = 62 (top at y = 57).
 #[inline(never)]
 pub fn draw_footer(lcd: &mut St7567, text: &str) {
-    lcd.draw_hline(0, 55, 128, true);
+    let screen_w = crate::display::st7567::WIDTH as i32;
+    lcd.draw_hline(0, 55, screen_w as u32, true);
     lcd.draw_str_4x6(2, 57, text, false);
 }
 
@@ -23,9 +25,10 @@ pub fn draw_footer(lcd: &mut St7567, text: &str) {
 /// and divider line at y = 55.
 #[inline(never)]
 pub fn draw_footer_split(lcd: &mut St7567, left: &str, right: &str) {
-    lcd.draw_hline(0, 55, 128, true);
+    let screen_w = crate::display::st7567::WIDTH as i32;
+    lcd.draw_hline(0, 55, screen_w as u32, true);
     lcd.draw_str_4x6(2, 57, left, false);
-    let right_x = (126i32 - right.len() as i32 * 4).max(2);
+    let right_x = (screen_w - 2 - right.len() as i32 * 4).max(2);
     lcd.draw_str_4x6(right_x, 57, right, false);
 }
 
@@ -39,10 +42,11 @@ pub fn draw_footer_three(
     right: &str,
     center_inverted: bool,
 ) {
-    lcd.draw_hline(0, 55, 128, true);
+    let screen_w = crate::display::st7567::WIDTH as i32;
+    lcd.draw_hline(0, 55, screen_w as u32, true);
     lcd.draw_str_4x6(2, 57, left, false);
     if !center.is_empty() {
-        let center_x = ((128i32 - center.len() as i32 * 4) / 2).max(2);
+        let center_x = ((screen_w - center.len() as i32 * 4) / 2).max(2);
         if center_inverted {
             lcd.fill_rect(center_x - 2, 56, center.len() as u32 * 4 + 3, 7, true);
             lcd.draw_str_4x6(center_x, 57, center, true);
@@ -50,7 +54,7 @@ pub fn draw_footer_three(
             lcd.draw_str_4x6(center_x, 57, center, false);
         }
     }
-    let right_x = (126i32 - right.len() as i32 * 4).max(2);
+    let right_x = (screen_w - 2 - right.len() as i32 * 4).max(2);
     lcd.draw_str_4x6(right_x, 57, right, false);
 }
 
@@ -504,13 +508,7 @@ pub fn draw_bar_gauge(lcd: &mut St7567, x: i32, y: i32, width: u32, height: u32,
 /// Draw a standardized gauge row with a 4x6 label at (2, y), framed bar gauge at (44, y+1),
 /// and 4-digit decimal value at (90, y).
 #[inline(never)]
-pub fn draw_gauge_row(
-    lcd: &mut St7567,
-    y: i32,
-    label: &str,
-    fill_width: u32,
-    val: u16,
-) {
+pub fn draw_gauge_row(lcd: &mut St7567, y: i32, label: &str, fill_width: u32, val: u16) {
     lcd.draw_str_4x6(2, y, label, false);
     draw_bar_gauge(lcd, 44, y + 1, 40, 5, fill_width);
     let mut val_buf = [0u8; 4];

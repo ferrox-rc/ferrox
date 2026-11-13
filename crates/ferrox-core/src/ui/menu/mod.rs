@@ -34,6 +34,8 @@ pub enum MenuState {
     InputSetup,
     TelemSetup,
     VarioSetup,
+    TimerSetup,
+    SoaringSetup,
     RxSetup,
     CrsfSetup,
     DsmSetup,
@@ -115,7 +117,13 @@ impl MenuController {
 
     /// Open the main settings menu.
     pub fn open(&mut self, buzzer: &mut Buzzer) {
-        self.state = MenuState::MainMenu;
+        self.open_at(MenuState::MainMenu, buzzer);
+    }
+
+    /// Open a specific menu screen directly (used by EdgeTX SYS/MDL/TELE/MENU shortcuts).
+    pub fn open_at(&mut self, state: MenuState, buzzer: &mut Buzzer) {
+        self.state = state;
+        self.return_state = MenuState::Closed;
         self.selected_item = 0;
         self.scroll_offset = 0;
         self.main_menu_selected = 0;
@@ -132,6 +140,70 @@ impl MenuController {
         self.down_hold_ms = 0;
         self.repeat_timer_ms = 0;
         buzzer.click();
+    }
+
+    /// Close the menu immediately and return to the flight dashboard.
+    pub fn close(&mut self, buzzer: &mut Buzzer) {
+        if self.state != MenuState::Closed {
+            self.state = MenuState::Closed;
+            self.editing = false;
+            self.waiting_release = true;
+            buzzer.click();
+        }
+    }
+
+    /// Cycle between sibling EdgeTX Model or System menu screens when not editing.
+    pub fn switch_edgetx_tab(&mut self, forward: bool, buzzer: &mut Buzzer) {
+        if !self.is_active() || self.editing {
+            return;
+        }
+        const MDL_TABS: &[MenuState] = &[
+            MenuState::ModelSetup,
+            MenuState::WingMixer,
+            MenuState::DualRateExpo,
+            MenuState::ThrottleCurve,
+            MenuState::AuxChannels,
+            MenuState::ChannelReverse,
+            MenuState::TimerSetup,
+            MenuState::TelemSetup,
+            MenuState::VarioSetup,
+            MenuState::SoaringSetup,
+            MenuState::GlobalVars,
+            MenuState::RxSetup,
+        ];
+        const SYS_TABS: &[MenuState] = &[
+            MenuState::RadioSetup,
+            MenuState::HardwareSetup,
+            MenuState::ChannelMonitor,
+            MenuState::DiagAnas,
+            MenuState::SystemInfo,
+        ];
+
+        let group = if let Some(idx) = MDL_TABS.iter().position(|&s| s == self.state) {
+            Some((MDL_TABS, idx))
+        } else {
+            SYS_TABS
+                .iter()
+                .position(|&s| s == self.state)
+                .map(|idx| (SYS_TABS, idx))
+        };
+
+        if let Some((tabs, idx)) = group {
+            let next_idx = if forward {
+                (idx + 1) % tabs.len()
+            } else if idx == 0 {
+                tabs.len() - 1
+            } else {
+                idx - 1
+            };
+            self.state = tabs[next_idx];
+            self.selected_item = 0;
+            self.scroll_offset = 0;
+            self.page_idx = 0;
+            self.sub_idx = 0;
+            self.editing = false;
+            buzzer.play_tone(2200, 30);
+        }
     }
 
     /// Return safely to Main Menu, preserving cursor index and scroll offset.
@@ -254,7 +326,9 @@ impl MenuController {
         // - Must return to the neutral middle deadband ([-300, 300]) to re-arm for the next line change.
         // - Active for Default (spring wheels), Pot, and PotDetent (detented pots).
         // - Switch modes (TwoPos, ThreePos, etc.) and InputSetup screen are excluded to prevent runaway scrolling.
-        if ActiveBoard::HAS_JOG_WHEELS && !is_source_selection && self.state != MenuState::InputSetup
+        if ActiveBoard::HAS_JOG_WHEELS
+            && !is_source_selection
+            && self.state != MenuState::InputSetup
         {
             let mut current_dir: i8 = 0;
 
@@ -383,6 +457,18 @@ impl MenuController {
             }
             MenuState::VarioSetup => {
                 screens::model::update_vario_setup(self, lcd, &nav_keys, storage, buzzer);
+            }
+            MenuState::TimerSetup => {
+                screens::model::update_timer_setup(self, lcd, &nav_keys, storage, buzzer);
+            }
+            MenuState::SoaringSetup => {
+                #[cfg(any(feature = "soaring", test))]
+                screens::soaring::update_soaring_setup(self, lcd, &nav_keys, storage, buzzer);
+                #[cfg(not(any(feature = "soaring", test)))]
+                {
+                    let _ = (lcd, &nav_keys, storage, buzzer);
+                    self.state = MenuState::ModelSetup;
+                }
             }
             MenuState::RxSetup => {
                 screens::setup::update_rx_setup(self, lcd, &nav_keys, storage, buzzer);
@@ -937,10 +1023,16 @@ mod tests {
 
         ctrl.state = MenuState::HardwareSetup;
         let items = ActiveBoard::HARDWARE_EXT_ITEMS;
-        let Some(ppm_out_pos) = items.iter().position(|&it| it == crate::board::HardwareExtItem::PpmOut) else {
+        let Some(ppm_out_pos) = items
+            .iter()
+            .position(|&it| it == crate::board::HardwareExtItem::PpmOut)
+        else {
             return;
         };
-        let ppm_in_pos = items.iter().position(|&it| it == crate::board::HardwareExtItem::PpmIn).unwrap();
+        let ppm_in_pos = items
+            .iter()
+            .position(|&it| it == crate::board::HardwareExtItem::PpmIn)
+            .unwrap();
 
         ctrl.selected_item = ppm_out_pos;
         ctrl.scroll_offset = ppm_out_pos.saturating_sub(2);
@@ -960,13 +1052,7 @@ mod tests {
         };
 
         // Press OK on PPM Out -> Toggle PPM Out ON
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(storage.radio.is_ppm_out_enabled());
         assert!(!storage.radio.is_ppm_in_enabled());
 
@@ -976,36 +1062,18 @@ mod tests {
 
         // Press OK on Trainer In -> Cycle to PPM In (ON)
         nav.ok = true;
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(storage.radio.is_ppm_out_enabled());
         assert!(storage.radio.is_ppm_in_enabled());
         assert!(!storage.radio.is_dsm_sat_in_enabled());
 
         // Press OK again on Trainer In -> Cycle to DSMX SAT
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(!storage.radio.is_ppm_in_enabled());
         assert!(storage.radio.is_dsm_sat_in_enabled());
 
         // Press OK again on Trainer In -> Cycle to OFF
-        screens::setup::update_hardware_setup(
-            &mut ctrl,
-            &mut lcd,
-            &nav,
-            &mut storage,
-            &mut buzzer,
-        );
+        screens::setup::update_hardware_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert!(!storage.radio.is_ppm_in_enabled());
         assert!(!storage.radio.is_dsm_sat_in_enabled());
     }
@@ -1020,7 +1088,10 @@ mod tests {
 
         ctrl.state = MenuState::RadioSetup;
         let items = ActiveBoard::RADIO_SETUP_ITEMS;
-        let gimbal_pos = items.iter().position(|&it| it == crate::board::RadioSetupItem::GimbalType).unwrap();
+        let gimbal_pos = items
+            .iter()
+            .position(|&it| it == crate::board::RadioSetupItem::GimbalType)
+            .unwrap();
         ctrl.selected_item = gimbal_pos;
         ctrl.scroll_offset = gimbal_pos.saturating_sub(2);
 
@@ -1070,9 +1141,9 @@ mod tests {
         let mut lcd = St7567::new();
         let mut storage = RadioStorage::default_factory();
 
-        // 1. Enter ModelSetup, select item 8 (Vario)
+        // 1. Enter ModelSetup, select item 7 (Vario)
         ctrl.state = MenuState::ModelSetup;
-        ctrl.selected_item = 8;
+        ctrl.selected_item = 7;
         ctrl.scroll_offset = 4;
 
         let mut nav = NavKeys {
@@ -1143,7 +1214,7 @@ mod tests {
         nav.cancel = true;
         screens::model::update_vario_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
         assert_eq!(ctrl.state, MenuState::ModelSetup);
-        assert_eq!(ctrl.selected_item, 8);
+        assert_eq!(ctrl.selected_item, 7);
         assert_eq!(ctrl.scroll_offset, 4);
     }
 }

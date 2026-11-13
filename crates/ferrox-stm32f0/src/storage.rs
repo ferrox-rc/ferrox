@@ -134,10 +134,18 @@ impl StorageBus for EepromI2cBus {
         rcc.apb1enr.modify(|_, w| w.i2c2en().enabled());
 
         // Hardware Bus Recovery: Clock 9 SCL pulses on PB10 with PB11 open-drain pull-up
-        gpiob.moder.modify(|_, w| w.moder10().output().moder11().input());
-        gpiob.otyper.modify(|_, w| w.ot10().open_drain().ot11().open_drain());
-        gpiob.pupdr.modify(|_, w| w.pupdr10().pull_up().pupdr11().pull_up());
-        gpiob.ospeedr.modify(|_, w| w.ospeedr10().high_speed().ospeedr11().high_speed());
+        gpiob
+            .moder
+            .modify(|_, w| w.moder10().output().moder11().input());
+        gpiob
+            .otyper
+            .modify(|_, w| w.ot10().open_drain().ot11().open_drain());
+        gpiob
+            .pupdr
+            .modify(|_, w| w.pupdr10().pull_up().pupdr11().pull_up());
+        gpiob
+            .ospeedr
+            .modify(|_, w| w.ospeedr10().high_speed().ospeedr11().high_speed());
 
         for _ in 0..9 {
             gpiob.bsrr.write(|w| w.br10().reset());
@@ -236,7 +244,9 @@ impl StorageBus for EepromI2cBus {
         let mut read_offset = 0;
         while read_offset < data.len() {
             let chunk_len = (data.len() - read_offset).min(64);
-            let chunk_addr = addr + read_offset as u16;
+            let Some(chunk_addr) = addr.checked_add(read_offset as u16) else {
+                return Err(());
+            };
             let addr_bytes = chunk_addr.to_be_bytes();
 
             i2c.cr2.write(|w| {
@@ -256,7 +266,8 @@ impl StorageBus for EepromI2cBus {
                 let mut timeout = 10_000u32;
                 while !i2c.isr.read().txis().bit() && timeout > 0 {
                     let isr = i2c.isr.read();
-                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
+                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit()
+                    {
                         clear_i2c_flags(i2c);
                         recover_i2c(bus_num);
                         return Err(());
@@ -303,7 +314,8 @@ impl StorageBus for EepromI2cBus {
                 let mut rx_timeout = 10_000u32;
                 while !i2c.isr.read().rxne().bit() && rx_timeout > 0 {
                     let isr = i2c.isr.read();
-                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
+                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit()
+                    {
                         clear_i2c_flags(i2c);
                         recover_i2c(bus_num);
                         return Err(());
@@ -378,7 +390,8 @@ impl StorageBus for EepromI2cBus {
                 let mut timeout = 10_000u32;
                 while !i2c.isr.read().txis().bit() && timeout > 0 {
                     let isr = i2c.isr.read();
-                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
+                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit()
+                    {
                         clear_i2c_flags(i2c);
                         recover_i2c(bus_num);
                         return Err(());
@@ -396,7 +409,8 @@ impl StorageBus for EepromI2cBus {
                 let mut timeout = 10_000u32;
                 while !i2c.isr.read().txis().bit() && timeout > 0 {
                     let isr = i2c.isr.read();
-                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit() {
+                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit()
+                    {
                         clear_i2c_flags(i2c);
                         recover_i2c(bus_num);
                         return Err(());
@@ -470,7 +484,13 @@ impl StorageBus for EepromI2cBus {
                 return Err(());
             }
 
-            addr += chunk_len as u16;
+            let Some(next_addr) = addr.checked_add(chunk_len as u16) else {
+                if data.len() > chunk_len {
+                    return Err(());
+                }
+                break;
+            };
+            addr = next_addr;
             data = &data[chunk_len..];
         }
 

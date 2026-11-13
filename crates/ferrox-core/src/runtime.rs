@@ -12,6 +12,8 @@ use crate::calib::CalibWizard;
 use crate::crsf;
 use crate::curve;
 use crate::display::St7567;
+#[cfg(feature = "rf-dsm")]
+use crate::dsm;
 use crate::input::{self, InputState, SwitchPos};
 use crate::mixer::{self, SAFE_IDLE_CHANNELS};
 use crate::rf::{self, afhds2a::TelemetryData};
@@ -171,16 +173,22 @@ impl FlightPipeline {
             #[cfg(feature = "rf-dsm")]
             crate::board::RfProtocol::Dsm => {
                 crsf::set_enabled(false, 0, false);
-                rf::set_silenced(sim_mode);
-                if !sim_mode {
-                    // DSM protocol over MULTI-Module UART or internal RF
-                    let _sub_proto = active_model.dsm_sub_proto;
-                    // Channels are passed to RF subsystem or external module
+                let dsm_active = !sim_mode;
+                dsm::set_enabled(dsm_active);
+                dsm::set_bind_mode(rf::is_binding());
+                rf::set_silenced(true);
+                if dsm_active {
+                    let sub_proto =
+                        crate::board::DsmSubProtocol::from_u8(active_model.dsm_sub_proto);
+                    dsm::update_link(now, &rf_chs, sub_proto);
+                    dsm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);
                 }
             }
             crate::board::RfProtocol::Afhds2a | crate::board::RfProtocol::Cc2500 => {
                 crsf::set_enabled(false, 0, false);
+                #[cfg(feature = "rf-dsm")]
+                dsm::set_enabled(false);
                 rf::set_silenced(sim_mode);
                 if !sim_mode {
                     rf::set_channels(&rf_chs);
@@ -207,6 +215,28 @@ impl FlightPipeline {
                     last_vspd_ms: ct.last_vspd_ms,
                     last_rpm_ms: ct.last_rpm_ms,
                     last_temp_ms: ct.last_temp_ms,
+                    packets_sent: 0,
+                    packets_received: 0,
+                }
+            }
+            #[cfg(feature = "rf-dsm")]
+            crate::board::RfProtocol::Dsm => {
+                let dt = dsm::get_telemetry();
+                rf::afhds2a::TelemetryData {
+                    connected: dt.connected,
+                    rssi: dt.rssi_pct,
+                    rx_voltage_mv: dt.rx_voltage_mv,
+                    alt_m: 0,
+                    alt_dm: 0,
+                    vspeed_cms: 0,
+                    has_vspeed: false,
+                    rpm: 0,
+                    temp_c_x10: 0,
+                    last_rx_voltage_ms: if dt.connected { now } else { 0 },
+                    last_alt_ms: 0,
+                    last_vspd_ms: 0,
+                    last_rpm_ms: 0,
+                    last_temp_ms: 0,
                     packets_sent: 0,
                     packets_received: 0,
                 }
@@ -269,6 +299,9 @@ pub struct BackgroundIdleManager {
     pub bind_was_held: bool,
     pub ok_hold_ms: u16,
     pub cancel_hold_ms: u16,
+    pub timers: crate::timer::TimerBank,
+    #[cfg(any(feature = "soaring", test))]
+    pub f5j: crate::soaring::f5j::F5jEngine,
     pub timer_remaining_secs: u16,
     pub timer_elapsed_secs: u16,
     pub timer_ms_acc: u16,
@@ -288,6 +321,8 @@ pub struct BackgroundIdleManager {
     pub trim_dirty: bool,
     pub trim_save_cooldown_ms: u16,
     pub prev_instant_trim_active: bool,
+    #[cfg(feature = "voice-audio")]
+    pub audio_callouts: crate::audio::CalloutScheduler,
     pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
 }
 
@@ -321,6 +356,9 @@ impl BackgroundIdleManager {
             bind_was_held: false,
             ok_hold_ms: 0,
             cancel_hold_ms: 0,
+            timers: crate::timer::TimerBank::new(),
+            #[cfg(any(feature = "soaring", test))]
+            f5j: crate::soaring::f5j::F5jEngine::new(),
             timer_remaining_secs: 0,
             timer_elapsed_secs: 0,
             timer_ms_acc: 0,
@@ -340,6 +378,8 @@ impl BackgroundIdleManager {
             trim_dirty: false,
             trim_save_cooldown_ms: 0,
             prev_instant_trim_active: false,
+            #[cfg(feature = "voice-audio")]
+            audio_callouts: crate::audio::CalloutScheduler::new(),
             board_idle: ActiveBoard::create_idle_state(),
         }
     }
@@ -489,7 +529,16 @@ impl BackgroundIdleManager {
                 rf::set_bind_mode(false);
                 buzzer.click();
             }
-        } else if menu_active {
+        } else if self.board_idle.handle_board_keys(
+            dt_ms,
+            keys,
+            crate::boot::scan_edgetx_keys(),
+            menu_active,
+            dashboard,
+            menu_controller,
+            buzzer,
+        ) || menu_active
+        {
             self.bind_hold_ms = 0;
             self.bind_was_held = false;
         } else {
@@ -642,27 +691,16 @@ impl BackgroundIdleManager {
             }
         }
 
-        // 8c. Flight Timer Engine
+        // 8c. Flight Timer Engine (4 Independent Timers)
         let active_idx = storage.radio.active_model;
         let model = storage.active_model();
+        let timer_configs = model.all_timer_configs();
+
         if self.prev_timer_model != active_idx {
             self.prev_timer_model = active_idx;
-            self.timer_remaining_secs = model.timer_secs;
-            self.timer_elapsed_secs = 0;
-            self.timer_ms_acc = 0;
-            self.timer_latched = false;
-        }
-
-        // Arm Switch transitions: auto-reset upon Arming, unlatch upon Disarming
-        if model.arm_switch > 0 && model.arm_switch <= ActiveBoard::MAX_MIX_SWITCH {
-            if flight.just_armed {
-                self.timer_remaining_secs = model.timer_secs;
-                self.timer_elapsed_secs = 0;
-                self.timer_ms_acc = 0;
-                self.timer_latched = false;
-            } else if flight.just_disarmed {
-                self.timer_latched = false;
-            }
+            self.timers.reset_all(&timer_configs);
+            #[cfg(any(feature = "soaring", test))]
+            self.f5j.reset_to_ready(flight.telem.alt_dm);
         }
 
         // Cooldown timer, toast duration, and key release guard for timer reset
@@ -678,10 +716,9 @@ impl BackgroundIdleManager {
 
         // Check for manual reset via assigned button or [CANCEL] held for >= 1.0s on flight dashboard
         if timer_reset_clicked && self.timer_reset_cooldown_ms == 0 {
-            self.timer_remaining_secs = model.timer_secs;
-            self.timer_elapsed_secs = 0;
-            self.timer_ms_acc = 0;
-            self.timer_latched = false;
+            self.timers.reset_all(&timer_configs);
+            #[cfg(any(feature = "soaring", test))]
+            self.f5j.reset_to_ready(flight.telem.alt_dm);
             self.cancel_hold_ms = 0;
             self.cancel_waiting_release = true;
             self.timer_reset_toast_ms = 800;
@@ -694,10 +731,9 @@ impl BackgroundIdleManager {
         {
             self.cancel_hold_ms = self.cancel_hold_ms.saturating_add(dt_ms);
             if self.cancel_hold_ms >= 1000 {
-                self.timer_remaining_secs = model.timer_secs;
-                self.timer_elapsed_secs = 0;
-                self.timer_ms_acc = 0;
-                self.timer_latched = false;
+                self.timers.reset_all(&timer_configs);
+                #[cfg(any(feature = "soaring", test))]
+                self.f5j.reset_to_ready(flight.telem.alt_dm);
                 self.cancel_hold_ms = 0;
                 self.cancel_waiting_release = true;
                 self.timer_reset_toast_ms = 800;
@@ -708,7 +744,7 @@ impl BackgroundIdleManager {
             self.cancel_hold_ms = 0;
         }
 
-        // Evaluate timer trigger condition
+        // Evaluate timer triggers and update all 4 timers
         let is_armed_or_unassigned =
             if model.arm_switch > 0 && model.arm_switch <= ActiveBoard::MAX_MIX_SWITCH {
                 flight.is_armed
@@ -717,32 +753,27 @@ impl BackgroundIdleManager {
             };
         let stick_mode = StickMode::from_u8(storage.radio.stick_mode);
         let controls = flight.state.flight_controls(stick_mode);
-        let timer_running = mixer::is_timer_active(
-            model.timer_source,
+
+        self.timers.update(
+            dt_ms,
+            &timer_configs,
             controls.throttle,
-            &mut self.timer_latched,
             &flight.state.switches,
             is_armed_or_unassigned,
+            flight.just_armed,
+            flight.just_disarmed,
+            buzzer,
         );
 
-        if timer_running && dt_ms > 0 {
-            self.timer_ms_acc = self.timer_ms_acc.saturating_add(dt_ms);
-            while self.timer_ms_acc >= 1000 {
-                self.timer_ms_acc -= 1000;
-                if self.timer_remaining_secs > 0 {
-                    self.timer_remaining_secs -= 1;
-                    if self.timer_remaining_secs == 0 {
-                        buzzer.timer_elapsed_alarm();
-                    } else if self.timer_remaining_secs <= 10 {
-                        buzzer.timer_countdown_beep();
-                    } else if self.timer_remaining_secs.is_multiple_of(60) {
-                        buzzer.timer_minute_beep();
-                    }
-                } else {
-                    self.timer_elapsed_secs = self.timer_elapsed_secs.saturating_add(1);
-                }
-            }
-        }
+        #[cfg(any(feature = "soaring", test))]
+        self.f5j
+            .update(now, &flight.rf_chs, &flight.telem, &model.soaring, buzzer);
+
+        // Keep legacy Timer 1 scalar fields in sync for telemetry/logging
+        self.timer_remaining_secs = self.timers.timers[0].remaining_secs;
+        self.timer_elapsed_secs = self.timers.timers[0].elapsed_secs;
+        self.timer_ms_acc = self.timers.timers[0].ms_acc;
+        self.timer_latched = self.timers.timers[0].latched_running;
 
         // 9. Display Frame Rendering (~30 Hz)
         let run_display = now.wrapping_sub(self.last_display_ms) >= 33;
@@ -844,6 +875,8 @@ impl BackgroundIdleManager {
                 rf_ok,
                 flight.is_binding,
                 &flight.telem,
+                #[cfg(any(feature = "soaring", test))]
+                &self.f5j,
                 timer_str,
                 timer_expired,
                 buzzer,
@@ -1027,10 +1060,12 @@ pub fn draw_timer_reset_modal(lcd: &mut St7567, progress_pct: u8, completed: boo
 ///
 /// Executes initialization stages, bootloader checks, peripheral discovery,
 /// safety interlocks, and the dual-rate flight loop.
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> ! {
+pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) -> ! {
     // Register explicit platform context drivers
     ctx.register();
+
+    // Relocate VTOR and sanitize bootloader interrupt/SysTick state before any init
+    crate::chip::pre_init();
 
     // 0. Early board initialization (e.g. electronic power latch on FS-i6S)
     ActiveBoard::pre_init();
@@ -1071,6 +1106,8 @@ pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> !
     buzzer.init();
     buzzer.enabled = storage.radio.audio_enabled != 0;
     buzzer.tone_style = crate::buzzer::ToneStyle::from_u8(storage.radio.tone_style);
+    #[cfg(feature = "voice-audio")]
+    crate::audio::init();
 
     // 5. Initialize ST7567 128×64 LCD (clears framebuffer and flushes before turning on backlight)
     let mut lcd = St7567::new();
@@ -1235,12 +1272,10 @@ pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> !
             }
 
             // Once the transmitter has been running steadily in the flight loop for >5 seconds,
-            // clear the consecutive panic count.
-            if now > 5000 && !panic_count_ptr.is_null() {
-                unsafe {
-                    if core::ptr::read_volatile(panic_count_ptr) != 0 {
-                        core::ptr::write_volatile(panic_count_ptr, 0);
-                    }
+            // invoke the board-level panic counter reset callback.
+            if now > 5000 {
+                if let Some(cb) = on_stable_runtime {
+                    cb();
                 }
             }
         }
@@ -1272,5 +1307,21 @@ pub fn run(ctx: crate::hal::PlatformContext<'_>, panic_count_ptr: *mut u32) -> !
             &mut calib_wizard,
             rf_ok,
         );
+
+        // Tier 3: Non-blocking WAV/PCM voice playback & periodic telemetry callouts
+        #[cfg(feature = "voice-audio")]
+        if storage.radio.audio_enabled != 0 {
+            let alt_m = (flight_snapshot.telem.last_alt_ms != 0
+                && now.wrapping_sub(flight_snapshot.telem.last_alt_ms) < 5000)
+                .then_some(flight_snapshot.telem.alt_m);
+            idle_manager.audio_callouts.maybe_announce(
+                now,
+                10,
+                flight_snapshot.telem.connected,
+                alt_m,
+                -(flight_snapshot.telem.rssi as i8),
+            );
+            crate::audio::tick(80);
+        }
     }
 }

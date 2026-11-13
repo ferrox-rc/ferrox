@@ -25,6 +25,49 @@ impl ToneOutput for NullToneOutput {
     fn off(&mut self) {}
 }
 
+/// Hardware PCM/DAC audio streaming driver (e.g., 12-bit DAC + DMA on STM32F4).
+pub trait AudioOutput {
+    /// Initialize audio DAC/DMA hardware (kept muted until playback starts).
+    fn init(&mut self);
+
+    /// Configure sample rate, unmute amplifier, and start DMA streaming.
+    fn start(&mut self, sample_rate_hz: u32) -> bool;
+
+    /// Stop DMA streaming, mute amplifier, and release shared pin if needed.
+    fn stop(&mut self);
+
+    /// Non-blocking write of 12-bit unsigned PCM samples (`0..=4095`, midpoint `2048`).
+    /// Returns the number of samples accepted into the hardware buffer.
+    fn write_samples(&mut self, samples: &[u16]) -> usize;
+
+    /// Number of 12-bit samples that can be written immediately without blocking.
+    fn free_space(&self) -> usize;
+
+    /// Returns true while audio playback is active or queued in DMA.
+    fn is_playing(&self) -> bool;
+}
+
+/// Dummy no-op PCM audio output for targets without DAC audio.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct NullAudioOutput;
+
+impl AudioOutput for NullAudioOutput {
+    fn init(&mut self) {}
+    fn start(&mut self, _sample_rate_hz: u32) -> bool {
+        false
+    }
+    fn stop(&mut self) {}
+    fn write_samples(&mut self, _samples: &[u16]) -> usize {
+        0
+    }
+    fn free_space(&self) -> usize {
+        0
+    }
+    fn is_playing(&self) -> bool {
+        false
+    }
+}
+
 /// Hardware LCD display bus flush and backlight driver.
 pub trait DisplayBus {
     /// Initialize GPIOs and controller registers.
@@ -38,6 +81,9 @@ pub trait DisplayBus {
 
     /// Set backlight brightness level (0..100%).
     fn set_backlight_level(&mut self, pct: u8);
+
+    /// Flush a 4-bit indexed framebuffer expanded via a 16-entry RGB565 look-up table.
+    fn flush_indexed_rgb565(&mut self, _fb_4bpp: &[u8], _palette: &[u16; 16]) {}
 }
 
 /// Dummy display bus for tests.
@@ -63,6 +109,23 @@ pub trait StorageBus {
     /// Write a slice of bytes to non-volatile storage.
     #[allow(clippy::result_unit_err)]
     fn write(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()>;
+
+    /// Optional append hook for streaming a 512-byte telemetry sector (e.g. to SD card).
+    #[allow(clippy::result_unit_err)]
+    fn append_telemetry_sector(&mut self, _sector: &[u8; 512]) -> Result<(), ()> {
+        Ok(())
+    }
+
+    /// Initialize SD card for read-only FAT access (e.g. /SOUNDS/ playback), if present.
+    fn init_sd_readonly(&mut self) -> bool {
+        false
+    }
+
+    /// Read a raw 512-byte sector at `lba` from the SD card, if present.
+    #[allow(clippy::result_unit_err)]
+    fn read_raw_sector(&mut self, _lba: u32, _buf: &mut [u8; 512]) -> Result<(), ()> {
+        Err(())
+    }
 }
 
 /// Dummy no-op storage bus for tests and simulated environments.
@@ -161,9 +224,26 @@ pub trait KeyDriver {
     /// Scan all physical buttons and return 16-bit key bitmask.
     fn scan_keys(&mut self) -> u16;
 
-    /// Read auxiliary external digital switches (e.g. SE/SF on PC12/PC15 or SG/SH).
-    fn read_ext_switches(&mut self) -> (crate::input::SwitchPos, crate::input::SwitchPos) {
-        (crate::input::SwitchPos::Up, crate::input::SwitchPos::Up)
+    /// Scan EdgeTX-style dedicated navigation keys (`SYS`, `MDL`, `TELE`, `PAGE<`, `PAGE>`).
+    fn scan_edgetx_keys(&mut self) -> u8 {
+        0
+    }
+
+    /// Read auxiliary external digital switches (e.g. SE, SF, SG, SH).
+    fn read_ext_switches(
+        &mut self,
+    ) -> (
+        crate::input::SwitchPos,
+        crate::input::SwitchPos,
+        crate::input::SwitchPos,
+        crate::input::SwitchPos,
+    ) {
+        (
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+            crate::input::SwitchPos::Up,
+        )
     }
 
     /// Read front left and right buttons (FS-i6S).
@@ -486,41 +566,47 @@ impl UsbDriver for NullUsbDriver {
 }
 
 /// Unified platform services and peripheral drivers bundle.
-pub struct PlatformContext<'a> {
-    pub system: &'a mut dyn SystemDriver,
-    pub tone: &'a mut dyn ToneOutput,
-    pub display: &'a mut dyn DisplayBus,
-    pub storage: &'a mut dyn StorageBus,
-    pub trainer: &'a mut dyn TrainerDriver,
-    pub rf_bus: &'a mut dyn RfBus,
-    pub usb: &'a mut dyn UsbDriver,
-    pub adc: &'a mut dyn AdcDriver,
-    pub keys: &'a mut dyn KeyDriver,
-    pub serial: &'a mut dyn SerialPort,
-    pub power: Option<&'a mut dyn PowerDriver>,
-    pub touch: Option<&'a mut dyn TouchDriver>,
-    pub watchdog: Option<&'a mut dyn WatchdogDriver>,
+pub struct PlatformContext {
+    pub system: &'static mut dyn SystemDriver,
+    pub tone: &'static mut dyn ToneOutput,
+    pub display: &'static mut dyn DisplayBus,
+    pub storage: &'static mut dyn StorageBus,
+    pub trainer: &'static mut dyn TrainerDriver,
+    pub rf_bus: &'static mut dyn RfBus,
+    pub usb: &'static mut dyn UsbDriver,
+    pub adc: &'static mut dyn AdcDriver,
+    pub keys: &'static mut dyn KeyDriver,
+    pub serial: &'static mut dyn SerialPort,
+    pub power: Option<&'static mut dyn PowerDriver>,
+    pub touch: Option<&'static mut dyn TouchDriver>,
+    pub watchdog: Option<&'static mut dyn WatchdogDriver>,
+    pub audio: Option<&'static mut dyn AudioOutput>,
 }
 
-impl<'a> PlatformContext<'a> {
+impl PlatformContext {
     /// Register all drivers in this context with the runtime subsystems.
-    #[allow(clippy::missing_transmute_annotations)]
     pub fn register(self) {
-        crate::chip::register_system_driver(unsafe { core::mem::transmute(self.system) });
-        crate::buzzer::register_tone_output(unsafe { core::mem::transmute(self.tone) });
-        crate::display::register_display_bus(unsafe { core::mem::transmute(self.display) });
-        crate::storage::register_storage_bus(unsafe { core::mem::transmute(self.storage) });
-        crate::trainer::register_trainer_driver(unsafe { core::mem::transmute(self.trainer) });
-        crate::rf::spi::register_rf_bus(unsafe { core::mem::transmute(self.rf_bus) });
-        crate::usb::register_usb_driver(unsafe { core::mem::transmute(self.usb) });
-        crate::adc::register_adc_driver(unsafe { core::mem::transmute(self.adc) });
-        crate::boot::register_key_driver(unsafe { core::mem::transmute(self.keys) });
-        crate::uart::register_serial_port(unsafe { core::mem::transmute(self.serial) });
+        crate::chip::register_system_driver(self.system);
+        crate::buzzer::register_tone_output(self.tone);
+        crate::display::register_display_bus(self.display);
+        crate::storage::register_storage_bus(self.storage);
+        crate::trainer::register_trainer_driver(self.trainer);
+        crate::rf::spi::register_rf_bus(self.rf_bus);
+        crate::usb::register_usb_driver(self.usb);
+        crate::adc::register_adc_driver(self.adc);
+        crate::boot::register_key_driver(self.keys);
+        crate::uart::register_serial_port(self.serial);
         if let Some(p) = self.power {
-            register_power_driver(unsafe { core::mem::transmute(p) });
+            register_power_driver(p);
         }
         if let Some(t) = self.touch {
-            register_touch_driver(unsafe { core::mem::transmute(t) });
+            register_touch_driver(t);
+        }
+        if let Some(a) = self.audio {
+            #[cfg(any(feature = "voice-audio", test))]
+            crate::audio::register_audio_output(a);
+            #[cfg(not(any(feature = "voice-audio", test)))]
+            let _ = a;
         }
     }
 
@@ -539,6 +625,7 @@ impl<'a> PlatformContext<'a> {
         static mut NULL_POWER: NullPowerDriver = NullPowerDriver;
         static mut NULL_TOUCH: NullTouchDriver = NullTouchDriver;
         static mut NULL_WDG: NullWatchdog = NullWatchdog;
+        static mut NULL_AUDIO: NullAudioOutput = NullAudioOutput;
 
         unsafe {
             Self {
@@ -555,8 +642,8 @@ impl<'a> PlatformContext<'a> {
                 power: Some(&mut NULL_POWER),
                 touch: Some(&mut NULL_TOUCH),
                 watchdog: Some(&mut NULL_WDG),
+                audio: Some(&mut NULL_AUDIO),
             }
         }
     }
 }
-

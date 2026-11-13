@@ -12,13 +12,11 @@ const DMA_CCR_DIR: u32 = 1 << 4;
 const DMA_CCR_CIRC: u32 = 1 << 5;
 const DMA_CCR_MINC: u32 = 1 << 7;
 
-static mut I6X_RX_DMA_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
-static mut I6X_TX_DMA_BUF: [u8; TX_BUF_SIZE] = [0; TX_BUF_SIZE];
+static mut RX_DMA_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
+static mut TX_DMA_BUF: [u8; TX_BUF_SIZE] = [0; TX_BUF_SIZE];
 static I6X_RX_TAIL: AtomicUsize = AtomicUsize::new(0);
 static I6X_TX_BUSY: AtomicBool = AtomicBool::new(false);
 
-static mut I6S_RX_DMA_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
-static mut I6S_TX_DMA_BUF: [u8; TX_BUF_SIZE] = [0; TX_BUF_SIZE];
 static I6S_RX_TAIL: AtomicUsize = AtomicUsize::new(0);
 static I6S_TX_BUSY: AtomicBool = AtomicBool::new(false);
 
@@ -153,9 +151,18 @@ impl SerialPort for I6xSerialPort {
                 2 => 114,
                 3 => 52,
                 4 => 26,
+                5 => 480, // 100,000 baud (MULTI-Module DSM 8E2)
+                6 => 417, // 115,200 baud (Spektrum Satellite 8N1)
                 _ => 115,
             };
             usart2.brr.write(|w| w.bits(brr));
+
+            // CR2: STOP bits (bit 13:12: 00 = 1 stop bit, 10 = 2 stop bits)
+            if baud_idx == 5 {
+                usart2.cr2.write(|w| w.bits(2 << 12)); // 2 stop bits
+            } else {
+                usart2.cr2.write(|w| w.bits(0));
+            }
 
             if half_duplex {
                 usart2.cr3.write(|w| w.bits((1 << 3) | (1 << 6) | (1 << 7)));
@@ -168,7 +175,7 @@ impl SerialPort for I6xSerialPort {
             dma.ch6
                 .par
                 .write(|w| w.bits(core::ptr::addr_of!(usart2.rdr) as u32));
-            dma.ch6.mar.write(|w| w.bits(I6X_RX_DMA_BUF.as_ptr() as u32));
+            dma.ch6.mar.write(|w| w.bits(RX_DMA_BUF.as_ptr() as u32));
             dma.ch6.ndtr.write(|w| w.bits(RX_BUF_SIZE as u32));
             dma.ch6
                 .cr
@@ -179,12 +186,12 @@ impl SerialPort for I6xSerialPort {
             dma.ch7
                 .par
                 .write(|w| w.bits(core::ptr::addr_of!(usart2.tdr) as u32));
-            dma.ch7.mar.write(|w| w.bits(I6X_TX_DMA_BUF.as_ptr() as u32));
+            dma.ch7.mar.write(|w| w.bits(TX_DMA_BUF.as_ptr() as u32));
 
             I6X_RX_TAIL.store(0, Ordering::Release);
             I6X_TX_BUSY.store(false, Ordering::Release);
 
-            usart2.icr.write(|w| w.bits(0xFFFF_FFFF));
+            usart2.icr.write(|w| w.bits(0x0012_1B5F));
 
             cortex_m::peripheral::NVIC::unpend(pac::Interrupt::USART2);
             let mut cp = cortex_m::peripheral::Peripherals::steal();
@@ -192,9 +199,13 @@ impl SerialPort for I6xSerialPort {
             cortex_m::peripheral::NVIC::unmask(pac::Interrupt::USART2);
 
             // Enable USART, TX, RX, TCIE
-            usart2
-                .cr1
-                .write(|w| w.bits((1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)));
+            // If baud_idx == 5 (100k 8E2): M0=1 (bit 12, 9 data bits), PCE=1 (bit 10, parity enable), PS=0 (even parity)
+            let cr1_flags = if baud_idx == 5 {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6) | (1 << 10) | (1 << 12)
+            } else {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)
+            };
+            usart2.cr1.write(|w| w.bits(cr1_flags));
         }
     }
 
@@ -211,6 +222,9 @@ impl SerialPort for I6xSerialPort {
             while I6X_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
                 timeout -= 1;
             }
+            if timeout == 0 {
+                return;
+            }
 
             I6X_TX_BUSY.store(true, Ordering::Release);
 
@@ -218,7 +232,7 @@ impl SerialPort for I6xSerialPort {
                 usart2.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 2)));
             }
 
-            I6X_TX_DMA_BUF[..bytes.len()].copy_from_slice(bytes);
+            TX_DMA_BUF[..bytes.len()].copy_from_slice(bytes);
 
             dma.ch7.cr.write(|w| w.bits(0));
             dma.ifcr.write(|w| w.bits(0x0F << 24));
@@ -244,7 +258,7 @@ impl SerialPort for I6xSerialPort {
             if tail == head {
                 None
             } else {
-                let byte = I6X_RX_DMA_BUF[tail];
+                let byte = core::ptr::read_volatile(&RX_DMA_BUF[tail]);
                 I6X_RX_TAIL.store((tail + 1) & (RX_BUF_SIZE - 1), Ordering::Release);
                 Some(byte)
             }
@@ -386,9 +400,18 @@ impl SerialPort for I6sSerialPort {
                 2 => 114,
                 3 => 52,
                 4 => 26,
+                5 => 480, // 100,000 baud (MULTI-Module DSM 8E2)
+                6 => 417, // 115,200 baud (Spektrum Satellite 8N1)
                 _ => 115,
             };
             usart1.brr.write(|w| w.bits(brr));
+
+            // CR2: STOP bits (bit 13:12: 00 = 1 stop bit, 10 = 2 stop bits)
+            if baud_idx == 5 {
+                usart1.cr2.write(|w| w.bits(2 << 12)); // 2 stop bits
+            } else {
+                usart1.cr2.write(|w| w.bits(0));
+            }
 
             if half_duplex {
                 usart1.cr3.write(|w| w.bits((1 << 3) | (1 << 6) | (1 << 7)));
@@ -401,7 +424,7 @@ impl SerialPort for I6sSerialPort {
             dma.ch3
                 .par
                 .write(|w| w.bits(core::ptr::addr_of!(usart1.rdr) as u32));
-            dma.ch3.mar.write(|w| w.bits(I6S_RX_DMA_BUF.as_ptr() as u32));
+            dma.ch3.mar.write(|w| w.bits(RX_DMA_BUF.as_ptr() as u32));
             dma.ch3.ndtr.write(|w| w.bits(RX_BUF_SIZE as u32));
             dma.ch3
                 .cr
@@ -412,21 +435,26 @@ impl SerialPort for I6sSerialPort {
             dma.ch2
                 .par
                 .write(|w| w.bits(core::ptr::addr_of!(usart1.tdr) as u32));
-            dma.ch2.mar.write(|w| w.bits(I6S_TX_DMA_BUF.as_ptr() as u32));
+            dma.ch2.mar.write(|w| w.bits(TX_DMA_BUF.as_ptr() as u32));
 
             I6S_RX_TAIL.store(0, Ordering::Release);
             I6S_TX_BUSY.store(false, Ordering::Release);
 
-            usart1.icr.write(|w| w.bits(0xFFFF_FFFF));
+            usart1.icr.write(|w| w.bits(0x0012_1B5F));
 
             cortex_m::peripheral::NVIC::unpend(pac::Interrupt::USART1);
             let mut cp = cortex_m::peripheral::Peripherals::steal();
             cp.NVIC.set_priority(pac::Interrupt::USART1, 0x40);
             cortex_m::peripheral::NVIC::unmask(pac::Interrupt::USART1);
 
-            usart1
-                .cr1
-                .write(|w| w.bits((1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)));
+            // Enable USART, TX, RX, TCIE
+            // If baud_idx == 5 (100k 8E2): M0=1 (bit 12, 9 data bits), PCE=1 (bit 10, parity enable), PS=0 (even parity)
+            let cr1_flags = if baud_idx == 5 {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6) | (1 << 10) | (1 << 12)
+            } else {
+                (1 << 0) | (1 << 2) | (1 << 3) | (1 << 6)
+            };
+            usart1.cr1.write(|w| w.bits(cr1_flags));
         }
     }
 
@@ -443,6 +471,9 @@ impl SerialPort for I6sSerialPort {
             while I6S_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
                 timeout -= 1;
             }
+            if timeout == 0 {
+                return;
+            }
 
             I6S_TX_BUSY.store(true, Ordering::Release);
 
@@ -450,7 +481,7 @@ impl SerialPort for I6sSerialPort {
                 usart1.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 2)));
             }
 
-            I6S_TX_DMA_BUF[..bytes.len()].copy_from_slice(bytes);
+            TX_DMA_BUF[..bytes.len()].copy_from_slice(bytes);
 
             dma.ch2.cr.write(|w| w.bits(0));
             dma.ifcr.write(|w| w.bits(0x0F << 4));
@@ -476,7 +507,7 @@ impl SerialPort for I6sSerialPort {
             if tail == head {
                 None
             } else {
-                let byte = I6S_RX_DMA_BUF[tail];
+                let byte = core::ptr::read_volatile(&RX_DMA_BUF[tail]);
                 I6S_RX_TAIL.store((tail + 1) & (RX_BUF_SIZE - 1), Ordering::Release);
                 Some(byte)
             }

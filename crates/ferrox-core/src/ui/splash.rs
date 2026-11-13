@@ -12,45 +12,44 @@ use crate::ui::glyphs::draw_ferrox_logo;
 pub fn draw_splash(lcd: &mut St7567) {
     lcd.clear_buffer();
 
-    // 1. Draw 28x27 Ferrox-RC Logo Emblem centered horizontally
-    draw_ferrox_logo(lcd, 50, 3);
+    let screen_w = crate::display::st7567::WIDTH as i32;
 
-    // 2. Draw "FERROX-RC" in 6x10 (54px wide, centered at x = 37, y = 34)
-    lcd.draw_str_6x10(37, 34, "FERROX-RC", false);
+    // 1. Draw 28x27 Ferrox-RC Logo Emblem centered horizontally
+    draw_ferrox_logo(lcd, (screen_w - 28) / 2, 3);
+
+    // 2. Draw "FERROX-RC" in 6x10 (54px wide, centered)
+    lcd.draw_str_6x10((screen_w - 54) / 2, 34, "FERROX-RC", false);
 
     // 3. Draw firmware ID dynamically centered horizontally in 4x6
-    let id_x = ((128i32 - crate::board::ActiveBoard::FIRMWARE_ID.len() as i32 * 4) / 2).max(0);
+    let id_x = ((screen_w - crate::board::ActiveBoard::FIRMWARE_ID.len() as i32 * 4) / 2).max(0);
     lcd.draw_str_4x6(id_x, 45, crate::board::ActiveBoard::FIRMWARE_ID, false);
 
     // 4. Draw Version Tag dynamically centered horizontally (4x6 is 4px wide)
-    const VERSION_TAG: &str = concat!(env!("FIRMWARE_VERSION"), " (", env!("GIT_HASH"), ")");
-    const VERSION_X: i32 = ((128 - (VERSION_TAG.len() * 4)) / 2) as i32;
-    lcd.draw_str_4x6(VERSION_X, 54, VERSION_TAG, false);
+    let version_tag = concat!(env!("FIRMWARE_VERSION"), " (", env!("GIT_HASH"), ")");
+    let version_x = ((screen_w - version_tag.len() as i32 * 4) / 2).max(0);
+    lcd.draw_str_4x6(version_x, 54, version_tag, false);
 }
 
 /// Render the dedicated DFU Bootloader screen onto the display buffer.
-///
-/// Clears the display and renders:
-/// - Top: 28x27 Ferrox-RC kinetic delta emblem centered horizontally (x = 50, y = 2)
-/// - Title: "BOOTLOADER" in 6x10 bold font centered horizontally (x = 34, y = 32)
-/// - Divider: Horizontal rule across the center (y = 44)
-/// - Subtitle: "STM32 DFU MODE ACTIVE" in 4x6 font (x = 22, y = 48)
-/// - Status: "Waiting for USB host..." in 4x6 font (x = 18, y = 56)
 pub fn draw_bootloader(lcd: &mut St7567) {
     lcd.clear_buffer();
+    let screen_w = crate::display::st7567::WIDTH as i32;
 
     // 1. Draw 28x27 Ferrox-RC Logo Emblem centered horizontally
-    draw_ferrox_logo(lcd, 50, 2);
+    draw_ferrox_logo(lcd, (screen_w - 28) / 2, 2);
 
-    // 2. Draw "BOOTLOADER" in 6x10 centered at x = 34, y = 32
-    lcd.draw_str_6x10(34, 32, "BOOTLOADER", false);
+    // 2. Draw "BOOTLOADER" in 6x10 (60px wide, centered)
+    lcd.draw_str_6x10((screen_w - 60) / 2, 32, "BOOTLOADER", false);
 
-    // 3. Draw divider line
-    lcd.draw_hline(16, 44, 96, true);
+    // 3. Draw divider line centered
+    let div_w = 96.min(screen_w - 16);
+    lcd.draw_hline((screen_w - div_w) / 2, 44, div_w as u32, true);
 
-    // 4. Draw DFU status lines in 4x6 font
-    lcd.draw_str_4x6(22, 48, "STM32 DFU MODE ACTIVE", false);
-    lcd.draw_str_4x6(18, 56, "Waiting for USB host...", false);
+    // 4. Draw DFU status lines centered in 4x6 font
+    let s1 = "STM32 DFU MODE ACTIVE";
+    lcd.draw_str_4x6(((screen_w - s1.len() as i32 * 4) / 2).max(0), 48, s1, false);
+    let s2 = "Waiting for USB host...";
+    lcd.draw_str_4x6(((screen_w - s2.len() as i32 * 4) / 2).max(0), 56, s2, false);
 }
 
 #[cfg(test)]
@@ -62,7 +61,10 @@ mod tests {
         let mut lcd = St7567::new();
         draw_splash(&mut lcd);
         let non_zero = lcd.framebuffer().iter().any(|&b| b != 0);
-        assert!(non_zero, "Splash screen should render pixels into framebuffer");
+        assert!(
+            non_zero,
+            "Splash screen should render pixels into framebuffer"
+        );
     }
 
     #[test]
@@ -70,7 +72,9 @@ mod tests {
         let mut lcd = St7567::new();
         draw_bootloader(&mut lcd);
         let non_zero = lcd.framebuffer().iter().any(|&b| b != 0);
-        assert!(non_zero, "Bootloader screen should render pixels into framebuffer");
+        assert!(
+            non_zero,
+            "Bootloader screen should render pixels into framebuffer"
+        );
     }
 }
-

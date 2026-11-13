@@ -18,17 +18,19 @@
 
 Implemented in [`crates/ferrox-core/src/chip/mod.rs`](../crates/ferrox-core/src/chip/mod.rs) using pure PAC direct register access (`pac::RCC`).
 
-### 1.2 Unified `ferrox-core` & `BoardProfile` Const Trait Architecture
+### 1.2 Unified `ferrox-core` & Multi-Architecture Workspace Architecture
 
-The repository is organized as a Cargo workspace with zero runtime branch penalty between targets:
+The repository is organized as a unified Cargo workspace supporting multiple processor architectures with zero runtime branch penalty between targets:
 
 | Layer | Module Path | Responsibility |
 | :--- | :--- | :--- |
-| **Board Spec Trait** | [`crates/ferrox-core/src/board.rs`](../crates/ferrox-core/src/board.rs) | `BoardProfile` const trait specifying `NAME`, `HAS_TOUCH`, `HAS_POWER_LATCH`, `NUM_ANALOG_CHANNELS`, `HAS_EXT_ADC`, `HAS_SWD_BUTTONS`, `HAS_JOG_WHEEL`, and EEPROM CRC parameters |
-| **Unified Core (`ferrox-core`)** | `crates/ferrox-core/src/{lib.rs, input.rs, mixer.rs, storage.rs, safety.rs, calib.rs, curve.rs, trim.rs, buzzer.rs, watchdog.rs, time.rs}` | Real-time flight pipeline, 18-channel matrix mixer, Catmull-Rom curves, sequential Flash/EEPROM storage, pre-flight safety, calibration wizard, and audio engine |
-| **Protocol & Direct USB** | `crates/ferrox-core/src/{rf/, crsf/, trainer/, usb/, display/, ui/}` | AFHDS 2A / A7105 driver, CRSF / ExpressLRS configurator, `TIM15` CPPM Out/In & buddy-box handover, zero-dependency direct PAC USB 2.0 driver, ST7567 1bpp display, and 5-page UI |
-| **FS-i6S Hardware & Board Target** | `boards/ferrox-i6s/`, `crates/ferrox-core/src/hw/i6s/` | FT6236 capacitive touch, electronic power latch, front/rear tactile buttons, `USART1` circular DMA CRSF UART |
-| **FS-i6X Hardware & Board Target** | `boards/ferrox-i6x/`, `crates/ferrox-core/src/hw/i6x/` | Optical jog wheel, physical trim switches, `USART2` (`USART2_DMA_RMP`) circular DMA CRSF UART |
+| **Board Spec Trait** | [`crates/ferrox-core/src/board/mod.rs`](../crates/ferrox-core/src/board/mod.rs) | `BoardProfile` const trait specifying `NAME`, `DISPLAY_WIDTH`, `DISPLAY_HEIGHT`, `HAS_TOUCH`, `HAS_POWER_LATCH`, `NUM_ANALOG_CHANNELS`, `HAS_EXT_ADC`, `HAS_ROTARY_ENCODER`, and EEPROM CRC parameters |
+| **Unified Core (`ferrox-core`)** | `crates/ferrox-core/src/{lib.rs, input.rs, mixer.rs, storage.rs, safety.rs, calib.rs, curve.rs, trim.rs, buzzer.rs, watchdog.rs, time.rs, telemetry_log.rs}` | Real-time flight pipeline, 18-channel 32-line matrix mixer, Catmull-Rom curves, sequential Flash/EEPROM storage, pre-flight safety, calibration wizard, audio engine, and SD telemetry logging |
+| **Protocol & Display** | `crates/ferrox-core/src/{rf/, crsf/, trainer/, usb/, display/, ui/}` | AFHDS 2A / A7105 driver, CRSF / ExpressLRS configurator, `TIM15` CPPM Out/In & buddy-box handover, direct PAC USB 2.0 driver, responsive ST7567 display (128x64 & 212x64), and 4-bit indexed color canvas |
+| **STM32F0 HAL Driver** | `crates/ferrox-stm32f0/` | Shared peripheral drivers for STM32F072 / APM32F072 (Cortex-M0 @ 48 MHz) implementing `ToneOutput`, `DisplayBus`, and `StorageBus` |
+| **STM32F4 HAL Driver** | `crates/ferrox-stm32f4/` | Shared peripheral drivers for STM32F407 / STM32F405 (Cortex-M4F @ 168 MHz) featuring SPI2 microSD block driver, DMA display flushes, and QX7-family descriptors |
+| **Cortex-M0 Board Crates** | `boards/ferrox-i6s/`, `boards/ferrox-i6x/` | Target crates for FlySky FS-i6S (touch, power latch) and FS-i6X (matrix keypad, optical jog wheel) |
+| **Cortex-M4F Board Crate** | `boards/ferrox-pocket/` | Target crate for RadioMaster Pocket, Jumper T12, FrSky X9D / X9E, and RadioLink AT9S Pro |
 
 ---
 
@@ -173,14 +175,24 @@ In `ferrox`, reset recovery is treated as a safety-critical state machine:
 ---
 
 ## 4. Memory Footprint
- 
-Measured on release builds (`thumbv6m-none-eabi`, opt-level = "z", LTO = "fat"):
-- **Application Flash Partition (`memory.x`)**: **120 KB** (`0x0800_0000 .. 0x0801_DFFF`, Pages 0–59) allocated for firmware code.
-- **Firmware Binary**: **~113.6 KB** (`.text` 108,248 bytes + `.data` 8,060 bytes = 116,308 bytes flash total).
-- **Free Program Space**: **~6.4 KB** (~5.4% free headroom) remaining within the 120 KB partition.
-- **Non-Volatile Storage (Flash Pages 60–63)**: **8 KB** (`0x0801_E000 .. 0x0802_0000`, 4 × 2048-byte pages) managed as a log-structured append-only storage engine via `sequential-storage` (`RadioConfig` 140 bytes + 20 × `ModelConfig` 128 bytes = 2,700 bytes active dataset). Writes complete in **~2.8 ms** with zero page erases on routine updates, wear-levelled across all 4 pages.
-- **SRAM (16 KB total)**: **~8.9 KB** static allocation (`.data` 8,060 bytes + `.bss` 1,056 bytes = 9,116 bytes). **Over 44% of SRAM remains free**, with **> 7.0 KB** guaranteed stack margin preventing any stack-on-static collision.
-- **Zero Heap & In-Place Loading**: Entirely static allocation; no dynamic heap allocations, no `alloc` crate, in-tree 1bpp glyph bitmap tables (`src/display/fonts.rs`), and zero pass-by-value stack instantiation for model storage structures.
+
+Measured on release builds across architectures (`opt-level = "z"`, LTO enabled):
+
+### A. Cortex-M0 Targets (`thumbv6m-none-eabi`, 128 KB Flash, 16 KB SRAM)
+- **FlySky FS-i6S**: **~104.1 KB Flash** (`.text` ~92.9 KB + `.rodata` ~12.6 KB + `.data` 764 B), leaving **~23.9 KB headroom (18.7%)**. Static RAM: **~6.3 KB** (`.bss` ~5.5 KB + `.data` ~770 B), leaving **> 9.7 KB stack safety margin**.
+- **FlySky FS-i6X**: **~99.8 KB Flash** (`.text` ~89.1 KB + `.rodata` ~12.6 KB + `.data` 772 B), leaving **~28.2 KB headroom (22.0%)**. Static RAM: **~6.2 KB** (`.bss` ~5.4 KB + `.data` ~770 B), leaving **> 9.8 KB stack safety margin**.
+
+### B. Cortex-M4F Targets (`thumbv7em-none-eabihf`, 512 KB Flash, 128 KB SRAM + 64 KB CCM)
+- **RadioMaster Pocket**: **~89.8 KB Flash** (`.text` ~78.2 KB + `.rodata` ~11.5 KB), leaving **> 420 KB headroom**. Static RAM: **~5.7 KB** (`.bss` ~4.5 KB + `.data` ~1.1 KB).
+- **Jumper T12**: **~90.1 KB Flash**, leaving **> 420 KB headroom**. Static RAM: **~5.7 KB**.
+- **FrSky Taranis X9D / X9E**: **~90.5 KB Flash**, leaving **> 420 KB headroom**. Static RAM: **~5.7 KB** (includes 1696-byte wide 212x64 framebuffer).
+- **RadioLink AT9S Pro**: **~91.8 KB Flash**, leaving **> 420 KB headroom**. Static RAM: **~5.7 KB** + 38.4 KB CCM RAM (320x240 4-bit indexed color canvas).
+
+### Zero Heap & In-Place Loading Guarantees
+- Strictly `#![no_std]` without any dynamic allocator (`alloc` crate is not linked).
+- All display framebuffers, DMA circular queues, and triple buffers are statically allocated at link time.
+- External I2C EEPROM wear-leveled A/B ping-pong storage for `RadioConfig` and 20 dedicated `ModelConfig` slots completely isolates model data from firmware flashing.
+- Optional SPI2 microSD card block driver and telemetry logging buffers 512-byte raw sectors directly to card.
 
 ---
 
@@ -199,3 +211,11 @@ The curve engine transforms normalized stick inputs (0..1000) into tailored outp
   ```
 - **Deterministic Fixed-Point Execution**:
   Implemented using integer-only fixed-point arithmetic (`t` scaled by 1024). Spline interpolation executes in **< 60 CPU clock cycles** (< 1.25 µs at 48 MHz), meaning spline smoothing imposes zero perceptible latency on the control loop.
+
+---
+
+## 6. Voice Audio & FAT32 Streaming (STM32F4, `voice-audio` feature)
+
+- **Zero-Heap FAT16/FAT32 Reader (`crates/ferrox-core/src/fat.rs`)**: Mounts MBR or superfloppy microSD cards with a 1-sector FAT cache, traverses `/SOUNDS/en/` paths (8.3 + VFAT LFN), and streams WAV files one 512-byte sector at a time.
+- **Non-Blocking Background Streaming (`crates/ferrox-core/src/audio/`)**: `AudioPlayer` and `CalloutScheduler` decode 8-bit/16-bit mono/stereo PCM into 12-bit unsigned DAC samples (`0..=4095`) in the background idle loop (up to 4 sectors per tick), never blocking the 4 ms RF flight loop.
+- **STM32F407 DAC + Circular DMA (`crates/ferrox-stm32f4/src/audio.rs`)**: Uses `PA4` (`DAC_OUT1`), `TIM6_TRGO`, and `DMA1_Stream5` (Channel 7) over a 2048-sample (`4 KiB`) circular ring buffer, clearing consumed slots to DAC midpoint (`2048`) and coordinating `PA4`/`PE12` (`AUDIO_MUTE`) with `DacToneBuzzer`.

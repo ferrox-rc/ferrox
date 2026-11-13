@@ -1,5 +1,6 @@
 //! Page 2 (P3/4): Model Dashboard, Profile, and Telemetry Summary.
 
+use crate::board::BoardProfile;
 use crate::display::St7567;
 use crate::rf::afhds2a::TelemetryData;
 use crate::storage::RadioStorage;
@@ -15,7 +16,8 @@ pub fn render(
     now_ms: u32,
 ) {
     let active = storage.active_model();
-    let is_crsf = active.rf_protocol == 1;
+    let proto = crate::board::ActiveBoard::resolve_protocol(active.rf_protocol);
+    let is_crsf = proto == crate::board::RfProtocol::Crsf;
 
     // Line 1 (y = 14): Model Name & Type
     let m_name = ascii_as_str(&active.name);

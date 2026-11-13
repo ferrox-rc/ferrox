@@ -293,7 +293,11 @@ impl SerialHandler {
         if crate::crsf::is_enabled() {
             let crsf = crate::crsf::get_telemetry();
             append_bytes(&mut buf, &mut pos, b",\"crsf\":{\"conn\":");
-            append_bytes(&mut buf, &mut pos, if crsf.connected { b"true" } else { b"false" });
+            append_bytes(
+                &mut buf,
+                &mut pos,
+                if crsf.connected { b"true" } else { b"false" },
+            );
             append_bytes(&mut buf, &mut pos, b",\"lq\":");
             append_u32(&mut buf, &mut pos, crsf.uplink_link_quality as u32);
             append_bytes(&mut buf, &mut pos, b",\"rssi\":");
@@ -347,19 +351,43 @@ fn append_u32(buf: &mut [u8], pos: &mut usize, mut val: u32) {
 fn append_i32(buf: &mut [u8], pos: &mut usize, val: i32) {
     if val < 0 {
         append_bytes(buf, pos, b"-");
-        append_u32(buf, pos, (-val) as u32);
+        append_u32(buf, pos, val.unsigned_abs());
     } else {
         append_u32(buf, pos, val as u32);
     }
 }
 
 fn append_volt(buf: &mut [u8], pos: &mut usize, mv: u16) {
-    let mut temp = [b'0'; 5];
-    let v = mv / 1000;
+    let v = (mv / 1000) as u32;
     let rem = mv % 1000;
-    temp[0] = b'0' + (v % 10) as u8;
-    temp[1] = b'.';
-    temp[2] = b'0' + ((rem / 100) % 10) as u8;
-    temp[3] = b'0' + ((rem / 10) % 10) as u8;
-    append_bytes(buf, pos, &temp[..4]);
+    append_u32(buf, pos, v);
+    let frac = [
+        b'.',
+        b'0' + ((rem / 100) % 10) as u8,
+        b'0' + ((rem / 10) % 10) as u8,
+    ];
+    append_bytes(buf, pos, &frac);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_append_i32_min() {
+        let mut buf = [0u8; 32];
+        let mut pos = 0;
+        append_i32(&mut buf, &mut pos, i32::MIN);
+        assert_eq!(&buf[..pos], b"-2147483648");
+    }
+
+    #[test]
+    fn test_append_volt_two_digits() {
+        let mut buf = [0u8; 32];
+        let mut pos = 0;
+        append_volt(&mut buf, &mut pos, 12340);
+        append_bytes(&mut buf, &mut pos, b" ");
+        append_volt(&mut buf, &mut pos, 4150);
+        assert_eq!(&buf[..pos], b"12.34 4.15");
+    }
 }

@@ -1,5 +1,6 @@
 //! ST7567 128×64 Monochrome LCD 8-bit Parallel Driver with Embedded-Graphics Support.
 
+use crate::hal::DisplayBus;
 use core::convert::Infallible;
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -7,7 +8,6 @@ use embedded_graphics::{
     pixelcolor::BinaryColor,
     Pixel,
 };
-use crate::hal::DisplayBus;
 
 static mut DISPLAY_BUS: Option<&'static mut dyn DisplayBus> = None;
 
@@ -18,9 +18,11 @@ pub fn register_display_bus(bus: &'static mut dyn DisplayBus) {
     }
 }
 
-pub const WIDTH: usize = 128;
-pub const HEIGHT: usize = 64;
-pub const BUFFER_SIZE: usize = WIDTH * (HEIGHT / 8); // 1024 bytes
+use crate::board::{ActiveBoard, BoardProfile};
+
+pub const WIDTH: usize = ActiveBoard::DISPLAY_WIDTH;
+pub const HEIGHT: usize = ActiveBoard::DISPLAY_HEIGHT;
+pub const BUFFER_SIZE: usize = WIDTH * (HEIGHT / 8);
 
 /// ST7567 LCD Driver with 1024-byte internal framebuffer.
 pub struct St7567 {
@@ -49,7 +51,6 @@ impl St7567 {
         display.set_backlight_level(100);
         display
     }
-
 
     /// Set Backlight brightness level (0..100%).
     pub fn set_backlight_level(&self, pct: u8) {
@@ -251,6 +252,42 @@ impl St7567 {
         }
     }
 
+    /// Fast integer Bresenham line from `(x0, y0)` to `(x1, y1)`.
+    pub fn draw_line(&mut self, mut x0: i32, mut y0: i32, x1: i32, y1: i32, on: bool) {
+        if x0 == x1 {
+            let y_min = y0.min(y1);
+            let h = (y0 - y1).unsigned_abs() + 1;
+            self.draw_vline(x0, y_min, h, on);
+            return;
+        }
+        if y0 == y1 {
+            let x_min = x0.min(x1);
+            let w = (x0 - x1).unsigned_abs() + 1;
+            self.draw_hline(x_min, y0, w, on);
+            return;
+        }
+        let dx = (x1 - x0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let dy = -(y1 - y0).abs();
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx + dy;
+        loop {
+            self.set_pixel(x0, y0, on);
+            if x0 == x1 && y0 == y1 {
+                break;
+            }
+            let e2 = 2 * err;
+            if e2 >= dy {
+                err += dy;
+                x0 += sx;
+            }
+            if e2 <= dx {
+                err += dx;
+                y0 += sy;
+            }
+        }
+    }
+
     #[inline(never)]
     fn draw_glyph_cols(&mut self, x: i32, y: i32, cols: &[u16], height: i32, invert: bool) {
         for (col, &col_bits) in cols.iter().enumerate() {
@@ -284,7 +321,12 @@ impl St7567 {
         }
         let glyph_idx = (c - 0x20) as usize;
         let glyph = &crate::display::fonts::FONT_4X6_DATA[glyph_idx];
-        let cols = [glyph[0] as u16, glyph[1] as u16, glyph[2] as u16, glyph[3] as u16];
+        let cols = [
+            glyph[0] as u16,
+            glyph[1] as u16,
+            glyph[2] as u16,
+            glyph[3] as u16,
+        ];
         self.draw_glyph_cols(x, y, &cols, 6, invert);
     }
 

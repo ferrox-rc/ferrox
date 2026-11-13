@@ -1,8 +1,12 @@
 [workspace]
 members = [
     "crates/ferrox-core",
+    "crates/ferrox-stm32f0",
+    "crates/ferrox-stm32f4",
     "boards/ferrox-i6s",
-    "boards/ferrox-i6x", "crates/ferrox-stm32f0",
+    "boards/ferrox-i6x",
+    "boards/ferrox-pocket",
+    "boards/ferrox-zorro",
 ]
 resolver = "2"
 

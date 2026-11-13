@@ -153,7 +153,7 @@ fn TIM15() {
 
         // 1. Channel 2: PPM Output Compare Match (PF10)
         if (sr & (1 << 2)) != 0 {
-            core::ptr::write_volatile(TIM15_SR, sr & !(1 << 2));
+            core::ptr::write_volatile(TIM15_SR, !(1u32 << 2));
 
             let (duration_us, pin_high) = ferrox_core::trainer::on_ppm_out_event();
             if duration_us > 0 {
@@ -171,7 +171,7 @@ fn TIM15() {
 
         // 2. Channel 1: PPM Input Capture (PF9)
         if (sr & (1 << 1)) != 0 {
-            core::ptr::write_volatile(TIM15_SR, sr & !(1 << 1));
+            core::ptr::write_volatile(TIM15_SR, !(1u32 << 1));
 
             let capt = core::ptr::read_volatile(TIM15_CCR1) as u16;
             let delta = capt.wrapping_sub(LAST_CAPT);

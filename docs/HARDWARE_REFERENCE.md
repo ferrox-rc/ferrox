@@ -322,8 +322,84 @@ The following table compares each supported firmware baud rate against the 1.0 m
 | **115,200 baud** | Legacy / Debug Serial | **8.68 µs** | **78.1 µs** | **13× safety margin** | **Very Low (higher noise susceptibility)** |
 
 ##### Key Insights:
-1. **Faster Baud Rates Are Inherently Safer During Active Data Streaming:** At 420k and 921.6k baud, individual zero-bit pulses (1..2 µs) are dozens of times too short to overcome the FT6236's internal RC filter and trip the reset comparator.
+1. **Faster Baud Rates Are Inherently Safer During Active Data Streaming:** At 420k and 921.6k baud, individual zero-bit pulses (1..2 us) are dozens of times too short to overcome the FT6236's internal RC filter and trip the reset comparator.
 2. **True Cause of Accidental Resets:** Active serial packet transmission does not cause touchscreen resets. Accidental resets are triggered by **static / non-data LOW states**:
    - **Unpowered or Booting External Module:** A module whose TX pin floats to 0V or pulls LOW while powered off holds `PA15` LOW continuously, keeping the touch controller pinned in reset.
    - **Baud Rate Mismatches & Serial Breaks:** If the radio and module baud rates do not match, framing errors can trigger prolonged serial break conditions (> 1.0 ms LOW).
    - **Cable Disconnects / Floating High-Z Lines:** Disconnecting an external module without a pull-up resistor can allow `PA15` to float into the CMOS undefined/low region.
+
+---
+
+## 7. High-Speed STM32F4 Hardware Reference (Cortex-M4F @ 168 MHz)
+
+The `ferrox-stm32f4` crate provides a unified hardware abstraction layer for Cortex-M4F transmitters, implemented via declarative descriptor structs (`Qx7HalDescriptor`).
+
+### 7.1 RadioMaster Pocket Architecture
+
+- **Primary MCU:** STMicroelectronics **STM32F407VET6** (Cortex-M4F @ 168 MHz, 512 KB Flash, 192 KB SRAM).
+- **USB Architecture:** Top USB-C port (`PA11` USB_DM, `PA12` USB_DP) connected to the Full-Speed OTG peripheral. Booting into factory ROM DFU occurs automatically when powered via USB while the radio power switch is OFF (`0483:df11`).
+- **Display Subsystem:** ST7567 128x64 monochrome LCD with hardware SPI:
+  - `PD14`: Display SPI SCK
+  - `PD15`: Display SPI MOSI
+  - `PD13`: Display CS (Chip Select, Active LOW)
+  - `PD8`: Display A0 / RS (Command/Data select)
+  - `PD12`: Display Reset (Active LOW)
+- **microSD Storage Subsystem (SPI2):**
+  - `PB12`: MicroSD SPI2 CS (Chip Select, Active LOW)
+  - `PB13`: MicroSD SPI2 SCK (Clock)
+  - `PB14`: MicroSD SPI2 MISO (Master In, Slave Out)
+  - `PB15`: MicroSD SPI2 MOSI (Master Out, Slave In)
+  - `PD9`: Card Detect (`SD_DETECT`, Active LOW when card inserted)
+  - Supports standard SDSC and SDHC/SDXC cards via raw 512-byte block transfers (`sdcard.rs`).
+- **Internal RF Module:** ExpressLRS (CRSF) or CC2500 internal module wired to `USART1` / `USART6` with DMA buffering.
+- **External Nano Module Bay:** Standard CRSF / multi-protocol pinout supporting high-speed telemetry up to 1.875M baud.
+- **Rotary Navigation:** Rotary encoder on `PE0`/`PE1` (`TIM4_ETR`) with push-to-click enter button on `PE2`.
+
+### 7.2 Jumper T12 / T12 Pro Architecture
+
+- **Primary MCU:** STM32F407VET6 (Cortex-M4F @ 168 MHz).
+- **Display:** ST7567 128x64 monochrome LCD.
+- **Inputs:** 4-axis gimbals, 2 detented rotary potentiometers, 6 two/three-position switches.
+- **Navigation:** Optical rotary encoder dial and 4 tactile navigation buttons (`PAGE`, `EXIT`, `SYS`, `MDL`).
+- **RF:** Internal Multi-Protocol module + standard external JR module bay.
+
+### 7.3 FrSky Taranis X9D / X9D+ / X9E (Wide 212x64 Display)
+
+- **Primary MCU:** STM32F407VET6 (Cortex-M4F @ 168 MHz).
+- **Wide Display:** 212x64 monochrome LCD driven by `ST7567` / `NT7538` controller.
+  - Framebuffer layout: `212 * 8 = 1696` bytes in SRAM.
+  - Responsive UI engine: `ferrox-core::ui` dynamically expands header lines, status bars, and gimbal dashboards to take full advantage of the wide aspect ratio.
+- **Switches & Sliders:** Full 8-switch complement (`SA..SH`), dual analog rotary pots (`S1`, `S2`), and dual lateral side sliders (`LS`, `RS`).
+
+### 7.4 RadioLink AT9S Pro (320x240 Color TFT)
+
+- **Primary MCU:** STM32F405 / STM32F407 (Cortex-M4F @ 168 MHz).
+- **Color Display:** 2.8-inch 320x240 color TFT LCD driven via SPI with hardware DMA.
+  - **Zero-Heap 4-bit Indexed Canvas:** 16-color indexed buffer consuming only `38,400` bytes (37.5 KB) in RAM, leaving ample stack and buffer space.
+  - **RGB565 Palette Expansion:** Expanded on-the-fly during DMA flushes using `DARK_PALETTE` or `DAYLIGHT_PALETTE` look-up tables.
+  - **Backward-Compatible UI:** `BinaryColorAdapter` maps standard monochrome UI elements to `ColorIndex::Fg` and `ColorIndex::Bg`, with color accents for warnings, alarms, and telemetry.
+- **Inputs:** 4-axis Hall/pot gimbals, 4 auxiliary analog axes (2 pots + 2 side sliders), 8 switches, and center rotary scroll wheel.
+
+### 7.5 RadioMaster GX12 Architecture
+
+- **Primary MCU:** STMicroelectronics **STM32F407xG** (Cortex-M4F @ 168 MHz, 1024 KB Flash, 192 KB SRAM).
+- **Display Subsystem:** 128x64 monochrome OLED (SSD1309 / ST7567 compatible):
+  - Standard 1024-byte framebuffer in SRAM (`128 * 64 / 8`).
+  - Standard monochrome UI rendering with high-contrast OLED black levels and responsive layout.
+- **Internal RF Subsystem:** ExpressLRS Gemini dual-band transmitter:
+  - High-speed full-duplex CRSF interface wired to `USART1` (`PB6` TX / `PB7` RX).
+  - Internal RF module power control on `PC4` (`HIGH` = enabled).
+  - Internal RF bootloader recovery / update trigger pin on `PB1`.
+  - Supports bidirectional telemetry up to 1.875M baud without software packet drop.
+- **External Module Bay:** Standard JR-compatible module bay:
+  - External module power control on `PE0`.
+  - Modular RF protocol routing supporting external ExpressLRS, TBS Crossfire, and multi-protocol transmitters.
+- **Power Management & Soft Latch:**
+  - Soft-power latch circuit wired to `PD0` (Power Switch Sense) and `PD1` (Power Latch Hold).
+  - Debounced boot release guard and animated 1.5s hold-to-shutdown timer.
+- **Navigation & Switch Expander Subsystem:**
+  - Optical rotary scroll encoder paired with 5-button tactile cluster (`SYS`, `MDL`, `RTN`, `PAGE<`, `PAGE>`).
+  - Dual PCA9555 I2C GPIO expanders on `I2C2` (device addresses `0x74` and `0x75`) providing transparent scanning for switches `SA..SH`.
+  - Deterministic single-loop scan avoids RTOS task contention and I2C bus lockups.
+
+

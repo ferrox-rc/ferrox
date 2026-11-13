@@ -1,0 +1,28 @@
+[package]
+name = "ferrox-stm32f4"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7"
+stm32f4 = { version = "0.15", features = ["stm32f407", "rt"] }
+ferrox-core = { path = "../ferrox-core", default-features = false }
+
+[features]
+default = ["board-pocket"]
+board-pocket = ["ferrox-core/board-pocket"]
+board-boxer = ["ferrox-core/board-boxer"]
+board-zorro = ["ferrox-core/board-zorro"]
+board-tx12 = ["ferrox-core/board-tx12"]
+board-qx7 = ["ferrox-core/board-qx7"]
+board-tprov2 = ["ferrox-core/board-tprov2"]
+board-t12 = ["ferrox-core/board-t12"]
+board-x9d = ["ferrox-core/board-x9d"]
+board-x9e = ["ferrox-core/board-x9e"]
+board-at9spro = ["ferrox-core/board-at9spro"]
+board-gx12 = ["ferrox-core/board-gx12"]
+edgetx-bootloader = []

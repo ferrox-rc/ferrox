@@ -210,15 +210,19 @@ pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &Ra
 
     crate::board::ActiveBoard::append_extra_switches(state, storage, &mut sw_list, &mut sw_count);
 
+    let screen_w = crate::display::st7567::WIDTH as i32;
+    let total_w = screen_w - 4;
+    let right_edge = screen_w - 2;
+
     let (sw_spacing, compact, pot_start_x, pot_w) = if pot_count == 0 {
         let spacing = if sw_count <= 1 {
-            124
+            total_w
         } else {
-            (124 / sw_count as i32).min(14)
+            (total_w / sw_count as i32).min(14)
         };
-        (spacing, spacing < 10, 126, 0u32)
+        (spacing, spacing < 10, right_edge, 0u32)
     } else if sw_count == 0 {
-        (0, false, 2, 124u32)
+        (0, false, 2, total_w as u32)
     } else {
         let min_pot_w: i32 = match pot_count {
             1 => 24,
@@ -233,10 +237,10 @@ pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &Ra
         };
 
         // If standard 10px per switch doesn't leave room for min_pot_w + 3px gap, switch to compact
-        let compact = (sw_count as i32 * 10) + min_pot_w + 3 > 124;
+        let compact = (sw_count as i32 * 10) + min_pot_w + 3 > total_w;
         let slot_w: i32 = if compact { 8 } else { 10 };
 
-        let max_sw_w = 124 - min_pot_w - 3;
+        let max_sw_w = total_w - min_pot_w - 3;
         let natural_sw_w = sw_count as i32 * (if compact { 8 } else { 11 });
         let actual_sw_w = natural_sw_w
             .min(max_sw_w)
@@ -250,7 +254,7 @@ pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &Ra
 
         let last_sw_end = 2 + (sw_count as i32 - 1) * spacing + if compact { 7 } else { 10 };
         let p_start = (last_sw_end + 3).max(2 + actual_sw_w + 3);
-        let p_w = (126 - p_start).max(0) as u32;
+        let p_w = (right_edge - p_start).max(0) as u32;
 
         (spacing, compact, p_start, p_w)
     };
@@ -266,7 +270,7 @@ pub fn render_adaptive_layout(lcd: &mut St7567, state: &InputState, storage: &Ra
         // Vertical divider separating switches from pots
         if sw_count > 0 {
             let div_x = pot_start_x - 2;
-            if div_x > 2 && div_x < 126 {
+            if div_x > 2 && div_x < right_edge {
                 lcd.draw_vline(div_x, 46, 8, true);
             }
         }
@@ -355,8 +359,11 @@ mod tests {
 
         // Helper to find the continuous vertical divider column between switches and pots
         let find_divider = |lcd: &St7567| -> Option<usize> {
-            (40..115).find(|&x| {
-                (46..54).all(|y| lcd.framebuffer()[(y / 8) * 128 + x] & (1 << (y % 8)) != 0)
+            (40..crate::display::st7567::WIDTH - 5).find(|&x| {
+                (46..54).all(|y| {
+                    lcd.framebuffer()[(y / 8) * crate::display::st7567::WIDTH + x] & (1 << (y % 8))
+                        != 0
+                })
             })
         };
 

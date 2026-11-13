@@ -164,7 +164,15 @@ pub fn format_deci_volt(deci: u8, buf: &mut [u8; 4]) -> &str {
 
 /// Format servo frequency (50..400 Hz) into buf[0..8] as "50 Hz" .. "400 Hz"
 pub fn format_servo_hz(hz: u16, buf: &mut [u8; 8]) -> &str {
-    format_fixed(hz.clamp(50, 400) as i32, 0, 0, false, SignMode::None, " Hz", buf)
+    format_fixed(
+        hz.clamp(50, 400) as i32,
+        0,
+        0,
+        false,
+        SignMode::None,
+        " Hz",
+        buf,
+    )
 }
 
 pub fn next_ascii(c: u8) -> u8 {
@@ -206,7 +214,7 @@ pub const SWITCH_COND_NAMES: [&str; 29] = [
 ];
 
 pub const MODE_NAMES: [&str; 3] = ["ADD (+)", "MULT (*)", "REPL (:=)"];
-pub const TEMPLATE_NAMES: [&str; 4] = ["NORMAL", "ELEVON/DELTA", "V-TAIL", "FLAPERON"];
+pub const TEMPLATE_NAMES: [&str; 5] = ["NORMAL", "ELEVON/DELTA", "V-TAIL", "FLAPERON", "FREEFORM"];
 pub const DR_SWITCH_NAMES: [&str; 7] = ["None", "SA", "SB", "SC", "SD", "SE", "SF"];
 pub const AXIS_NAMES: [&str; 3] = ["Roll", "Pitch", "Yaw"];
 

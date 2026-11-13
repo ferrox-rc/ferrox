@@ -10,6 +10,7 @@
 pub mod pages;
 pub mod status_bar;
 
+use crate::board::BoardProfile;
 use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::input::InputState;
@@ -25,6 +26,7 @@ pub struct DashboardController {
     pub min_rssi: u8,
     pub min_rx_v_mv: u16,
     pub telem_seen: bool,
+    pub max_pages: usize,
 }
 
 impl Default for DashboardController {
@@ -43,19 +45,24 @@ impl DashboardController {
             min_rssi: 100,
             min_rx_v_mv: 0xFFFF,
             telem_seen: false,
+            max_pages: 5,
         }
     }
 
     /// Advance to the next dashboard page.
     pub fn next_page(&mut self, buzzer: &mut Buzzer) {
-        self.page = (self.page + 1) % 5;
+        self.page = (self.page + 1) % self.max_pages.max(1);
         buzzer.play_tone(2200, 30);
     }
 
     /// Return to the previous dashboard page.
     #[allow(dead_code)]
     pub fn prev_page(&mut self, buzzer: &mut Buzzer) {
-        self.page = if self.page == 0 { 4 } else { self.page - 1 };
+        self.page = if self.page == 0 {
+            self.max_pages.saturating_sub(1)
+        } else {
+            self.page - 1
+        };
         buzzer.play_tone(2200, 30);
     }
 
@@ -83,11 +90,28 @@ impl DashboardController {
         rf_ok: bool,
         is_binding: bool,
         telem: &TelemetryData,
+        #[cfg(any(feature = "soaring", test))] f5j: &crate::soaring::f5j::F5jEngine,
         timer_str: Option<&str>,
         timer_expired: bool,
         buzzer: &mut Buzzer,
         now_ms: u32,
     ) {
+        #[cfg(any(feature = "soaring", test))]
+        {
+            self.max_pages = if storage.active_model().soaring.is_f5j() {
+                6
+            } else {
+                5
+            };
+        }
+        #[cfg(not(any(feature = "soaring", test)))]
+        {
+            self.max_pages = 5;
+        }
+        if self.page >= self.max_pages {
+            self.page = 0;
+        }
+
         lcd.clear_buffer();
 
         status_bar::render(
@@ -123,8 +147,10 @@ impl DashboardController {
             1 => pages::channels::render(lcd, rf_chs, is_binding, 0),
             2 => pages::channels::render(lcd, rf_chs, is_binding, 1),
             3 => pages::model::render(lcd, storage, telem, is_binding, now_ms),
-            _ => {
-                let is_crsf = storage.active_model().rf_protocol == 1;
+            4 => {
+                let proto =
+                    crate::board::ActiveBoard::resolve_protocol(storage.active_model().rf_protocol);
+                let is_crsf = proto == crate::board::RfProtocol::Crsf;
                 pages::telemetry::render(
                     lcd,
                     storage,
@@ -139,6 +165,10 @@ impl DashboardController {
                     now_ms,
                 );
             }
+            #[cfg(any(feature = "soaring", test))]
+            _ => pages::f5j::render(lcd, storage, telem, f5j, now_ms),
+            #[cfg(not(any(feature = "soaring", test)))]
+            _ => {}
         }
     }
 }
@@ -259,4 +289,3 @@ mod tests {
         pages::model::render(&mut lcd, &storage_crsf, &telem, false, 5000);
     }
 }
-

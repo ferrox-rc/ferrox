@@ -524,7 +524,7 @@ impl Afhds2a {
                 match sensor_id {
                     0x00 => {
                         // Internal receiver voltage in 0.01V units -> convert to mV
-                        self.telemetry.rx_voltage_mv = val * 10;
+                        self.telemetry.rx_voltage_mv = val.saturating_mul(10);
                         self.telemetry.last_rx_voltage_ms = now_ms;
                     }
                     0x01 => {
@@ -539,12 +539,12 @@ impl Afhds2a {
                     }
                     0x03 => {
                         // External battery voltage
-                        self.telemetry.rx_voltage_mv = val * 10;
+                        self.telemetry.rx_voltage_mv = val.saturating_mul(10);
                         self.telemetry.last_rx_voltage_ms = now_ms;
                     }
                     0x09 => {
                         // Climb / Vertical speed (signed 16-bit in 0.1 m/s = 10 cm/s units)
-                        self.telemetry.vspeed_cms = (val as i16) * 10;
+                        self.telemetry.vspeed_cms = (val as i16).saturating_mul(10);
                         self.telemetry.has_vspeed = true;
                         self.telemetry.last_vspd_ms = now_ms;
                     }
@@ -581,7 +581,7 @@ pub fn calculate_hopping_table(tx_id: u32) -> [u8; NUM_FREQ] {
 
     while idx < NUM_FREQ {
         attempts += 1;
-        let band_no = (((idx << 1) | ((idx >> 1) & 0x01)) as u8 + tx_byte3) & 0x03;
+        let band_no = (((idx << 1) | ((idx >> 1) & 0x01)) as u8).wrapping_add(tx_byte3) & 0x03;
         rnd = rnd.wrapping_mul(0x0019_660D).wrapping_add(0x3C6E_F35F);
 
         let next_ch = band_no * 41 + 1 + (((rnd >> idx) % 41) as u8);

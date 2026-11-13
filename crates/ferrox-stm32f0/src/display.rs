@@ -176,7 +176,10 @@ impl DisplayBus for St7567ParallelBus {
 
                 let start = page * WIDTH;
                 let end = start + WIDTH;
-                for &byte in &framebuffer[start..end] {
+                let Some(slice) = framebuffer.get(start..end) else {
+                    return;
+                };
+                for &byte in slice {
                     core::ptr::write_volatile(data_odr_u8, byte);
                     gpiod.bsrr.write(|w| w.bits(1 << 7));
                     gpiod.bsrr.write(|w| w.bits(1 << (7 + 16)));

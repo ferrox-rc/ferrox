@@ -50,8 +50,22 @@ pub use uart::{I6sSerialPort, I6xSerialPort};
 pub use usb::Stm32f0UsbDriver;
 pub use watchdog::{feed as watchdog_feed, start as watchdog_start, WatchdogManager};
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 /// Create PlatformContext for FlySky FS-i6X.
-pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext<'static> {
+///
+/// # Panics
+/// Panics if called more than once (would alias `&mut` singleton drivers).
+pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext {
+    static INITIALIZED: AtomicBool = AtomicBool::new(false);
+    cortex_m::interrupt::free(|_| {
+        assert!(
+            !INITIALIZED.load(Ordering::Relaxed),
+            "create_i6x_context called more than once"
+        );
+        INITIALIZED.store(true, Ordering::Relaxed);
+    });
+
     static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
     static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
     static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;
@@ -79,12 +93,25 @@ pub fn create_i6x_context() -> ferrox_core::hal::PlatformContext<'static> {
             power: None,
             touch: None,
             watchdog: None,
+            audio: None,
         }
     }
 }
 
 /// Create PlatformContext for FlySky FS-i6S.
-pub fn create_i6s_context() -> ferrox_core::hal::PlatformContext<'static> {
+///
+/// # Panics
+/// Panics if called more than once (would alias `&mut` singleton drivers).
+pub fn create_i6s_context() -> ferrox_core::hal::PlatformContext {
+    static INITIALIZED: AtomicBool = AtomicBool::new(false);
+    cortex_m::interrupt::free(|_| {
+        assert!(
+            !INITIALIZED.load(Ordering::Relaxed),
+            "create_i6s_context called more than once"
+        );
+        INITIALIZED.store(true, Ordering::Relaxed);
+    });
+
     static mut SYSTEM_DRIVER: Stm32f0SystemDriver = Stm32f0SystemDriver;
     static mut BUZZER: Tim1Buzzer = Tim1Buzzer;
     static mut DISPLAY: St7567ParallelBus = St7567ParallelBus;
@@ -114,6 +141,7 @@ pub fn create_i6s_context() -> ferrox_core::hal::PlatformContext<'static> {
             power: Some(&mut POWER),
             touch: Some(&mut TOUCH),
             watchdog: None,
+            audio: None,
         }
     }
 }

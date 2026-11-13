@@ -100,7 +100,7 @@ impl KeyDriver for I6xKeyDriver {
         }
     }
 
-    fn read_ext_switches(&mut self) -> (SwitchPos, SwitchPos) {
+    fn read_ext_switches(&mut self) -> (SwitchPos, SwitchPos, SwitchPos, SwitchPos) {
         unsafe {
             let gpioc = &*pac::GPIOC::ptr();
             let idr = gpioc.idr.read().bits();
@@ -114,7 +114,7 @@ impl KeyDriver for I6xKeyDriver {
             } else {
                 SwitchPos::Up
             };
-            (sw_e, sw_f)
+            (sw_e, sw_f, SwitchPos::Up, SwitchPos::Up)
         }
     }
 }

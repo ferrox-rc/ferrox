@@ -104,15 +104,31 @@ pub fn update_diag_anas(
 
                 // SE (PC12)
                 lcd.draw_str_4x6(2, 23, "SW:SE", false);
-                let se_state = if switches.se == SwitchPos::Down { "DN (LOW)" } else { "UP (HIGH)" };
-                let fill_se = if switches.se == SwitchPos::Down { 30 } else { 0 };
+                let se_state = if switches.se == SwitchPos::Down {
+                    "DN (LOW)"
+                } else {
+                    "UP (HIGH)"
+                };
+                let fill_se = if switches.se == SwitchPos::Down {
+                    30
+                } else {
+                    0
+                };
                 widgets::draw_bar_gauge(lcd, 32, 23, 30, 6, fill_se);
                 lcd.draw_str_4x6(66, 23, se_state, false);
 
                 // SF (PC15)
                 lcd.draw_str_4x6(2, 33, "SW:SF", false);
-                let sf_state = if switches.sf == SwitchPos::Down { "DN (LOW)" } else { "UP (HIGH)" };
-                let fill_sf = if switches.sf == SwitchPos::Down { 30 } else { 0 };
+                let sf_state = if switches.sf == SwitchPos::Down {
+                    "DN (LOW)"
+                } else {
+                    "UP (HIGH)"
+                };
+                let fill_sf = if switches.sf == SwitchPos::Down {
+                    30
+                } else {
+                    0
+                };
                 widgets::draw_bar_gauge(lcd, 32, 33, 30, 6, fill_sf);
                 lcd.draw_str_4x6(66, 33, sf_state, false);
 

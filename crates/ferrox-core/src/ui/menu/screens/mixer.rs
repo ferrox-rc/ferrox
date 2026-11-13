@@ -537,8 +537,8 @@ pub fn update_wing_mixer(
         if keys.ok {
             buzzer.click();
             if ctrl.selected_item == 0 {
-                // Cycle Wing Template (0..3)
-                storage.active_model.wing_tail_mix = (storage.active_model.wing_tail_mix + 1) % 4;
+                // Cycle Wing Template (0..4)
+                storage.active_model.wing_tail_mix = (storage.active_model.wing_tail_mix + 1) % 5;
             } else if has_diff && ctrl.selected_item == 1 {
                 ctrl.editing = true;
             } else if ctrl.selected_item == gvar_item_idx {
@@ -607,7 +607,7 @@ fn render_wing_mixer_row(
     let mut b6 = [0u8; 6];
     let mut ch_buf = [0u8; 4];
     if idx == 0 {
-        let t_idx = (storage.active_model.wing_tail_mix as usize).min(3);
+        let t_idx = (storage.active_model.wing_tail_mix as usize).min(4);
         lcd.draw_str_6x10(4, y, "Wing:", is_sel);
         lcd.draw_str_6x10(36, y, TEMPLATE_NAMES[t_idx], is_sel);
     } else if has_diff && idx == 1 {
