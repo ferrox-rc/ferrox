@@ -306,8 +306,12 @@ impl AudioPlayer {
                 self.carry_len += take;
                 self.sector_pos += take;
                 if self.carry_len >= bpf {
-                    let (written, _) =
-                        decode_pcm_to_dac12(&self.carry[..bpf], &fmt, volume_pct, &mut dac_buf[..1]);
+                    let (written, _) = decode_pcm_to_dac12(
+                        &self.carry[..bpf],
+                        &fmt,
+                        volume_pct,
+                        &mut dac_buf[..1],
+                    );
                     if written > 0 {
                         let accepted = out.write_samples(&dac_buf[..written]);
                         if accepted == 0 {
@@ -407,6 +411,12 @@ impl AudioPlayer {
         self.pcm_bytes_left = fmt.data_size.saturating_sub(first_pcm_bytes as u32);
         self.carry_len = 0;
         true
+    }
+}
+
+impl Default for AudioPlayer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -530,6 +540,12 @@ impl CalloutScheduler {
     }
 }
 
+impl Default for CalloutScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,9 +619,15 @@ mod tests {
     #[test]
     fn system_path_formatting() {
         let mut b = [0u8; 32];
-        assert_eq!(format_system_path(&mut b, true, 42), "/SOUNDS/en/SYSTEM/0042.wav");
+        assert_eq!(
+            format_system_path(&mut b, true, 42),
+            "/SOUNDS/en/SYSTEM/0042.wav"
+        );
         let mut b2 = [0u8; 32];
-        assert_eq!(format_system_path(&mut b2, false, 123), "/SOUNDS/en/0123.wav");
+        assert_eq!(
+            format_system_path(&mut b2, false, 123),
+            "/SOUNDS/en/0123.wav"
+        );
     }
 
     #[test]

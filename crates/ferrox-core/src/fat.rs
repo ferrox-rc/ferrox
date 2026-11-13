@@ -495,15 +495,7 @@ fn sfn_checksum(raw: &[u8]) -> u8 {
 }
 
 fn eq_ignore_ascii_case(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    for (&x, &y) in a.iter().zip(b.iter()) {
-        if x.to_ascii_lowercase() != y.to_ascii_lowercase() {
-            return false;
-        }
-    }
-    true
+    a.eq_ignore_ascii_case(b)
 }
 
 fn looks_like_bpb(sec: &[u8; 512]) -> bool {
@@ -519,7 +511,8 @@ fn find_fat_partition_lba(mbr: &[u8; 512]) -> Option<u32> {
         let off = 446 + i * 16;
         let ptype = mbr[off + 4];
         if matches!(ptype, 0x04 | 0x06 | 0x0B | 0x0C | 0x0E) {
-            let lba = u32::from_le_bytes([mbr[off + 8], mbr[off + 9], mbr[off + 10], mbr[off + 11]]);
+            let lba =
+                u32::from_le_bytes([mbr[off + 8], mbr[off + 9], mbr[off + 10], mbr[off + 11]]);
             if lba > 0 {
                 return Some(lba);
             }
@@ -572,8 +565,8 @@ mod tests {
         vbr[16] = 1; // 1 FAT
         vbr[32..36].copy_from_slice(&70000u32.to_le_bytes()); // total sectors
         vbr[36..40].copy_from_slice(&600u32.to_le_bytes()); // fat_sz32 (data starts at LBA 2+2+600 = 604 -> wait, keep in 128 sectors!)
-        // Adjust so data fits in 128 sectors while total_clusters >= 65525? No, test checks total_clusters = (70000 - 4) / 1 >= 65525!
-        // With reserved=2, fat_sz32=2, total_sectors=70000: data_start_lba = 2 + 2 + 2 = 6!
+                                                            // Adjust so data fits in 128 sectors while total_clusters >= 65525? No, test checks total_clusters = (70000 - 4) / 1 >= 65525!
+                                                            // With reserved=2, fat_sz32=2, total_sectors=70000: data_start_lba = 2 + 2 + 2 = 6!
         vbr[36..40].copy_from_slice(&2u32.to_le_bytes());
         vbr[44..48].copy_from_slice(&2u32.to_le_bytes()); // root_cluster = 2 (LBA 6)
         vbr[510] = 0x55;
@@ -645,15 +638,21 @@ mod tests {
         assert_eq!(cursor.remaining(), 600);
 
         let mut buf = [0u8; 512];
-        let n1 = cursor.read_next_sector(&mut vol, &mut disk, &mut buf).unwrap();
+        let n1 = cursor
+            .read_next_sector(&mut vol, &mut disk, &mut buf)
+            .unwrap();
         assert_eq!(n1, 512);
         assert!(buf.iter().all(|&b| b == 0xAA));
 
-        let n2 = cursor.read_next_sector(&mut vol, &mut disk, &mut buf).unwrap();
+        let n2 = cursor
+            .read_next_sector(&mut vol, &mut disk, &mut buf)
+            .unwrap();
         assert_eq!(n2, 88);
         assert!(buf[..88].iter().all(|&b| b == 0x55));
 
-        let n3 = cursor.read_next_sector(&mut vol, &mut disk, &mut buf).unwrap();
+        let n3 = cursor
+            .read_next_sector(&mut vol, &mut disk, &mut buf)
+            .unwrap();
         assert_eq!(n3, 0);
     }
 
@@ -662,7 +661,8 @@ mod tests {
         let mut disk = build_test_fat32_disk();
         let mut vol = FatVolume::mount(&mut disk).expect("mount");
         assert_eq!(
-            vol.open_file(&mut disk, "/SOUNDS/en/missing.wav").unwrap_err(),
+            vol.open_file(&mut disk, "/SOUNDS/en/missing.wav")
+                .unwrap_err(),
             FatError::NotFound
         );
     }
