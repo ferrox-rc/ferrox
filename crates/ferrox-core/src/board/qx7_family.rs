@@ -39,13 +39,14 @@ impl BoardIdleHook for Qx7IdleState {
         _now: u32,
         dt_ms: u16,
         keys: u16,
-        _menu_active: bool,
+        menu_active: bool,
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
     ) -> (bool, bool, bool) {
         self.power_manager.update(dt_ms, storage, buzzer);
         self.latched_keys |= keys;
-        (false, false, false)
+        let ok_held = !menu_active && (keys & (1 << 10)) != 0;
+        (ok_held, false, false)
     }
 
     #[inline]
