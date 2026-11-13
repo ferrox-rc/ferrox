@@ -424,7 +424,8 @@ This project stands on the shoulders of the open-source RC community and owes sp
 
 - **Kuba (qba667), Janek (ajjjjjjjj), and the OpenI6X Team**: For their groundbreaking reverse-engineering of the FlySky FS-i6X/i6S hardware, bus timings, ST7567 LCD initialization sequence, A7105 SPI registers, bootloader jump sequences, and the `PC9` backlight PWM dimming mod.
 - **Wimalopaan**: For extensive real-hardware testing on both FS-i6X and FS-i6S, logic analyzer protocol traces, multi-pot/switch hardware expansion verification, and deep feedback on TBS-Agent UI paradigms and over-the-air CRSF parameter synchronization.
-- **Suds**: For testing collaboration, feedback, and hardware bring-up support on the RadioMaster GX12.
+- **Sudseh**: For testing collaboration, feedback, and hardware bring-up support on the RadioMaster GX12 and Pocket.
+- **WimH**: For real-hardware testing on the RadioMaster Zorro and feedback on EdgeTX key/roller navigation.
 - **OpenTX and EdgeTX Teams**: For defining modern open-source RC transmitter mixing, telemetry architectures, and simulator standards.
 - **ExpressLRS & Team BlackSheep**: For pioneering open, high-performance CRSF protocols and parameter synchronization.
 
