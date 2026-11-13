@@ -20,39 +20,56 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: thumbv6m-none-eabi
+          targets: thumbv6m-none-eabi, thumbv7em-none-eabihf
           components: llvm-tools-preview
 
       - name: Install cargo-binutils
         run: cargo install cargo-binutils || true
 
-      - name: Build firmware (release)
+      - name: Build & Package Firmware Artifacts
         run: |
-          cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi
-          cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi
+          mkdir -p release-artifacts
 
-      - name: Generate Binary and Hex Artifacts
-        run: |
-          # FlySky FS-i6S
-          cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release -- -O binary ferrox-i6s.bin
-          cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release -- -O ihex ferrox-i6s.hex
-          cp target/thumbv6m-none-eabi/release/ferrox-i6s ferrox-i6s.elf
+          # STM32F0 targets (FlySky FS-i6S / FS-i6X)
+          for board in i6s i6x; do
+            pkg="ferrox-${board}"
+            echo "=== Building ${pkg} ==="
+            cargo build --release -p "${pkg}" --target thumbv6m-none-eabi
+            cargo objcopy -p "${pkg}" --bin "${pkg}" --release --target thumbv6m-none-eabi -- -O binary "release-artifacts/${pkg}.bin"
+            cargo objcopy -p "${pkg}" --bin "${pkg}" --release --target thumbv6m-none-eabi -- -O ihex "release-artifacts/${pkg}.hex"
+            cp "target/thumbv6m-none-eabi/release/${pkg}" "release-artifacts/${pkg}.elf"
+          done
 
-          # FlySky FS-i6X
-          cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release -- -O binary ferrox-i6x.bin
-          cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release -- -O ihex ferrox-i6x.hex
-          cp target/thumbv6m-none-eabi/release/ferrox-i6x ferrox-i6x.elf
+          # STM32F4 target: RadioMaster Zorro (standalone crate)
+          echo "=== Building ferrox-zorro ==="
+          cargo build --release -p ferrox-zorro --target thumbv7em-none-eabihf
+          cargo objcopy -p ferrox-zorro --bin ferrox-zorro --release --target thumbv7em-none-eabihf -- -O binary "release-artifacts/ferrox-zorro.bin"
+          cargo objcopy -p ferrox-zorro --bin ferrox-zorro --release --target thumbv7em-none-eabihf -- -O ihex "release-artifacts/ferrox-zorro.hex"
+          cp "target/thumbv7em-none-eabihf/release/ferrox-zorro" "release-artifacts/ferrox-zorro.elf"
 
-          sha256sum ferrox-i6s.bin ferrox-i6s.hex ferrox-i6s.elf \
-                    ferrox-i6x.bin ferrox-i6x.hex ferrox-i6x.elf > sha256sums.txt
-          cat sha256sums.txt
+          # STM32F4 targets: EdgeTX-derived radios (feature-selected via ferrox-pocket)
+          for board in pocket boxer tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
+            echo "=== Building ferrox-${board} ==="
+            cargo build --release -p ferrox-pocket --no-default-features --features "${board}" --target thumbv7em-none-eabihf
+            cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O binary "release-artifacts/ferrox-${board}.bin"
+            cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O ihex "release-artifacts/ferrox-${board}.hex"
+            cp "target/thumbv7em-none-eabihf/release/ferrox-pocket" "release-artifacts/ferrox-${board}.elf"
+          done
+
+          # EdgeTX bootloader-flashable SD .bin images (32 KiB padded, linked at 0x08008000)
+          for board in pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
+            echo "=== Building ferrox-${board}-sd.bin ==="
+            ./tools/build-sd-bin.sh "${board}" "release-artifacts/ferrox-${board}-sd.bin"
+          done
+
+          (cd release-artifacts && sha256sum *.bin *.hex *.elf > sha256sums.txt && cat sha256sums.txt)
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            *.bin
-            *.hex
-            *.elf
-            sha256sums.txt
+            release-artifacts/*.bin
+            release-artifacts/*.hex
+            release-artifacts/*.elf
+            release-artifacts/sha256sums.txt
           generate_release_notes: true

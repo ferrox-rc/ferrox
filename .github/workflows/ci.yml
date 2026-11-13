@@ -42,18 +42,21 @@ jobs:
           cargo clippy -p ferrox-i6s --target thumbv6m-none-eabi -- -D warnings
           cargo clippy -p ferrox-i6x --target thumbv6m-none-eabi -- -D warnings
           cargo clippy -p ferrox-pocket --target thumbv7em-none-eabihf -- -D warnings
+          cargo clippy -p ferrox-zorro --target thumbv7em-none-eabihf -- -D warnings
 
       - name: Run host unit tests
         run: |
           cargo test-host-i6s
           cargo test-host-i6x
           cargo test-host-pocket
+          cargo test-host-gx12
 
       - name: Build release binaries
         run: |
           cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi
           cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi
           cargo build --release -p ferrox-pocket --target thumbv7em-none-eabihf
+          cargo build --release -p ferrox-zorro --target thumbv7em-none-eabihf
 
       - name: Install cargo-binutils
         run: cargo install cargo-binutils || true
@@ -63,3 +66,4 @@ jobs:
           cargo size -p ferrox-i6s --bin ferrox-i6s --release -- -A
           cargo size -p ferrox-i6x --bin ferrox-i6x --release -- -A
           cargo size -p ferrox-pocket --bin ferrox-pocket --release -- -A
+          cargo size -p ferrox-zorro --bin ferrox-zorro --release -- -A
