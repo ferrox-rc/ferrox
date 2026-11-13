@@ -44,12 +44,13 @@ impl<H: Qx7HalDescriptor> St7567SpiBus<H> {
                 timeout -= 1;
             }
             if timeout > 0 {
-                let dr = core::ptr::addr_of!(spi3.dr) as *mut u8;
-                core::ptr::write_volatile(dr, byte);
+                // Drain any stale RXNE before starting transfer (RM0090 28.3.3)
+                let _ = spi3.dr.read().bits();
+                spi3.dr.write(|w| w.bits(byte as u32));
 
-                // Wait until transmission finished (BSY = bit 7 in SPI_SR)
+                // Wait for RXNE (bit 0) — only set after all 8 SCK bits finish
                 timeout = 50_000;
-                while (spi3.sr.read().bits() & (1 << 7)) != 0 && timeout > 0 {
+                while (spi3.sr.read().bits() & (1 << 0)) == 0 && timeout > 0 {
                     timeout -= 1;
                 }
                 let _ = spi3.dr.read().bits();
@@ -69,7 +70,7 @@ impl<H: Qx7HalDescriptor> St7567SpiBus<H> {
             gpioc.bsrr.write(|w| w.bits(1 << 11)); // A0 = HIGH (Data)
             gpioa.bsrr.write(|w| w.bits(1 << (15 + 16))); // NCS LOW
 
-            let dr = core::ptr::addr_of!(spi3.dr) as *mut u8;
+            let _ = spi3.dr.read().bits(); // Clear any stale RXNE
             for &byte in data {
                 let mut timeout = 50_000u32;
                 while (spi3.sr.read().bits() & (1 << 1)) == 0 && timeout > 0 {
@@ -78,14 +79,19 @@ impl<H: Qx7HalDescriptor> St7567SpiBus<H> {
                 if timeout == 0 {
                     break;
                 }
-                core::ptr::write_volatile(dr, byte);
+                spi3.dr.write(|w| w.bits(byte as u32));
+
+                timeout = 50_000;
+                while (spi3.sr.read().bits() & (1 << 0)) == 0 && timeout > 0 {
+                    timeout -= 1;
+                }
+                let _ = spi3.dr.read().bits();
             }
 
             let mut timeout = 50_000u32;
             while (spi3.sr.read().bits() & (1 << 7)) != 0 && timeout > 0 {
                 timeout -= 1;
             }
-            let _ = spi3.dr.read().bits();
 
             gpioa.bsrr.write(|w| w.bits(1 << 15)); // NCS HIGH
         }
@@ -116,8 +122,10 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
             // 1. Enable Clocks: GPIOA, GPIOC, GPIOD (AHB1) + SPI3, TIM4 (APB1)
             rcc.ahb1enr
                 .modify(|r, w| w.bits(r.bits() | (1 << 0) | (1 << 2) | (1 << 3)));
+            let _ = rcc.ahb1enr.read().bits();
             rcc.apb1enr
                 .modify(|r, w| w.bits(r.bits() | (1 << 15) | (1 << 2)));
+            let _ = rcc.apb1enr.read().bits();
 
             // 2. PA15 (NCS): GPIO Output, High Speed
             gpioa
