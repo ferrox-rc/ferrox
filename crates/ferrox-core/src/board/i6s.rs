@@ -331,12 +331,11 @@ impl BoardProfile for I6sSpec {
 
     #[inline]
     fn poll_keys(storage: &RadioStorage, menu_active: bool) -> u16 {
-        let touch_sample =
-            if storage.radio.touch_disabled == 0 && crate::touch::ft6236::is_touch_int_asserted() {
-                crate::touch::ft6236::read_touch()
-            } else {
-                None
-            };
+        let touch_sample = if storage.radio.touch_disabled == 0 {
+            crate::touch::ft6236::read_touch()
+        } else {
+            None
+        };
         let current_sticks = crate::input::read().gimbals;
         crate::touch::nav::update_inputs(
             touch_sample.as_ref(),
