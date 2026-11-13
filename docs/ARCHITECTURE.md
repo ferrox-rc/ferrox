@@ -211,3 +211,11 @@ The curve engine transforms normalized stick inputs (0..1000) into tailored outp
   ```
 - **Deterministic Fixed-Point Execution**:
   Implemented using integer-only fixed-point arithmetic (`t` scaled by 1024). Spline interpolation executes in **< 60 CPU clock cycles** (< 1.25 µs at 48 MHz), meaning spline smoothing imposes zero perceptible latency on the control loop.
+
+---
+
+## 6. Voice Audio & FAT32 Streaming (STM32F4, `voice-audio` feature)
+
+- **Zero-Heap FAT16/FAT32 Reader (`crates/ferrox-core/src/fat.rs`)**: Mounts MBR or superfloppy microSD cards with a 1-sector FAT cache, traverses `/SOUNDS/en/` paths (8.3 + VFAT LFN), and streams WAV files one 512-byte sector at a time.
+- **Non-Blocking Background Streaming (`crates/ferrox-core/src/audio/`)**: `AudioPlayer` and `CalloutScheduler` decode 8-bit/16-bit mono/stereo PCM into 12-bit unsigned DAC samples (`0..=4095`) in the background idle loop (up to 4 sectors per tick), never blocking the 4 ms RF flight loop.
+- **STM32F407 DAC + Circular DMA (`crates/ferrox-stm32f4/src/audio.rs`)**: Uses `PA4` (`DAC_OUT1`), `TIM6_TRGO`, and `DMA1_Stream5` (Channel 7) over a 2048-sample (`4 KiB`) circular ring buffer, clearing consumed slots to DAC midpoint (`2048`) and coordinating `PA4`/`PE12` (`AUDIO_MUTE`) with `DacToneBuzzer`.

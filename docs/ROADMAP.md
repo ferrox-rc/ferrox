@@ -207,3 +207,10 @@ This document tracks the phased implementation, historical milestones, and ongoi
 - [x] RadioLink `At9sProSpec` (`crates/ferrox-core/src/board/at9spro.rs`) with 320x240 display, 4 auxiliary analog axes (pots and side sliders), and rotary encoder.
 - [x] HAL mapping `At9sProHal` and build alias `cargo build-at9spro` (~91.8 KB release flash footprint, ~5.7 KB RAM).
 
+### Phase 35: FAT32 WAV/PCM Voice Audio, EdgeTX Bootloader Dual-Boot & Feature Gating (COMPLETED)
+- [x] Zero-heap read-only FAT16/FAT32 reader (`crates/ferrox-core/src/fat.rs`) with MBR/superfloppy mount, 1-sector FAT cache, 8.3 & VFAT LFN traversal, and sector streaming.
+- [x] WAV/PCM parser (`crates/ferrox-core/src/audio/wav.rs`), EdgeTX `/SOUNDS/en/` numeric speech decomposer, and non-blocking `CalloutScheduler` (`crates/ferrox-core/src/audio/mod.rs`).
+- [x] STM32F407 `DAC1` (`PA4`) + `TIM6_TRGO` + `DMA1_Stream5` circular ring-buffer audio driver (`crates/ferrox-stm32f4/src/audio.rs`) coordinating `PA4`/`PE12` with `DacToneBuzzer`.
+- [x] EdgeTX SD bootloader compatibility (`chip::pre_init()` VTOR relocation + NVIC/SysTick cleanup, PLL reset before reconfig, SPI3 reset & ST7567 init timing fix, `.fwversiondata` header, and `tools/build-sd-bin.*`).
+- [x] Compile-time `voice-audio` (STM32F4 only by default) and `soaring` (default-on, opt-out via `--no-default-features`) Cargo feature flags to preserve STM32F072 flash headroom.
+
