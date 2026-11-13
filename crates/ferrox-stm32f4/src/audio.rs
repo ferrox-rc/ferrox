@@ -144,7 +144,9 @@ impl AudioOutput for Stm32f4AudioDriver {
             // CHSEL=7 (bits 27:25), PL=10 High (17:16), MSIZE=01 16b (14:13),
             // PSIZE=01 16b (12:11), MINC=1 (10), CIRC=1 (8), DIR=01 M2P (6)
             dma1.st[5].cr.write(|w| {
-                w.bits((7 << 25) | (2 << 16) | (1 << 13) | (1 << 11) | (1 << 10) | (1 << 8) | (1 << 6))
+                w.bits(
+                    (7 << 25) | (2 << 16) | (1 << 13) | (1 << 11) | (1 << 10) | (1 << 8) | (1 << 6),
+                )
             });
             dma1.st[5].cr.modify(|r, w| w.bits(r.bits() | 1)); // EN
 

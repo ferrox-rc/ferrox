@@ -39,7 +39,9 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
             rcc.ahb1enr.modify(|r, w| {
                 w.bits(r.bits() | (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 22))
             });
+            let _ = rcc.ahb1enr.read().bits();
             rcc.apb2enr.modify(|r, w| w.bits(r.bits() | (1 << 8)));
+            let _ = rcc.apb2enr.read().bits();
 
             // 2. Configure Analog Pins: PA0, PA1, PA2, PA3, PA6, PB0, PC0 (MODER = 0b11)
             // PA0..PA3 + PA6 Analog

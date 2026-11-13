@@ -104,6 +104,7 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
         // 2. Enable SPI2 clock (bit 14 of APB1ENR)
         rcc.apb1enr
             .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 14)) });
+        let _ = rcc.apb1enr.read().bits();
 
         // 3. Configure CS pin as output, drive high
         H::SD_CS.enable_clock_and_output(true);

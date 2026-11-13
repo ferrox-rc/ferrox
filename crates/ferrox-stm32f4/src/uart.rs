@@ -38,7 +38,9 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
             // Enable GPIOB, GPIOC, GPIOD, DMA2 (AHB1) and USART1 (APB2)
             rcc.ahb1enr
                 .modify(|r, w| w.bits(r.bits() | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 22)));
+            let _ = rcc.ahb1enr.read().bits();
             rcc.apb2enr.modify(|r, w| w.bits(r.bits() | (1 << 4)));
+            let _ = rcc.apb2enr.read().bits();
 
             // Internal RF Boot pin (if present): GPIO Output, driven LOW (normal operation)
             if let Some(boot) = H::INT_RF_BOOTCMD {

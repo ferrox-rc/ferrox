@@ -211,6 +211,7 @@ pub fn init_system_clock() {
 
         // 1. Enable PWR clock in RCC_APB1ENR (bit 28)
         rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 28)));
+        let _ = rcc.apb1enr.read().bits();
 
         // 2. Set Voltage Scale 1 (VOS = 1, bit 14 in PWR_CR) for 168 MHz
         pwr.cr.modify(|r, w| w.bits(r.bits() | (1 << 14)));
@@ -331,6 +332,7 @@ pub fn enter_dfu_bootloader() -> ! {
         }
 
         cortex_m::interrupt::disable();
+        cp.SCB.vtor.write(0);
         cortex_m::asm::dsb();
 
         // Remap System Memory to 0x0000_0000 via SYSCFG_MEMRMP (MEM_MODE = 0b01)

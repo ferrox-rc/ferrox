@@ -132,6 +132,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
         unsafe {
             // Enable I2C1 (bit 21) in APB1ENR
             rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 21)));
+            let _ = rcc.apb1enr.read().bits();
 
             // Configure Write Protect pin: Push-Pull Output, driven LOW (write enabled)
             H::EEPROM_WP.enable_clock_and_output(false);
@@ -140,6 +141,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
             let configure_i2c_pin = |pin_def: PinDef| {
                 rcc.ahb1enr
                     .modify(|r, w| w.bits(r.bits() | pin_def.rcc_ahb1_bit()));
+                let _ = rcc.ahb1enr.read().bits();
                 let gpio = &*pin_def.gpio_ptr();
                 let pin = pin_def.pin;
                 let shift = pin * 2;
@@ -224,8 +226,39 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
                 return Ok(());
             }
 
+            if len == 2 {
+                // RM0090 §27.3.3 2-byte master receive: set POS + ACK, clear ADDR atomically with ACK=0, wait BTF
+                i2c1.cr1
+                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 11) | (1 << 10)) }); // POS | ACK
+                cortex_m::interrupt::free(|_| -> Result<(), ()> {
+                    self.send_addr(EEPROM_ADDR, true)?;
+                    i2c1.cr1
+                        .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 10)) }); // ACK = 0
+                    Ok(())
+                })?;
+
+                let mut timeout = 100_000u32;
+                while (i2c1.sr1.read().bits() & (1 << 2)) == 0 {
+                    // BTF bit
+                    timeout -= 1;
+                    if timeout == 0 {
+                        i2c1.cr1
+                            .modify(|r, w| unsafe { w.bits(r.bits() & !(1 << 11)) });
+                        return Err(());
+                    }
+                }
+                cortex_m::interrupt::free(|_| {
+                    self.send_stop();
+                    buf[0] = i2c1.dr.read().bits() as u8;
+                });
+                buf[1] = i2c1.dr.read().bits() as u8;
+                i2c1.cr1
+                    .modify(|r, w| unsafe { w.bits((r.bits() & !(1 << 11)) | (1 << 10)) });
+                return Ok(());
+            }
+
             self.send_addr(EEPROM_ADDR, true)?;
-            // Multiple bytes read
+            // Multiple bytes read (>2)
             i2c1.cr1
                 .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) }); // ACK enabled
             for (i, byte) in buf.iter_mut().enumerate() {
@@ -253,13 +286,17 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
         })() {
             self.send_stop();
             i2c1.cr1
-                .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 10)) });
+                .modify(|r, w| unsafe { w.bits((r.bits() & !(1 << 11)) | (1 << 10)) });
             return Err(e);
         }
         Ok(())
     }
 
     fn write_i2c(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
+        let end = (addr as usize).checked_add(buf.len()).ok_or(())?;
+        if end > (u16::MAX as usize) + 1 {
+            return Err(());
+        }
         let mut cur_addr = addr;
         let mut offset = 0;
         let total = buf.len();

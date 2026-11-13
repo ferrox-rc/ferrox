@@ -56,6 +56,12 @@ impl<H: Qx7HalDescriptor> St7567SpiBus<H> {
                 let _ = spi3.dr.read().bits();
             }
 
+            // Wait until SPI3 is no longer busy before deasserting NCS (RM0090 28.3.3)
+            timeout = 50_000;
+            while (spi3.sr.read().bits() & (1 << 7)) != 0 && timeout > 0 {
+                timeout -= 1;
+            }
+
             // Deassert NCS (PA15 HIGH)
             gpioa.bsrr.write(|w| w.bits(1 << 15));
         }
