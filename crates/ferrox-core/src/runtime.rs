@@ -742,6 +742,9 @@ impl BackgroundIdleManager {
             }
         } else {
             self.cancel_hold_ms = 0;
+            if menu_active && cancel_key {
+                self.cancel_waiting_release = true;
+            }
         }
 
         // Evaluate timer triggers and update all 4 timers

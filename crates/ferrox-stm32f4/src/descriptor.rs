@@ -291,6 +291,7 @@ impl Qx7HalDescriptor for BoxerHal {
 pub struct ZorroHal;
 
 impl Qx7HalDescriptor for ZorroHal {
+    const ROTENC_INVERT: bool = false;
     const SW_SE: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 7));
     const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
     const SW_SG: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 14));
