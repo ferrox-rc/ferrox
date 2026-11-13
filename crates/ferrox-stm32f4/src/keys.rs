@@ -149,29 +149,42 @@ impl<H: Qx7HalDescriptor> KeyDriver for Qx7KeyDriver<H> {
             }
         }
 
-        // Navigation Buttons:
-        // Down (bit 8): PAGE> / PAGE
-        if H::KEY_PAGE_NEXT.is_low() {
-            keys |= 1 << 8;
-        }
-        // Up (bit 9): PAGE< / MENU
-        if H::KEY_PAGE_PREV.is_low() {
-            keys |= 1 << 9;
-        }
-        // OK (bit 10): ENTER or MDL
-        if H::KEY_ENTER.is_low() || H::KEY_MDL.map_or(false, |p| p.is_low()) {
+        // Navigation Buttons (standard 16-bit mask: Roller Up/Down, ENTER=OK, EXIT=Cancel):
+        if H::KEY_ENTER.is_low() {
             keys |= 1 << 10;
         }
-        // Cancel (bit 11): RTN/EXIT
         if H::KEY_EXIT.is_low() {
             keys |= 1 << 11;
         }
-        // Bind / System (bit 12): SYS or TELE
-        if H::KEY_SYS.map_or(false, |p| p.is_low()) || H::KEY_TELE.map_or(false, |p| p.is_low()) {
-            keys |= 1 << 12;
-        }
 
         keys
+    }
+
+    fn scan_edgetx_keys(&mut self) -> u8 {
+        use ferrox_core::boot::{
+            EDGETX_IS_3BTN, EDGETX_KEY_MDL, EDGETX_KEY_PAGE_NEXT, EDGETX_KEY_PAGE_PREV,
+            EDGETX_KEY_SYS, EDGETX_KEY_TELE,
+        };
+        let mut ext = 0u8;
+        if H::KEY_SYS.map_or(false, |p| p.is_low()) {
+            ext |= EDGETX_KEY_SYS;
+        }
+        if H::KEY_MDL.map_or(false, |p| p.is_low()) {
+            ext |= EDGETX_KEY_MDL;
+        }
+        if H::KEY_TELE.map_or(false, |p| p.is_low()) {
+            ext |= EDGETX_KEY_TELE;
+        }
+        if H::KEY_PAGE_PREV.is_low() {
+            ext |= EDGETX_KEY_PAGE_PREV;
+        }
+        if H::KEY_PAGE_NEXT.is_low() {
+            ext |= EDGETX_KEY_PAGE_NEXT;
+        }
+        if H::KEY_MDL.is_none() && H::KEY_SYS.is_none() {
+            ext |= EDGETX_IS_3BTN;
+        }
+        ext
     }
 
     fn read_ext_switches(&mut self) -> (SwitchPos, SwitchPos, SwitchPos, SwitchPos) {

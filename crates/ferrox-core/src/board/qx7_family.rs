@@ -11,11 +11,63 @@ use crate::display::St7567;
 use crate::input::{InputState, SwitchPos};
 use crate::storage::{AdcInputMode, ModelConfig, RadioConfig, RadioStorage};
 
+#[derive(Copy, Clone, Default)]
+struct KeyHold {
+    hold_ms: u16,
+    long_fired: bool,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum PressEvent {
+    None,
+    Short,
+    Long,
+}
+
+impl KeyHold {
+    const fn new() -> Self {
+        Self {
+            hold_ms: 0,
+            long_fired: false,
+        }
+    }
+
+    fn update(&mut self, pressed: bool, dt_ms: u16) -> PressEvent {
+        if pressed {
+            self.hold_ms = self.hold_ms.saturating_add(dt_ms);
+            if self.hold_ms >= 600 && !self.long_fired {
+                self.long_fired = true;
+                return PressEvent::Long;
+            }
+            PressEvent::None
+        } else {
+            let ev = if !self.long_fired && self.hold_ms >= 40 {
+                PressEvent::Short
+            } else {
+                PressEvent::None
+            };
+            self.hold_ms = 0;
+            self.long_fired = false;
+            ev
+        }
+    }
+}
+
 /// Shared background idle state for Q X7 family targets.
-/// Evaluates soft-power latch (`PD0`/`PD1`) shutdown timer and renders shutdown overlay.
+/// Evaluates soft-power latch (`PD0`/`PD1`) shutdown timer, renders shutdown overlay,
+/// and handles EdgeTX-style short/long key navigation.
 pub struct Qx7IdleState {
     pub power_manager: crate::power::PowerManager,
     latched_keys: u16,
+    sys: KeyHold,
+    mdl: KeyHold,
+    tele: KeyHold,
+    page_prev: KeyHold,
+    page_next: KeyHold,
+    enter: KeyHold,
+    exit: KeyHold,
+    prev_enc_up: bool,
+    prev_enc_down: bool,
 }
 
 impl Default for Qx7IdleState {
@@ -29,6 +81,15 @@ impl Qx7IdleState {
         Self {
             power_manager: crate::power::PowerManager::new(),
             latched_keys: 0,
+            sys: KeyHold::new(),
+            mdl: KeyHold::new(),
+            tele: KeyHold::new(),
+            page_prev: KeyHold::new(),
+            page_next: KeyHold::new(),
+            enter: KeyHold::new(),
+            exit: KeyHold::new(),
+            prev_enc_up: false,
+            prev_enc_down: false,
         }
     }
 }
@@ -38,15 +99,13 @@ impl BoardIdleHook for Qx7IdleState {
         &mut self,
         _now: u32,
         dt_ms: u16,
-        keys: u16,
-        menu_active: bool,
+        _keys: u16,
+        _menu_active: bool,
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
     ) -> (bool, bool, bool) {
         self.power_manager.update(dt_ms, storage, buzzer);
-        self.latched_keys |= keys;
-        let ok_held = !menu_active && (keys & (1 << 10)) != 0;
-        (ok_held, false, false)
+        (false, false, false)
     }
 
     #[inline]
@@ -57,6 +116,142 @@ impl BoardIdleHook for Qx7IdleState {
         let frame_keys = self.latched_keys | current_keys;
         self.latched_keys = 0;
         frame_keys
+    }
+
+    fn handle_board_keys(
+        &mut self,
+        dt_ms: u16,
+        keys: u16,
+        edgetx_keys: u8,
+        menu_active: bool,
+        dashboard: &mut crate::ui::dashboard::DashboardController,
+        menu_controller: &mut crate::ui::menu::MenuController,
+        buzzer: &mut Buzzer,
+    ) -> bool {
+        use crate::boot::{
+            EDGETX_IS_3BTN, EDGETX_KEY_MDL, EDGETX_KEY_PAGE_NEXT, EDGETX_KEY_PAGE_PREV,
+            EDGETX_KEY_SYS, EDGETX_KEY_TELE,
+        };
+        use crate::ui::menu::MenuState;
+
+        self.latched_keys |= keys;
+
+        let up_raw = (keys & (1 << 9)) != 0;
+        let up_pressed = up_raw && !self.prev_enc_up;
+        self.prev_enc_up = up_raw;
+
+        let down_raw = (keys & (1 << 8)) != 0;
+        let down_pressed = down_raw && !self.prev_enc_down;
+        self.prev_enc_down = down_raw;
+
+        if !menu_active {
+            if up_pressed {
+                dashboard.prev_page(buzzer);
+            } else if down_pressed {
+                dashboard.next_page(buzzer);
+            }
+        }
+
+        let is_3btn = (edgetx_keys & EDGETX_IS_3BTN) != 0;
+
+        if is_3btn {
+            match self
+                .page_prev
+                .update((edgetx_keys & EDGETX_KEY_PAGE_PREV) != 0, dt_ms)
+            {
+                PressEvent::Short => menu_controller.open_at(MenuState::ModelSetup, buzzer),
+                PressEvent::Long => menu_controller.open_at(MenuState::RadioSetup, buzzer),
+                PressEvent::None => {}
+            }
+
+            match self
+                .page_next
+                .update((edgetx_keys & EDGETX_KEY_PAGE_NEXT) != 0, dt_ms)
+            {
+                PressEvent::Short => {
+                    if menu_active {
+                        menu_controller.switch_edgetx_tab(true, buzzer);
+                    } else {
+                        dashboard.next_page(buzzer);
+                    }
+                }
+                PressEvent::Long => {
+                    if menu_active {
+                        menu_controller.switch_edgetx_tab(false, buzzer);
+                    } else {
+                        dashboard.prev_page(buzzer);
+                    }
+                }
+                PressEvent::None => {}
+            }
+        } else {
+            match self.sys.update((edgetx_keys & EDGETX_KEY_SYS) != 0, dt_ms) {
+                PressEvent::Short => menu_controller.open_at(MenuState::RadioSetup, buzzer),
+                PressEvent::Long => menu_controller.open_at(MenuState::MainMenu, buzzer),
+                PressEvent::None => {}
+            }
+
+            match self.mdl.update((edgetx_keys & EDGETX_KEY_MDL) != 0, dt_ms) {
+                PressEvent::Short => menu_controller.open_at(MenuState::ModelSetup, buzzer),
+                PressEvent::Long => menu_controller.open_at(MenuState::ModelSelect, buzzer),
+                PressEvent::None => {}
+            }
+
+            match self
+                .tele
+                .update((edgetx_keys & EDGETX_KEY_TELE) != 0, dt_ms)
+            {
+                PressEvent::Short => {
+                    let tele_page = 4usize.min(dashboard.max_pages.saturating_sub(1));
+                    if menu_active {
+                        menu_controller.close(buzzer);
+                        dashboard.page = tele_page;
+                    } else if dashboard.page == tele_page {
+                        dashboard.page = 0;
+                        buzzer.click();
+                    } else {
+                        dashboard.page = tele_page;
+                        buzzer.click();
+                    }
+                }
+                PressEvent::Long => menu_controller.open_at(MenuState::ChannelMonitor, buzzer),
+                PressEvent::None => {}
+            }
+
+            if self
+                .page_prev
+                .update((edgetx_keys & EDGETX_KEY_PAGE_PREV) != 0, dt_ms)
+                == PressEvent::Short
+            {
+                if menu_active {
+                    menu_controller.switch_edgetx_tab(false, buzzer);
+                } else {
+                    dashboard.prev_page(buzzer);
+                }
+            }
+
+            if self
+                .page_next
+                .update((edgetx_keys & EDGETX_KEY_PAGE_NEXT) != 0, dt_ms)
+                == PressEvent::Short
+            {
+                if menu_active {
+                    menu_controller.switch_edgetx_tab(true, buzzer);
+                } else {
+                    dashboard.next_page(buzzer);
+                }
+            }
+        }
+
+        if self.enter.update((keys & (1 << 10)) != 0, dt_ms) == PressEvent::Long && !menu_active {
+            menu_controller.open_at(MenuState::MainMenu, buzzer);
+        }
+
+        if self.exit.update((keys & (1 << 11)) != 0, dt_ms) == PressEvent::Long && menu_active {
+            menu_controller.close(buzzer);
+        }
+
+        true
     }
 
     fn render_overlay(&self, lcd: &mut St7567) {
@@ -449,3 +644,279 @@ macro_rules! impl_qx7_board_profile {
 }
 
 pub(crate) use impl_qx7_board_profile;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::boot::{
+        EDGETX_IS_3BTN, EDGETX_KEY_MDL, EDGETX_KEY_PAGE_NEXT, EDGETX_KEY_PAGE_PREV, EDGETX_KEY_SYS,
+        EDGETX_KEY_TELE,
+    };
+    use crate::ui::dashboard::DashboardController;
+    use crate::ui::menu::{MenuController, MenuState};
+
+    fn tick(
+        idle: &mut Qx7IdleState,
+        dt_ms: u16,
+        keys: u16,
+        edgetx_keys: u8,
+        dash: &mut DashboardController,
+        menu: &mut MenuController,
+        buzzer: &mut Buzzer,
+    ) {
+        let menu_active = menu.is_active();
+        assert!(idle.handle_board_keys(dt_ms, keys, edgetx_keys, menu_active, dash, menu, buzzer));
+    }
+
+    #[test]
+    fn six_button_sys_mdl_tele_page_enter_exit() {
+        let mut idle = Qx7IdleState::new();
+        let mut dash = DashboardController::new();
+        let mut menu = MenuController::new();
+        let mut buzzer = Buzzer::new();
+
+        // SYS short -> RadioSetup
+        tick(
+            &mut idle,
+            60,
+            0,
+            EDGETX_KEY_SYS,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert!(!menu.is_active());
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert_eq!(menu.state, MenuState::RadioSetup);
+
+        // EXIT long -> closes menu
+        tick(
+            &mut idle,
+            600,
+            1 << 11,
+            0,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert!(!menu.is_active());
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+
+        // SYS long -> MainMenu
+        tick(
+            &mut idle,
+            600,
+            0,
+            EDGETX_KEY_SYS,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(menu.state, MenuState::MainMenu);
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+
+        // MDL short -> ModelSetup, then PAGE> / PAGE< switches tabs
+        tick(
+            &mut idle,
+            50,
+            0,
+            EDGETX_KEY_MDL,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert_eq!(menu.state, MenuState::ModelSetup);
+
+        let prev_state = menu.state;
+        tick(
+            &mut idle,
+            50,
+            0,
+            EDGETX_KEY_PAGE_NEXT,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert_ne!(menu.state, prev_state);
+        tick(
+            &mut idle,
+            50,
+            0,
+            EDGETX_KEY_PAGE_PREV,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert_eq!(menu.state, prev_state);
+        tick(
+            &mut idle,
+            600,
+            0,
+            EDGETX_KEY_MDL,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(menu.state, MenuState::ModelSelect);
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+
+        // TELE short while in menu -> closes menu and jumps to Telemetry page (4)
+        tick(
+            &mut idle,
+            50,
+            0,
+            EDGETX_KEY_TELE,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert!(!menu.is_active());
+        assert_eq!(dash.page, 4);
+
+        // TELE short again on Telemetry page -> toggles back to page 0
+        tick(
+            &mut idle,
+            50,
+            0,
+            EDGETX_KEY_TELE,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert_eq!(dash.page, 0);
+
+        // TELE long -> ChannelMonitor
+        tick(
+            &mut idle,
+            600,
+            0,
+            EDGETX_KEY_TELE,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(menu.state, MenuState::ChannelMonitor);
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+
+        // Close menu, then ENTER long -> MainMenu
+        tick(
+            &mut idle,
+            600,
+            1 << 11,
+            0,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert!(!menu.is_active());
+
+        tick(
+            &mut idle,
+            600,
+            1 << 10,
+            0,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(menu.state, MenuState::MainMenu);
+    }
+
+    #[test]
+    fn three_button_menu_and_page() {
+        let mut idle = Qx7IdleState::new();
+        let mut dash = DashboardController::new();
+        let mut menu = MenuController::new();
+        let mut buzzer = Buzzer::new();
+
+        // PAGE short on dashboard -> next_page
+        tick(
+            &mut idle,
+            50,
+            0,
+            EDGETX_IS_3BTN | EDGETX_KEY_PAGE_NEXT,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(
+            &mut idle,
+            10,
+            0,
+            EDGETX_IS_3BTN,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(dash.page, 1);
+
+        // PAGE long on dashboard -> prev_page
+        tick(
+            &mut idle,
+            600,
+            0,
+            EDGETX_IS_3BTN | EDGETX_KEY_PAGE_NEXT,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(
+            &mut idle,
+            10,
+            0,
+            EDGETX_IS_3BTN,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(dash.page, 0);
+
+        // MENU short -> ModelSetup
+        tick(
+            &mut idle,
+            50,
+            0,
+            EDGETX_IS_3BTN | EDGETX_KEY_PAGE_PREV,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(
+            &mut idle,
+            10,
+            0,
+            EDGETX_IS_3BTN,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(menu.state, MenuState::ModelSetup);
+
+        // MENU long -> RadioSetup
+        tick(
+            &mut idle,
+            600,
+            0,
+            EDGETX_IS_3BTN | EDGETX_KEY_PAGE_PREV,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(
+            &mut idle,
+            10,
+            0,
+            EDGETX_IS_3BTN,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        assert_eq!(menu.state, MenuState::RadioSetup);
+    }
+}

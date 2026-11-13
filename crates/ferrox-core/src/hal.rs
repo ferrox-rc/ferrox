@@ -224,6 +224,11 @@ pub trait KeyDriver {
     /// Scan all physical buttons and return 16-bit key bitmask.
     fn scan_keys(&mut self) -> u16;
 
+    /// Scan EdgeTX-style dedicated navigation keys (`SYS`, `MDL`, `TELE`, `PAGE<`, `PAGE>`).
+    fn scan_edgetx_keys(&mut self) -> u8 {
+        0
+    }
+
     /// Read auxiliary external digital switches (e.g. SE, SF, SG, SH).
     fn read_ext_switches(
         &mut self,

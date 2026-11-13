@@ -529,7 +529,16 @@ impl BackgroundIdleManager {
                 rf::set_bind_mode(false);
                 buzzer.click();
             }
-        } else if menu_active {
+        } else if self.board_idle.handle_board_keys(
+            dt_ms,
+            keys,
+            crate::boot::scan_edgetx_keys(),
+            menu_active,
+            dashboard,
+            menu_controller,
+            buzzer,
+        ) || menu_active
+        {
             self.bind_hold_ms = 0;
             self.bind_was_held = false;
         } else {

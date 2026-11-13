@@ -48,6 +48,29 @@ pub fn scan_keys() -> u16 {
     hw | get_touch_keys()
 }
 
+pub const EDGETX_KEY_SYS: u8 = 1 << 0;
+pub const EDGETX_KEY_MDL: u8 = 1 << 1;
+pub const EDGETX_KEY_TELE: u8 = 1 << 2;
+pub const EDGETX_KEY_PAGE_PREV: u8 = 1 << 3;
+pub const EDGETX_KEY_PAGE_NEXT: u8 = 1 << 4;
+pub const EDGETX_IS_3BTN: u8 = 1 << 7;
+
+/// Scan EdgeTX-style dedicated keys (`SYS`, `MDL`, `TELE`, `PAGE<`, `PAGE>`).
+pub fn scan_edgetx_keys() -> u8 {
+    #[cfg(test)]
+    {
+        0
+    }
+    #[cfg(not(test))]
+    {
+        if let Some(ref mut d) = unsafe { KEY_DRIVER.as_mut() } {
+            d.scan_edgetx_keys()
+        } else {
+            0
+        }
+    }
+}
+
 /// Read external digital switches (SE/SF/SG/SH).
 pub fn read_ext_switches() -> (
     crate::input::SwitchPos,

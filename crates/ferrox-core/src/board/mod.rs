@@ -416,6 +416,23 @@ pub trait BoardIdleHook: Default + 'static {
     /// Take frame keys for display frame dispatch, resetting latched state.
     fn take_frame_keys(&mut self, current_keys: u16, menu_or_calib_active: bool) -> u16;
 
+    /// Handle board-specific navigation keys (e.g. EdgeTX SYS/MDL/TELE/PAGE<>/EXIT-long).
+    /// Returns `true` if the board handled dashboard Up/Down/Bind keys itself.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn handle_board_keys(
+        &mut self,
+        _dt_ms: u16,
+        _keys: u16,
+        _edgetx_keys: u8,
+        _menu_active: bool,
+        _dashboard: &mut crate::ui::dashboard::DashboardController,
+        _menu_controller: &mut crate::ui::menu::MenuController,
+        _buzzer: &mut Buzzer,
+    ) -> bool {
+        false
+    }
+
     /// Render board-specific overlay (e.g. shutdown progress modal).
     fn render_overlay(&self, lcd: &mut St7567);
 }
