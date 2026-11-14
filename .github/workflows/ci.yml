@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
 
 jobs:
   check-and-build:
@@ -51,18 +54,54 @@ jobs:
           cargo test-host-pocket
           cargo test-host-gx12
 
-      - name: Build release binaries
-        run: |
-          cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi
-          cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi
-          cargo build --release -p ferrox-f4 --target thumbv7em-none-eabihf
-          cargo build --release -p ferrox-f4 --no-default-features --features zorro --target thumbv7em-none-eabihf
-
       - name: Install cargo-binutils
         run: cargo install cargo-binutils || true
+
+      - name: Build & package all board binaries (.bin, -sd.bin, .elf)
+        run: |
+          mkdir -p ci-artifacts
+
+          for board in i6s i6x; do
+            pkg="ferrox-${board}"
+            cargo build --release -p "${pkg}" --target thumbv6m-none-eabi
+            cargo objcopy -p "${pkg}" --bin "${pkg}" --release --target thumbv6m-none-eabi -- -O binary "ci-artifacts/${pkg}.bin"
+            cp "target/thumbv6m-none-eabi/release/${pkg}" "ci-artifacts/${pkg}.elf"
+          done
+
+          for board in pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
+            cargo build --release -p ferrox-f4 --no-default-features --features "${board}" --target thumbv7em-none-eabihf
+            cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O binary "ci-artifacts/ferrox-${board}.bin"
+            cp "target/thumbv7em-none-eabihf/release/ferrox-f4" "ci-artifacts/ferrox-${board}.elf"
+            ./tools/build-sd-bin.sh "${board}" "ci-artifacts/ferrox-${board}-sd.bin"
+          done
+
+          (cd ci-artifacts && sha256sum *.bin *.elf > sha256sums.txt)
 
       - name: Check binary footprints
         run: |
           cargo size -p ferrox-i6s --bin ferrox-i6s --release -- -A
           cargo size -p ferrox-i6x --bin ferrox-i6x --release -- -A
           cargo size -p ferrox-f4 --bin ferrox-f4 --release -- -A
+
+      - name: Upload PR firmware artifacts
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-pr-${{ github.event.pull_request.number }}
+          path: ci-artifacts/
+          retention-days: 7
+
+      - name: Publish rolling nightly pre-release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref == 'refs/heads/main' && 'nightly' || 'dev-nightly' }}
+          name: ${{ github.ref == 'refs/heads/main' && 'Nightly (main)' || 'Nightly (dev)' }}
+          prerelease: true
+          make_latest: false
+          body: |
+            Automated build from `${{ github.ref_name }}` @ `${{ github.sha }}`.
+          files: |
+            ci-artifacts/*.bin
+            ci-artifacts/*.elf
+            ci-artifacts/sha256sums.txt
