@@ -45,7 +45,7 @@ impl Qx7FamilyProfile for Gx12Spec {
     ];
     const ADAPTIVE_CH_NAMES: &'static [&'static str] =
         &["A", "B", "C", "D", "1", "2", "E", "F", "G", "H"];
-    const AUX_SOURCES: &'static [u8] = &[0, 1, 2, 3, 4, 5, 31, 32, 33, 34];
+    const AUX_SOURCES: &'static [u8] = &[0, 7, 8, 9, 10, 5, 6, 31, 32, 33, 34];
 }
 
 impl_qx7_board_profile!(Gx12Spec);
@@ -64,7 +64,7 @@ mod tests {
         assert!(<Gx12Spec as Qx7FamilyProfile>::HAS_SG);
         assert!(<Gx12Spec as Qx7FamilyProfile>::HAS_SH);
         assert_eq!(<Gx12Spec as BoardProfile>::AUX_NAMES.len(), 10);
-        assert_eq!(<Gx12Spec as BoardProfile>::AUX_SOURCES.len(), 10);
+        assert_eq!(<Gx12Spec as BoardProfile>::AUX_SOURCES.len(), 11);
         assert_eq!(<Gx12Spec as BoardProfile>::DISPLAY_WIDTH, 128);
         assert_eq!(<Gx12Spec as BoardProfile>::DISPLAY_HEIGHT, 64);
         assert!(<Gx12Spec as BoardProfile>::HAS_ROTARY_ENCODER);

@@ -43,7 +43,7 @@ impl Qx7FamilyProfile for Qx7Spec {
     const AUX_NAMES: &'static [&'static str] =
         &["SA:", "SB:", "SC:", "SD:", "S1:", "S2:", "SF:", "SH:"];
     const ADAPTIVE_CH_NAMES: &'static [&'static str] = &["A", "B", "C", "D", "1", "2", "F", "H"];
-    const AUX_SOURCES: &'static [u8] = &[0, 1, 2, 3, 4, 5, 32, 34];
+    const AUX_SOURCES: &'static [u8] = &[0, 7, 8, 9, 10, 5, 6, 32, 34];
 }
 
 impl_qx7_board_profile!(Qx7Spec);

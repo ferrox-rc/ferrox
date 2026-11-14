@@ -328,8 +328,8 @@ pub trait TouchDriver {
     /// Check if touch interrupt line is asserted.
     fn is_touch_int_asserted(&mut self) -> bool;
 
-    /// Read latest touch coordinates if available.
-    fn read_touch(&mut self) -> Option<(u16, u16)>;
+    /// Read raw 7-byte FT6236 packet (`0x00..0x06`) if available.
+    fn read_touch(&mut self) -> Option<[u8; 7]>;
 }
 
 /// Dummy touch driver.
@@ -341,7 +341,7 @@ impl TouchDriver for NullTouchDriver {
     fn is_touch_int_asserted(&mut self) -> bool {
         false
     }
-    fn read_touch(&mut self) -> Option<(u16, u16)> {
+    fn read_touch(&mut self) -> Option<[u8; 7]> {
         None
     }
 }

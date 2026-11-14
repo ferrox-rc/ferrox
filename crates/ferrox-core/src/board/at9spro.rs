@@ -48,7 +48,7 @@ impl Qx7FamilyProfile for At9sProSpec {
     ];
     const ADAPTIVE_CH_NAMES: &'static [&'static str] =
         &["A", "B", "C", "D", "1", "2", "E", "F", "G", "H"];
-    const AUX_SOURCES: &'static [u8] = &[0, 1, 2, 3, 4, 5, 31, 32, 33, 34];
+    const AUX_SOURCES: &'static [u8] = &[0, 7, 8, 9, 10, 5, 6, 31, 32, 33, 34];
 }
 
 impl_qx7_board_profile!(At9sProSpec);

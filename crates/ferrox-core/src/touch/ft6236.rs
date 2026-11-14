@@ -116,17 +116,7 @@ pub fn read_touch() -> Option<TouchSample> {
     }
     #[cfg(not(test))]
     if let Some(ref mut d) = crate::hal::get_touch_driver() {
-        if let Some((raw_x, raw_y)) = d.read_touch() {
-            let mut buf = [0u8; 7];
-            buf[2] = 1;
-            buf[3] = ((raw_x >> 8) & 0x0F) as u8;
-            buf[4] = (raw_x & 0xFF) as u8;
-            buf[5] = ((raw_y >> 8) & 0x0F) as u8;
-            buf[6] = (raw_y & 0xFF) as u8;
-            Some(parse_packet(&buf))
-        } else {
-            None
-        }
+        d.read_touch().map(|buf| parse_packet(&buf))
     } else {
         None
     }

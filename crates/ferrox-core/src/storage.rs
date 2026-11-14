@@ -849,8 +849,8 @@ impl RadioStorage {
                 self.radio.get_adc_mode(3),
                 AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
             ), // SD
-            5 => self.radio.ext_switches != 0, // SE
-            6 => self.radio.ext_switches != 0, // SF
+            5 => self.is_source_available(31), // SE
+            6 => self.is_source_available(32), // SF
             _ => false,
         }
     }
@@ -884,7 +884,7 @@ impl RadioStorage {
         match src {
             0..=4 => true,                            // None, Roll, Pitch, Thr, Yaw
             5 => self.radio.get_adc_mode(4).is_pot(), // VRA
-            6 => self.radio.get_adc_mode(5).is_pot(), // VRB
+            6 => self.is_source_available(6),         // VRB / S2
             7 => matches!(
                 self.radio.get_adc_mode(0),
                 AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
@@ -901,10 +901,7 @@ impl RadioStorage {
                 self.radio.get_adc_mode(3),
                 AdcInputMode::TwoPos | AdcInputMode::ThreePos | AdcInputMode::InstantTrim
             ), // SD
-            31 => self.radio.ext_switches != 0,       // SE
-            32 => self.radio.ext_switches != 0,       // SF
-            33 => self.radio.j4_sg_sh_en != 0,        // SG
-            34 => self.radio.j4_sg_sh_en != 0,        // SH
+            31..=34 => self.is_source_available(src), // SE, SF, SG, SH
             35 => {
                 self.radio.ext_adc != 0
                     && matches!(
