@@ -155,6 +155,28 @@ cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-ea
 .\tools\build-sd-bin.bat pocket   # Windows
 ```
 
+#### FS-i6S MultiSwitch
+
+```bash
+# FS-i6S with MultiSwitch (omit soaring to stay within 128 KB flash):
+cargo build-i6s --no-default-features --features stm32,multiswitch
+```
+
+Enable the optional `multiswitch` Cargo feature using the command above (use
+`apm32,multiswitch` instead for APM32 hardware). It is disabled in normal builds;
+its stored model settings remain intact when switching firmware variants.
+
+In **Settings Menu → MultiSwitch**, configure up to four addresses (`0..255`,
+or `OFF`) and eight functions per address. Each function has a six-character
+label and either `TOGGLE` or `MOMENTARY` behavior. Configured addresses create
+compact dashboard pages **P6–P9**; an active soaring dashboard follows them.
+Tap a function to toggle it, or hold a momentary function; lifting the finger,
+leaving its target, changing pages, or opening the menu releases it. Swipe to
+change pages, tap the status bar for the next page, and hold the footer to open
+settings. Transmission requires CRSF and is disabled in USB simulator mode.
+Set4 commands repeat every 100 ms per address and yield to RC channel frames.
+Existing EEPROM models migrate with all MultiSwitch addresses disabled.
+
 ---
 
 ## 📚 Documentation Index

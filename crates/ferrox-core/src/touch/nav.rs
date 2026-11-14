@@ -103,6 +103,95 @@ static mut GLOBAL_SWIPE_TRACKER: SwipeTracker = SwipeTracker {
     last_move_ms: 0,
 };
 
+#[cfg(feature = "multiswitch")]
+#[derive(Default)]
+struct MultiSwitchTouch {
+    context: Option<(u8, usize)>,
+    held: Option<u8>,
+    tapped: Option<u8>,
+}
+
+#[cfg(feature = "multiswitch")]
+static mut MULTISWITCH_TOUCH: MultiSwitchTouch = MultiSwitchTouch {
+    context: None,
+    held: None,
+    tapped: None,
+};
+
+#[cfg(feature = "multiswitch")]
+pub fn set_multiswitch_context(context: Option<(u8, usize)>) {
+    let touch = unsafe { &mut *core::ptr::addr_of_mut!(MULTISWITCH_TOUCH) };
+    if touch.context != context {
+        touch.context = context;
+        touch.held = None;
+        touch.tapped = None;
+        unsafe { &mut *core::ptr::addr_of_mut!(GLOBAL_SWIPE_TRACKER) }.clear();
+    }
+}
+
+#[cfg(feature = "multiswitch")]
+pub fn take_multiswitch_touch() -> (Option<u8>, Option<u8>) {
+    let touch = unsafe { &mut *core::ptr::addr_of_mut!(MULTISWITCH_TOUCH) };
+    (touch.held, touch.tapped.take())
+}
+
+#[cfg(feature = "multiswitch")]
+fn multiswitch_touch_keys(
+    sample: &TouchSample,
+    tracker: &mut SwipeTracker,
+    touch: &mut MultiSwitchTouch,
+) -> u16 {
+    let mut keys = 0;
+    match sample.point {
+        Some(pt) if pt.event == TouchEventKind::PressDown => {
+            tracker.reset_at(pt.x, pt.y);
+            touch.held = crate::multiswitch::switch_at(pt.x, pt.y);
+        }
+        Some(pt) if pt.event == TouchEventKind::Contact && tracker.active => {
+            let dx = pt.x as i16 - tracker.start_x as i16;
+            let dy = pt.y as i16 - tracker.start_y as i16;
+            if !tracker.swiped && (dx.abs() >= 14 || dy.abs() >= 14) {
+                keys = if dx < -13 || dy > 13 { KEY_NAV_DOWN } else { KEY_NAV_UP };
+                tracker.swiped = true;
+            }
+            if tracker.swiped
+                || crate::multiswitch::switch_at(pt.x, pt.y)
+                    != crate::multiswitch::switch_at(tracker.start_x, tracker.start_y)
+            {
+                touch.held = None;
+            }
+            if !tracker.swiped && tracker.start_y >= 50 && pt.y >= 50 {
+                keys |= KEY_MENU_OPEN;
+            }
+        }
+        Some(pt) if pt.event == TouchEventKind::LiftUp => {
+            if tracker.active && !tracker.swiped {
+                let start = crate::multiswitch::switch_at(tracker.start_x, tracker.start_y);
+                if start == touch.held && start == crate::multiswitch::switch_at(pt.x, pt.y) {
+                    touch.tapped = start;
+                }
+                if tracker.start_y < 14 {
+                    keys |= KEY_NAV_DOWN;
+                }
+            }
+            touch.held = None;
+            tracker.clear();
+        }
+        None => {
+            if tracker.active && !tracker.swiped {
+                touch.tapped = touch.held;
+                if tracker.start_y < 14 {
+                    keys |= KEY_NAV_DOWN;
+                }
+            }
+            touch.held = None;
+            tracker.clear();
+        }
+        _ => {}
+    }
+    keys
+}
+
 /// Evaluates a valid touch sample and screen tap zones into UI navigation key flags.
 ///
 /// Only invoked when a touch interrupt event (pulse on PC12) has occurred and a valid
@@ -112,6 +201,13 @@ pub fn touch_to_nav_keys(sample: &TouchSample, menu_active: bool) -> u16 {
     #[cfg(not(test))]
     {
         tracker.last_packet_ms = crate::time::millis();
+    }
+    #[cfg(feature = "multiswitch")]
+    {
+        let touch = unsafe { &mut *core::ptr::addr_of_mut!(MULTISWITCH_TOUCH) };
+        if touch.context.is_some() && !menu_active {
+            return multiswitch_touch_keys(sample, tracker, touch);
+        }
     }
     touch_to_nav_keys_with_tracker(sample, menu_active, tracker)
 }
@@ -369,6 +465,15 @@ pub fn evaluate_tap_zones(x: u8, y: u8, menu_active: bool) -> u16 {
 /// Evaluates touch release when no touch packet / interrupt is asserted.
 pub fn process_touch_release(menu_active: bool) -> u16 {
     let tracker = unsafe { &mut *core::ptr::addr_of_mut!(GLOBAL_SWIPE_TRACKER) };
+    #[cfg(feature = "multiswitch")]
+    {
+        let touch = unsafe { &mut *core::ptr::addr_of_mut!(MULTISWITCH_TOUCH) };
+        if touch.context.is_some() && !menu_active {
+            return multiswitch_touch_keys(
+                &TouchSample { gesture: Gesture::None, point: None }, tracker, touch,
+            );
+        }
+    }
     let mut keys = 0u16;
     if tracker.active && !tracker.swiped {
         keys |= evaluate_tap_zones(tracker.start_x, tracker.start_y, menu_active);
@@ -493,12 +598,7 @@ pub fn update_inputs(
             #[cfg(test)]
             let now: u32 = 0;
             if now.wrapping_sub(tracker.last_packet_ms) >= 40 {
-                let mut keys = 0u16;
-                if !tracker.swiped {
-                    keys |= evaluate_tap_zones(tracker.start_x, tracker.start_y, menu_active);
-                }
-                tracker.clear();
-                keys
+                process_touch_release(menu_active)
             } else {
                 0
             }
@@ -515,6 +615,41 @@ pub fn update_inputs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "multiswitch")]
+    #[test]
+    fn multiswitch_touch_never_emits_trims_or_center_menu_hold() {
+        let mut tracker = SwipeTracker::default();
+        let mut touch = MultiSwitchTouch::default();
+        let sample = |event, x, y| TouchSample {
+            gesture: Gesture::None,
+            point: Some(TouchPoint { event, x, y, raw_x: 0, raw_y: 0 }),
+        };
+        assert_eq!(multiswitch_touch_keys(&sample(TouchEventKind::PressDown, 2, 15), &mut tracker, &mut touch), 0);
+        assert_eq!(touch.held, Some(0));
+        assert_eq!(multiswitch_touch_keys(&sample(TouchEventKind::Contact, 2, 15), &mut tracker, &mut touch), 0);
+        assert_eq!(multiswitch_touch_keys(&sample(TouchEventKind::LiftUp, 2, 15), &mut tracker, &mut touch), 0);
+        assert_eq!(touch.held, None);
+        assert_eq!(touch.tapped.take(), Some(0));
+        multiswitch_touch_keys(&sample(TouchEventKind::PressDown, 30, 15), &mut tracker, &mut touch);
+        multiswitch_touch_keys(&sample(TouchEventKind::Contact, 32, 15), &mut tracker, &mut touch);
+        assert_eq!(touch.held, None);
+        multiswitch_touch_keys(&sample(TouchEventKind::LiftUp, 32, 15), &mut tracker, &mut touch);
+        assert_eq!(touch.tapped, None);
+        multiswitch_touch_keys(&sample(TouchEventKind::PressDown, 60, 40), &mut tracker, &mut touch);
+        assert_eq!(multiswitch_touch_keys(&sample(TouchEventKind::Contact, 60, 40), &mut tracker, &mut touch), 0);
+        assert_eq!(multiswitch_touch_keys(&sample(TouchEventKind::Contact, 60, 56), &mut tracker, &mut touch), KEY_NAV_DOWN);
+        assert_eq!(touch.held, None);
+        multiswitch_touch_keys(&sample(TouchEventKind::LiftUp, 60, 56), &mut tracker, &mut touch);
+        assert_eq!(touch.tapped, None);
+        multiswitch_touch_keys(&sample(TouchEventKind::PressDown, 60, 53), &mut tracker, &mut touch);
+        assert_eq!(multiswitch_touch_keys(&sample(TouchEventKind::Contact, 60, 53), &mut tracker, &mut touch), KEY_MENU_OPEN);
+        multiswitch_touch_keys(&sample(TouchEventKind::LiftUp, 60, 53), &mut tracker, &mut touch);
+        multiswitch_touch_keys(&sample(TouchEventKind::PressDown, 2, 15), &mut tracker, &mut touch);
+        multiswitch_touch_keys(&TouchSample { gesture: Gesture::None, point: None }, &mut tracker, &mut touch);
+        assert_eq!(touch.held, None);
+        assert_eq!(touch.tapped, Some(0));
+    }
 
     #[test]
     fn test_gesture_navigation() {

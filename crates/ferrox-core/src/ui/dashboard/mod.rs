@@ -27,6 +27,8 @@ pub struct DashboardController {
     pub min_rx_v_mv: u16,
     pub telem_seen: bool,
     pub max_pages: usize,
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_states: [u8; 4],
 }
 
 impl Default for DashboardController {
@@ -46,7 +48,43 @@ impl DashboardController {
             min_rx_v_mv: 0xFFFF,
             telem_seen: false,
             max_pages: 5,
+            #[cfg(feature = "multiswitch")]
+            multiswitch_states: [0; 4],
         }
+    }
+
+    pub fn configure_pages(&mut self, storage: &RadioStorage) {
+        self.max_pages = 5;
+        #[cfg(feature = "multiswitch")]
+        {
+            self.max_pages += crate::multiswitch::enabled_count(
+                &storage.active_model().multiswitch_addresses,
+            );
+        }
+        #[cfg(any(feature = "soaring", test))]
+        if storage.active_model().soaring.is_active() {
+            self.max_pages += 1;
+        }
+        #[cfg(not(any(feature = "soaring", test, feature = "multiswitch")))]
+        let _ = storage;
+        if self.page >= self.max_pages {
+            self.page = 0;
+        }
+    }
+
+    #[cfg(feature = "multiswitch")]
+    pub fn multiswitch_slot(&self, storage: &RadioStorage) -> Option<usize> {
+        self.page.checked_sub(5).and_then(|ordinal| {
+            crate::multiswitch::slot_at(&storage.active_model().multiswitch_addresses, ordinal)
+        })
+    }
+
+    #[cfg(any(feature = "soaring", test))]
+    pub fn is_soaring_page(&self, storage: &RadioStorage) -> bool {
+        let page = 5;
+        #[cfg(feature = "multiswitch")]
+        let page = page + crate::multiswitch::enabled_count(&storage.active_model().multiswitch_addresses);
+        storage.active_model().soaring.is_active() && self.page == page
     }
 
     /// Advance to the next dashboard page.
@@ -96,21 +134,7 @@ impl DashboardController {
         buzzer: &mut Buzzer,
         now_ms: u32,
     ) {
-        #[cfg(any(feature = "soaring", test))]
-        {
-            self.max_pages = if storage.active_model().soaring.is_active() {
-                6
-            } else {
-                5
-            };
-        }
-        #[cfg(not(any(feature = "soaring", test)))]
-        {
-            self.max_pages = 5;
-        }
-        if self.page >= self.max_pages {
-            self.page = 0;
-        }
+        self.configure_pages(storage);
 
         lcd.clear_buffer();
 
@@ -132,6 +156,14 @@ impl DashboardController {
 
         let blink_on = (self.blink_phase & 0x08) != 0;
         self.blink_phase = self.blink_phase.wrapping_add(1);
+
+        #[cfg(feature = "multiswitch")]
+        if let Some(slot) = self.multiswitch_slot(storage) {
+            pages::multiswitch::render(
+                lcd, storage, self.multiswitch_states[slot], slot, self.page, self.max_pages,
+            );
+            return;
+        }
 
         match self.page {
             0 => pages::gimbals::render(
@@ -170,12 +202,50 @@ impl DashboardController {
             #[cfg(not(any(feature = "soaring", test)))]
             _ => {}
         }
+        #[cfg(feature = "multiswitch")]
+        if self.page < 5
+            && !is_binding
+            && (self.page != 0 || trims.last_active == crate::trim::ActiveTrim::None)
+        {
+            let label = crate::ui::format::dashboard_page_label(self.page, self.max_pages);
+            lcd.fill_rect(2, 57, 24, 6, false);
+            lcd.draw_str_4x6(2, 57, crate::ui::format::ascii_as_str(&label).trim(), false);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "multiswitch")]
+    #[test]
+    fn multiswitch_pages_are_compact_and_keep_soaring_separate() {
+        let mut dash = DashboardController::new();
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.multiswitch_addresses = [-1, 0, -1, 255];
+        dash.configure_pages(&storage);
+        assert_eq!(dash.max_pages, 7);
+        dash.page = 5;
+        assert_eq!(dash.multiswitch_slot(&storage), Some(1));
+        dash.page = 6;
+        assert_eq!(dash.multiswitch_slot(&storage), Some(3));
+        storage.active_model.soaring.discipline = 1;
+        dash.configure_pages(&storage);
+        assert_eq!(dash.max_pages, 8);
+        dash.page = 7;
+        assert_eq!(dash.multiswitch_slot(&storage), None);
+        assert!(dash.is_soaring_page(&storage));
+        storage.active_model.multiswitch_addresses = [0, 1, 2, 3];
+        dash.configure_pages(&storage);
+        assert_eq!(dash.max_pages, 10);
+        dash.page = 9;
+        assert!(dash.is_soaring_page(&storage));
+        storage.active_model.multiswitch_addresses = [-1; 4];
+        dash.configure_pages(&storage);
+        assert_eq!(dash.max_pages, 6);
+        assert_eq!(dash.page, 0);
+    }
 
     #[test]
     fn test_dashboard_5page_cycling() {

@@ -3,4 +3,6 @@ pub mod channels;
 pub mod f5j;
 pub mod gimbals;
 pub mod model;
+#[cfg(feature = "multiswitch")]
+pub mod multiswitch;
 pub mod telemetry;
