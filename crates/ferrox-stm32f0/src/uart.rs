@@ -327,6 +327,15 @@ impl Default for I6sSerialPort {
 }
 
 impl SerialPort for I6sSerialPort {
+    #[cfg(feature = "multiswitch")]
+    fn try_write_bytes(&mut self, bytes: &[u8]) -> bool {
+        if bytes.is_empty() || bytes.len() > TX_BUF_SIZE || I6S_TX_BUSY.load(Ordering::Acquire) {
+            return false;
+        }
+        self.write_bytes(bytes);
+        true
+    }
+
     fn init(&mut self, active_high: bool) {
         self.active_high = active_high;
         self.power_on = false;

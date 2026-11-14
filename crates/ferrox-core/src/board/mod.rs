@@ -105,6 +105,8 @@ impl DsmSubProtocol {
 /// Top-level Main Menu entries selectable per board via [`BoardProfile::MAIN_MENU_ITEMS`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum MainMenuItem {
+    #[cfg(feature = "multiswitch")]
+    MultiSwitch,
     ModelSelect,
     ModelSetup,
     DualRateExpo,
@@ -123,6 +125,8 @@ impl MainMenuItem {
     #[inline]
     pub const fn title(self) -> &'static str {
         match self {
+            #[cfg(feature = "multiswitch")]
+            Self::MultiSwitch => "MultiSwitch",
             Self::ModelSelect => "Model Select",
             Self::ModelSetup => "Model Setup",
             Self::DualRateExpo => "Dual Rate/Expo",
@@ -141,6 +145,8 @@ impl MainMenuItem {
     #[inline]
     pub const fn glyph(self) -> &'static [u8; 18] {
         match self {
+            #[cfg(feature = "multiswitch")]
+            Self::MultiSwitch => &glyphs::GLYPH_TOGGLE_SWITCH,
             Self::ModelSelect => &glyphs::GLYPH_AIRPLANE,
             Self::ModelSetup => &glyphs::GLYPH_AIRPLANE_COG,
             Self::DualRateExpo => &glyphs::GLYPH_CHART_LINE,

@@ -27,6 +27,12 @@ pub enum MenuState {
     WingMixer,
     MixerLineEdit,
     GlobalVars,
+    #[cfg(feature = "multiswitch")]
+    MultiSwitchSetup,
+    #[cfg(feature = "multiswitch")]
+    MultiSwitchPageSetup,
+    #[cfg(feature = "multiswitch")]
+    MultiSwitchButtonSetup,
     LogicalSwitches,
     AuxChannels,
     ChannelReverse,
@@ -70,6 +76,8 @@ pub struct MenuController {
     pub editing: bool,
     pub request_calibration: bool,
     pub request_bind: bool,
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_dirty: bool,
     prev_keys: u16,
     pub waiting_release: bool,
     up_hold_ms: u16,
@@ -103,6 +111,8 @@ impl MenuController {
             editing: false,
             request_calibration: false,
             request_bind: false,
+            #[cfg(feature = "multiswitch")]
+            multiswitch_dirty: false,
             prev_keys: 0xFFFF,
             waiting_release: false,
             up_hold_ms: 0,
@@ -438,6 +448,12 @@ impl MenuController {
             }
             MenuState::GlobalVars => {
                 screens::mixer::update_global_vars(self, lcd, &nav_keys, storage, buzzer);
+            }
+            #[cfg(feature = "multiswitch")]
+            MenuState::MultiSwitchSetup
+            | MenuState::MultiSwitchPageSetup
+            | MenuState::MultiSwitchButtonSetup => {
+                screens::multiswitch::update(self, lcd, &nav_keys, storage, buzzer);
             }
             MenuState::LogicalSwitches => {
                 #[cfg(any(feature = "logical-switches", test))]

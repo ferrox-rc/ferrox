@@ -339,6 +339,7 @@ Compile-time Cargo features allow tailoring flash/RAM usage on 128 KB STM32F072 
 | `rf-cc2500` | **On** (MPM) | **On** (MPM / SPI) | CC2500 / Multi-Module protocols (FrSky D8/D16/LBT, SFHSS, Graupner HoTT) |
 | `rf-dsm` | **On** | **On** | Spektrum DSM2/DSMX satellite RX & MPM serial protocol |
 | `touch` | `i6s` **On**, `i6x` **Off** | **Off** | FT6236 capacitive touch screen driver |
+| `multiswitch` | `i6s` **Off** (opt-in) | N/A | Up to four CRSF Set4 dashboards with eight toggle/momentary functions each |
 | `edgetx-bootloader` | N/A | Optional | Relocates `.text` / `VTOR` to `0x08008000` with `.fwversiondata` header for EdgeTX SD dual-boot (`tools/build-sd-bin.*`) |
 | `stm32` / `apm32` | `stm32` (default) | N/A | Selects STM32F072 vs APM32F072 clone peripheral handling |
 
@@ -346,7 +347,27 @@ Compile-time Cargo features allow tailoring flash/RAM usage on 128 KB STM32F072 
 # Custom FS-i6X / FS-i6S release build with individually selected features:
 cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi --no-default-features --features stm32,rf-afhds2a,rf-crsf -- -O binary ferrox-i6x-slim.bin
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi --no-default-features --features stm32,touch,rf-crsf,soaring -- -O binary ferrox-i6s-soaring.bin
+
+# FS-i6S with MultiSwitch (omit soaring to stay within 128 KB flash):
+cargo build-i6s --no-default-features --features stm32,multiswitch
 ```
+
+#### FS-i6S MultiSwitch
+
+Enable the optional `multiswitch` Cargo feature using the command above (use
+`apm32,multiswitch` instead for APM32 hardware). It is disabled in normal builds;
+its stored model settings remain intact when switching firmware variants.
+
+In **Settings Menu → MultiSwitch**, configure up to four addresses (`0..255`,
+or `OFF`) and eight functions per address. Each function has a six-character
+label and either `TOGGLE` or `MOMENTARY` behavior. Configured addresses create
+compact dashboard pages **P6–P9**; an active soaring dashboard follows them.
+Tap a function to toggle it, or hold a momentary function; lifting the finger,
+leaving its target, changing pages, or opening the menu releases it. Swipe to
+change pages, tap the status bar for the next page, and hold the footer to open
+settings. Transmission requires CRSF and is disabled in USB simulator mode.
+Set4 commands repeat every 100 ms per address and yield to RC channel frames.
+Existing EEPROM models migrate with all MultiSwitch addresses disabled.
 
 Flash the extracted `.bin` file via USB DFU:
 ```bash

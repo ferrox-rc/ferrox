@@ -85,6 +85,8 @@ pub const STATUS_POLL: u8 = 6;
 pub const CRSF_FRAME_MAX_SIZE: usize = 64;
 pub const CRSF_RC_FRAME_SIZE: usize = 26; // 1 (addr) + 1 (len) + 1 (type) + 22 (payload) + 1 (crc)
 pub const CRSF_RC_EXT_FRAME_SIZE: usize = 27; // 1 (addr) + 1 (len) + 1 (type) + 23 (payload) + 1 (crc)
+#[cfg(feature = "multiswitch")]
+pub const CRSF_SET4_FRAME_SIZE: usize = 12;
 
 pub const CRSF_CHANNELS_STATUS_ARMED: u8 = 0x01;
 pub const CRSF_CHANNELS_STATUS_ARMING_MODE_CH5: u8 = 0x02;
@@ -208,6 +210,41 @@ pub fn crc8(data: &[u8]) -> u8 {
         crc = CRC8_TABLE[(crc ^ b) as usize];
     }
     crc
+}
+
+/// Build the MultiSwitch Set4 command: eight two-bit output states, big-endian.
+/// Command CRC (0xBA) covers bytes 2..10; outer CRSF CRC (0xD5) includes it.
+#[cfg(feature = "multiswitch")]
+pub fn build_set4(
+    address: u8,
+    switches: u8,
+    frame: &mut [u8; CRSF_SET4_FRAME_SIZE],
+) -> usize {
+    let mut state = 0u16;
+    for index in 0..8 {
+        if switches & (1 << index) != 0 {
+            state |= 1 << (2 * index);
+        }
+    }
+    *frame = [
+        CRSF_SYNC_BYTE, 10, 0x32, CRSF_ADDRESS_BROADCAST,
+        CRSF_ADDRESS_RADIO_TRANSMITTER, 0xA1, 0x07, address,
+        (state >> 8) as u8, state as u8, 0, 0,
+    ];
+    let mut command_crc = 0u8;
+    for &byte in &frame[2..10] {
+        command_crc ^= byte;
+        for _ in 0..8 {
+            command_crc = if command_crc & 0x80 != 0 {
+                (command_crc << 1) ^ 0xBA
+            } else {
+                command_crc << 1
+            };
+        }
+    }
+    frame[10] = command_crc;
+    frame[11] = crc8(&frame[2..11]);
+    CRSF_SET4_FRAME_SIZE
 }
 
 /// Convert a microsecond pulse width (CHANNEL_MIN_US..CHANNEL_MAX_US, center CHANNEL_CENTER_US)
@@ -696,6 +733,25 @@ pub fn build_param_write_frame_multi(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "multiswitch")]
+    #[test]
+    fn test_set4_reference_vectors_and_double_crc() {
+        let vectors = [
+            (0, 0, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x00, 0x00, 0x00, 0x7E, 0xDE]),
+            (0, 1, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x00, 0x00, 0x01, 0xC4, 0x9A]),
+            (255, 0x80, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0xFF, 0x40, 0x00, 0x1C, 0x1E]),
+            (42, 0xFF, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x2A, 0x55, 0x55, 0xFE, 0xC0]),
+        ];
+        for (address, switches, expected) in vectors {
+            let mut frame = [0xFF; CRSF_SET4_FRAME_SIZE];
+            assert_eq!(build_set4(address, switches, &mut frame), 12);
+            assert_eq!(frame[1] as usize + 2, frame.len());
+            assert_eq!(frame, expected);
+            assert_eq!(frame[11], crc8(&frame[2..11]));
+            assert_ne!(frame[11], crc8(&frame[2..10]));
+        }
+    }
     use crate::mixer::CHANNEL_CENTER_US;
 
     #[test]

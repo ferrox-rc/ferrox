@@ -17,3 +17,4 @@ ferrox-core = { path = "../ferrox-core" }
 default = ["stm32"]
 stm32 = []
 apm32 = []
+multiswitch = ["ferrox-core/multiswitch"]

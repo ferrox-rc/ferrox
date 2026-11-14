@@ -82,6 +82,24 @@ pub fn read_byte() -> Option<u8> {
     }
 }
 
+#[cfg(feature = "multiswitch")]
+pub fn try_write_bytes(bytes: &[u8]) -> bool {
+    #[cfg(test)]
+    {
+        if mock::tx_blocked() {
+            return false;
+        }
+        mock::record_tx(bytes);
+        true
+    }
+    #[cfg(not(test))]
+    if let Some(ref mut p) = unsafe { SERIAL_PORT.as_mut() } {
+        p.try_write_bytes(bytes)
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 pub mod mock {
     extern crate std;
@@ -90,6 +108,18 @@ pub mod mock {
 
     static RX_QUEUE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
     static TX_LOG: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+    #[cfg(feature = "multiswitch")]
+    static TX_BLOCKED: Mutex<bool> = Mutex::new(false);
+
+    #[cfg(feature = "multiswitch")]
+    pub fn set_tx_blocked(blocked: bool) {
+        *TX_BLOCKED.lock().unwrap() = blocked;
+    }
+
+    #[cfg(feature = "multiswitch")]
+    pub fn tx_blocked() -> bool {
+        *TX_BLOCKED.lock().unwrap()
+    }
 
     pub fn push_rx_bytes(bytes: &[u8]) {
         let mut q = RX_QUEUE.lock().unwrap();
@@ -120,6 +150,8 @@ pub mod mock {
     }
 
     pub fn clear() {
+        #[cfg(feature = "multiswitch")]
+        set_tx_blocked(false);
         RX_QUEUE.lock().unwrap().clear();
         TX_LOG.lock().unwrap().clear();
     }

@@ -54,6 +54,8 @@ impl BoardProfile for I6sSpec {
         MainMenuItem::DualRateExpo,
         MainMenuItem::ThrottleCurve,
         MainMenuItem::WingMixer,
+        #[cfg(feature = "multiswitch")]
+        MainMenuItem::MultiSwitch,
         MainMenuItem::AuxChannels,
         MainMenuItem::ChannelReverse,
         MainMenuItem::RadioSetup,

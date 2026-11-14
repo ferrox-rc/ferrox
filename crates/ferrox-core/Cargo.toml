@@ -32,6 +32,7 @@ board-x9e = ["rf-crsf", "rf-cc2500", "rf-dsm", "dsm-fwd-prog", "voice-audio", "s
 board-at9spro = ["rf-crsf", "rf-cc2500", "rf-dsm", "dsm-fwd-prog", "voice-audio", "sd-logging", "soaring", "logical-switches"]
 board-gx12 = ["rf-crsf", "rf-cc2500", "rf-dsm", "dsm-fwd-prog", "voice-audio", "sd-logging", "soaring", "logical-switches"]
 touch = []
+multiswitch = ["touch", "rf-crsf"]
 voice-audio = []
 sd-logging = []
 soaring = []

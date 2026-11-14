@@ -18,6 +18,26 @@ pub fn write_dec2(val: u8, buf: &mut [u8]) {
 
 const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";
 
+#[cfg(feature = "multiswitch")]
+pub fn dashboard_page_label(page: usize, page_count: usize) -> [u8; 6] {
+    let mut buf = [b' '; 6];
+    buf[0] = b'P';
+    let mut pos = 1;
+    for (index, value) in [page + 1, page_count].into_iter().enumerate() {
+        if value >= 10 {
+            buf[pos] = b'0' + (value / 10) as u8;
+            pos += 1;
+        }
+        buf[pos] = b'0' + (value % 10) as u8;
+        pos += 1;
+        if index == 0 {
+            buf[pos] = b'/';
+            pos += 1;
+        }
+    }
+    buf
+}
+
 pub fn u32_to_hex(val: u32, buf: &mut [u8; 8]) {
     for i in 0..8 {
         buf[7 - i] = HEX_CHARS[((val >> (i * 4)) & 0x0F) as usize];

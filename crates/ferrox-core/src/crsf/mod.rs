@@ -82,6 +82,22 @@ pub fn update_channels(
             uart::write_bytes(&frame[..len]);
         }
     }
+
+}
+
+/// Try one Set4 packet between RC frames; retry later when the UART rejects it.
+/// Only whole-packet acceptance returns true. This never advances RC pacing.
+#[cfg(feature = "multiswitch")]
+pub fn send_set4(now_ms: u32, address: u8, switches: u8) -> bool {
+    unsafe {
+        let elapsed = now_ms.wrapping_sub(LAST_TX_MS);
+        if !CRSF_ENABLED || !(2..8).contains(&elapsed) {
+            return false;
+        }
+        let mut frame = [0u8; protocol::CRSF_SET4_FRAME_SIZE];
+        let len = protocol::build_set4(address, switches, &mut frame);
+        uart::try_write_bytes(&frame[..len])
+    }
 }
 
 pub const MAX_PARAMS: usize = 48;
@@ -1517,6 +1533,38 @@ mod tests {
             TELEMETRY = CrsfTelemetry::new();
             uart::mock::clear();
         }
+    }
+
+    #[cfg(feature = "multiswitch")]
+    #[test]
+    fn test_set4_admission_between_rc_packets() {
+        reset_state();
+        set_enabled(false, 0, false);
+        assert!(!send_set4(2, 42, 255));
+        assert_eq!(uart::mock::tx_count(), 0);
+        set_enabled(true, 0, false);
+        for now in [0, 1, 8, 9, 10, 100] {
+            assert!(!send_set4(now, 42, 255));
+        }
+        assert_eq!(uart::mock::tx_count(), 0);
+        assert!(send_set4(2, 42, 255));
+        assert!(send_set4(7, 42, 255));
+        let tx = uart::mock::take_tx();
+        assert_eq!(tx.len(), 2);
+        let mut expected = [0; protocol::CRSF_SET4_FRAME_SIZE];
+        protocol::build_set4(42, 255, &mut expected);
+        assert_eq!(tx[0], expected);
+        assert_eq!(unsafe { LAST_TX_MS }, 0);
+        let channels = [1500; crate::mixer::NUM_CHANNELS];
+        update_channels(10, &channels, false, false);
+        assert_eq!(uart::mock::take_tx()[0].len(), 26);
+        assert!(!send_set4(11, 0, 0));
+        assert!(send_set4(12, 0, 0));
+        unsafe { LAST_TX_MS = u32::MAX - 1; }
+        assert!(!send_set4(u32::MAX, 0, 0));
+        assert!(send_set4(0, 0, 0));
+        assert!(!send_set4(6, 0, 0));
+        reset_state();
     }
 
     unsafe fn add_test_param(
