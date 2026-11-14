@@ -54,12 +54,14 @@ def main():
         total = len(pad) + len(app_bytes)
         print(f"Created {outfile}: {total} bytes (32768 B bootloader pad + {len(app_bytes)} B app)")
         git_res = subprocess.run(
-            ["git", "log", "-1", "--oneline"],
+            ["git", "-c", "safe.directory=*", "log", "-1", "--oneline"],
             capture_output=True,
             text=True,
         )
         if git_res.returncode == 0 and git_res.stdout.strip():
             print(f"Commit : {git_res.stdout.strip()}")
+        else:
+            print("Commit : (unavailable - not a git checkout)")
 
 if __name__ == "__main__":
     main()

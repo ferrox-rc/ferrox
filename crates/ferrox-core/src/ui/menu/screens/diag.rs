@@ -17,6 +17,7 @@ pub fn update_diag_anas(
     keys: &NavKeys,
     raw_adc: &[u16; adc::NUM_CHANNELS],
     switches: &crate::input::Switches,
+    stick_mode: u8,
     buzzer: &mut Buzzer,
 ) {
     if keys.cancel {
@@ -48,7 +49,20 @@ pub fn update_diag_anas(
     match current_page {
         DiagPage::Analog1To6 => {
             widgets::draw_header(lcd, "ANALOG (1-6)");
-            let names = ["RH:AIL", "RV:ELE", "LV:THR", "LH:RUD", "SW:SA ", "SW:SB "];
+            let names = match crate::safety::StickMode::from_u8(stick_mode) {
+                crate::safety::StickMode::Mode1 => {
+                    ["RH:AIL", "RV:THR", "LV:ELE", "LH:RUD", "SW:SA ", "SW:SB "]
+                }
+                crate::safety::StickMode::Mode2 => {
+                    ["RH:AIL", "RV:ELE", "LV:THR", "LH:RUD", "SW:SA ", "SW:SB "]
+                }
+                crate::safety::StickMode::Mode3 => {
+                    ["RH:RUD", "RV:THR", "LV:ELE", "LH:AIL", "SW:SA ", "SW:SB "]
+                }
+                crate::safety::StickMode::Mode4 => {
+                    ["RH:RUD", "RV:ELE", "LV:THR", "LH:AIL", "SW:SA ", "SW:SB "]
+                }
+            };
             for (i, &name) in names.iter().enumerate() {
                 let y = 13 + (i as i32 * 7);
                 let raw = raw_adc[i].min(4095);
@@ -70,7 +84,7 @@ pub fn update_diag_anas(
         DiagPage::ExtSwitches => {
             widgets::draw_header(lcd, ActiveBoard::DIAG_SW_TITLE);
 
-            #[cfg(feature = "board-i6s")]
+            #[cfg(not(feature = "board-i6x"))]
             {
                 let items = [
                     ("SW:SE", switches.se),
@@ -81,18 +95,17 @@ pub fn update_diag_anas(
                 for (i, &(label, pos)) in items.iter().enumerate() {
                     let y = 13 + (i as i32 * 9);
                     lcd.draw_str_4x6(2, y, label, false);
-                    let state_str = if pos == SwitchPos::Down {
-                        "DN (LOW)"
-                    } else {
-                        "UP (HIGH)"
+                    let (state_str, fill) = match pos {
+                        SwitchPos::Up => ("UP (HIGH)", 0),
+                        SwitchPos::Mid => ("MID", 15),
+                        SwitchPos::Down => ("DN (LOW)", 30),
                     };
-                    let fill = if pos == SwitchPos::Down { 30 } else { 0 };
                     widgets::draw_bar_gauge(lcd, 32, y, 30, 6, fill);
                     lcd.draw_str_4x6(66, y, state_str, false);
                 }
             }
 
-            #[cfg(not(feature = "board-i6s"))]
+            #[cfg(feature = "board-i6x")]
             {
                 let ext_active = crate::input::is_ext_switches_enabled();
                 let cfg_label = if ext_active {

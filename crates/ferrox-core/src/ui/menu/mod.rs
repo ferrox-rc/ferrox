@@ -490,7 +490,15 @@ impl MenuController {
                 );
             }
             MenuState::DiagAnas => {
-                screens::diag::update_diag_anas(self, lcd, &nav_keys, raw_adc, switches, buzzer);
+                screens::diag::update_diag_anas(
+                    self,
+                    lcd,
+                    &nav_keys,
+                    raw_adc,
+                    switches,
+                    storage.radio.stick_mode,
+                    buzzer,
+                );
             }
             MenuState::SystemInfo => {
                 screens::diag::update_system_info(self, lcd, &nav_keys, buzzer);

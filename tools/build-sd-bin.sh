@@ -71,6 +71,8 @@ cat "${PAD_BIN}" "${APP_BIN}" > "${OUT_FILE}"
 TOTAL_BYTES=$(wc -c < "${OUT_FILE}")
 APP_BYTES=$(wc -c < "${APP_BIN}")
 echo "Created ${OUT_FILE}: ${TOTAL_BYTES} bytes (32768 B bootloader pad + ${APP_BYTES} B app)"
-if LATEST_COMMIT=$(git log -1 --oneline 2>/dev/null) && [ -n "${LATEST_COMMIT}" ]; then
+if LATEST_COMMIT=$(git -c safe.directory='*' log -1 --oneline 2>/dev/null) && [ -n "${LATEST_COMMIT}" ]; then
     echo "Commit : ${LATEST_COMMIT}"
+else
+    echo "Commit : (unavailable - not a git checkout)"
 fi

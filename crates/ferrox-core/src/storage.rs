@@ -1254,7 +1254,8 @@ impl RadioStorage {
         if m.rx_out_mode > 1 {
             m.rx_out_mode = 0;
         }
-        if m.rx_serial_proto > 1 {
+        let max_serial_proto = if m.rf_protocol == 2 { 6 } else { 1 };
+        if m.rx_serial_proto > max_serial_proto {
             m.rx_serial_proto = 0;
         }
         if m.name[0] == 0 || m.name[0] == 0xFF {

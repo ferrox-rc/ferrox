@@ -201,19 +201,7 @@ impl BoardIdleHook for Qx7IdleState {
                 .tele
                 .update((edgetx_keys & EDGETX_KEY_TELE) != 0, dt_ms)
             {
-                PressEvent::Short => {
-                    let tele_page = 4usize.min(dashboard.max_pages.saturating_sub(1));
-                    if menu_active {
-                        menu_controller.close(buzzer);
-                        dashboard.page = tele_page;
-                    } else if dashboard.page == tele_page {
-                        dashboard.page = 0;
-                        buzzer.click();
-                    } else {
-                        dashboard.page = tele_page;
-                        buzzer.click();
-                    }
-                }
+                PressEvent::Short => menu_controller.open_at(MenuState::TelemSetup, buzzer),
                 PressEvent::Long => menu_controller.open_at(MenuState::ChannelMonitor, buzzer),
                 PressEvent::None => {}
             }
@@ -419,7 +407,12 @@ macro_rules! impl_qx7_board_profile {
 
             #[inline]
             fn calculate_battery_mv(raw: u16) -> u16 {
-                (raw as u32 * 9900 / 4095) as u16
+                if raw == 0 {
+                    return 0;
+                }
+                let mv = (raw as u64 * 3300 * 659) / (4095 * 160);
+                let drop = if raw > 100 { 250 } else { 0 };
+                (mv as u32 + drop) as u16
             }
 
             #[inline]
@@ -589,24 +582,30 @@ macro_rules! impl_qx7_board_profile {
                 )
             }
 
-            fn render_default_layout(
-                lcd: &mut St7567,
-                state: &InputState,
-                _storage: &RadioStorage,
-            ) {
-                draw_switch_slot_i6x(lcd, 2, 9, "A", state.switches.sa);
-                draw_switch_slot_i6x(lcd, 20, 27, "B", state.switches.sb);
-                draw_switch_slot_i6x(lcd, 38, 45, "C", state.switches.sc);
-                draw_switch_slot_i6x(lcd, 56, 63, "D", state.switches.sd);
-                lcd.draw_str_4x6(74, 47, "VR", false);
-                crate::ui::widgets::draw_split_pot_bar(
-                    lcd,
-                    84,
-                    46,
-                    42,
-                    state.pots.vr1,
-                    state.pots.vr2,
-                );
+            fn render_default_layout(lcd: &mut St7567, state: &InputState, storage: &RadioStorage) {
+                if <$spec as Qx7FamilyProfile>::HAS_SE
+                    || <$spec as Qx7FamilyProfile>::HAS_SF
+                    || <$spec as Qx7FamilyProfile>::HAS_SG
+                    || <$spec as Qx7FamilyProfile>::HAS_SH
+                {
+                    crate::ui::dashboard::pages::gimbals::render_adaptive_layout(
+                        lcd, state, storage,
+                    );
+                } else {
+                    draw_switch_slot_i6x(lcd, 2, 9, "A", state.switches.sa);
+                    draw_switch_slot_i6x(lcd, 20, 27, "B", state.switches.sb);
+                    draw_switch_slot_i6x(lcd, 38, 45, "C", state.switches.sc);
+                    draw_switch_slot_i6x(lcd, 56, 63, "D", state.switches.sd);
+                    lcd.draw_str_4x6(74, 47, "VR", false);
+                    crate::ui::widgets::draw_split_pot_bar(
+                        lcd,
+                        84,
+                        46,
+                        42,
+                        state.pots.vr1,
+                        state.pots.vr2,
+                    );
+                }
             }
 
             fn append_extra_switches(
@@ -763,21 +762,33 @@ mod tests {
         assert_eq!(menu.state, MenuState::ModelSelect);
         tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
 
-        // TELE short while in menu -> closes menu and jumps to Telemetry page (4)
+        // TELE short while in menu -> jumps directly to TelemSetup menu
         tick(
             &mut idle,
             50,
             0,
             EDGETX_KEY_TELE,
+            &mut dash,
+            &mut menu,
+            &mut buzzer,
+        );
+        tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
+        assert!(menu.is_active());
+        assert_eq!(menu.state, MenuState::TelemSetup);
+
+        // EXIT long -> closes menu, then TELE short from dashboard -> opens TelemSetup
+        tick(
+            &mut idle,
+            600,
+            1 << 11,
+            0,
             &mut dash,
             &mut menu,
             &mut buzzer,
         );
         tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
         assert!(!menu.is_active());
-        assert_eq!(dash.page, 4);
 
-        // TELE short again on Telemetry page -> toggles back to page 0
         tick(
             &mut idle,
             50,
@@ -788,7 +799,8 @@ mod tests {
             &mut buzzer,
         );
         tick(&mut idle, 10, 0, 0, &mut dash, &mut menu, &mut buzzer);
-        assert_eq!(dash.page, 0);
+        assert!(menu.is_active());
+        assert_eq!(menu.state, MenuState::TelemSetup);
 
         // TELE long -> ChannelMonitor
         tick(

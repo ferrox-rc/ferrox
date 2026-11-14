@@ -689,8 +689,8 @@ mod tests {
         let high = calculate_battery_mv(4095);
 
         assert!(low <= 200);
-        assert!(mid > 3000 && mid < 5500, "Actual half-scale: {}", mid);
-        assert!(high > 6000 && high < 10500, "Actual full-scale: {}", high);
+        assert!(mid > 3000 && mid < 7500, "Actual half-scale: {}", mid);
+        assert!(high > 6000 && high < 14500, "Actual full-scale: {}", high);
     }
 
     #[test]

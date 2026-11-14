@@ -82,7 +82,7 @@ impl TouchDriver for Stm32f0TouchDriver {
                     (2 << 20) // SCLDEL
                     | (1 << 16) // SDADEL
                     | (3 << 8)  // SCLH
-                    | 6,        // SCLL
+                    | 6, // SCLL
                 )
             });
 

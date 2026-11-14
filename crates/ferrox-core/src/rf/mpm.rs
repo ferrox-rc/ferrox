@@ -13,6 +13,7 @@ pub const MPM_PROTO_SFHSS: u8 = 21; // Futaba SFHSS
 pub const MPM_PROTO_FRSKY_V: u8 = 25; // FrSky V8
 pub const MPM_PROTO_CORONA: u8 = 36; // Corona
 pub const MPM_PROTO_HITEC: u8 = 39; // Hitec Optima/Minima
+pub const MPM_PROTO_HOTT: u8 = 57; // Graupner HoTT
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -22,6 +23,8 @@ pub enum Cc2500Protocol {
     Sfhss = 2,
     Corona = 3,
     Hitec = 4,
+    FrSkyLbt = 5,
+    Hott = 6,
 }
 
 impl Cc2500Protocol {
@@ -32,6 +35,8 @@ impl Cc2500Protocol {
             2 => Self::Sfhss,
             3 => Self::Corona,
             4 => Self::Hitec,
+            5 => Self::FrSkyLbt,
+            6 => Self::Hott,
             _ => Self::FrSkyD16,
         }
     }
@@ -39,7 +44,9 @@ impl Cc2500Protocol {
     pub const fn name(self) -> &'static str {
         match self {
             Self::FrSkyD16 => "FRSKY D16",
+            Self::FrSkyLbt => "FRSKY LBT",
             Self::FrSkyD8 => "FRSKY D8",
+            Self::Hott => "GRAUPNER HOTT",
             Self::Sfhss => "FUTABA SFHSS",
             Self::Corona => "CORONA",
             Self::Hitec => "HITEC",
@@ -48,8 +55,10 @@ impl Cc2500Protocol {
 
     pub const fn next(self) -> Self {
         match self {
-            Self::FrSkyD16 => Self::FrSkyD8,
-            Self::FrSkyD8 => Self::Sfhss,
+            Self::FrSkyD16 => Self::FrSkyLbt,
+            Self::FrSkyLbt => Self::FrSkyD8,
+            Self::FrSkyD8 => Self::Hott,
+            Self::Hott => Self::Sfhss,
             Self::Sfhss => Self::Corona,
             Self::Corona => Self::Hitec,
             Self::Hitec => Self::FrSkyD16,
@@ -59,8 +68,10 @@ impl Cc2500Protocol {
     pub const fn prev(self) -> Self {
         match self {
             Self::FrSkyD16 => Self::Hitec,
-            Self::FrSkyD8 => Self::FrSkyD16,
-            Self::Sfhss => Self::FrSkyD8,
+            Self::FrSkyLbt => Self::FrSkyD16,
+            Self::FrSkyD8 => Self::FrSkyLbt,
+            Self::Hott => Self::FrSkyD8,
+            Self::Sfhss => Self::Hott,
             Self::Corona => Self::Sfhss,
             Self::Hitec => Self::Corona,
         }
@@ -68,11 +79,19 @@ impl Cc2500Protocol {
 
     pub const fn mpm_proto_id(self) -> u8 {
         match self {
-            Self::FrSkyD16 => MPM_PROTO_FRSKY_X,
+            Self::FrSkyD16 | Self::FrSkyLbt => MPM_PROTO_FRSKY_X,
             Self::FrSkyD8 => MPM_PROTO_FRSKY_D,
             Self::Sfhss => MPM_PROTO_SFHSS,
             Self::Corona => MPM_PROTO_CORONA,
             Self::Hitec => MPM_PROTO_HITEC,
+            Self::Hott => MPM_PROTO_HOTT,
+        }
+    }
+
+    pub const fn default_sub_proto(self) -> u8 {
+        match self {
+            Self::FrSkyLbt => 2, // EU_16 (LBT)
+            _ => 0,
         }
     }
 }

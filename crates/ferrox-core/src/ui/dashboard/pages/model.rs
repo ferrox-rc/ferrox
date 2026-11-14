@@ -102,10 +102,14 @@ pub fn render(
             let r_str = ascii_as_str(&r_buf);
             lcd.draw_str_6x10(64, 44, r_str, false);
         }
-    } else if is_crsf {
-        lcd.draw_str_6x10(2, 44, "CRSF: DISCONNECTED", false);
     } else {
-        lcd.draw_str_6x10(2, 44, "AFHDS2A: DISCONNECTED", false);
+        let disc_str = match proto {
+            crate::board::RfProtocol::Crsf => "CRSF: DISCONNECTED",
+            crate::board::RfProtocol::Cc2500 => "CC2500: NO TELEM",
+            crate::board::RfProtocol::Dsm => "DSM: NO TELEM",
+            crate::board::RfProtocol::Afhds2a => "AFHDS2A: DISCONNECTED",
+        };
+        lcd.draw_str_6x10(2, 44, disc_str, false);
     }
 
     // Standardized Footer (y = 55..63)
