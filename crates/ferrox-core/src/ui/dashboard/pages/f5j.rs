@@ -66,10 +66,15 @@ pub fn render(
     let y_axis_base: i32 = 57;
     let chart_h: i32 = y_bottom - y_top; // 37 px
 
-    // --- 1. Row 1 (y = 12): F5J Start, MAX, MIN Altitudes ---
+    // --- 1. Row 1 (y = 12): F5J/F3K Start, MAX, MIN Altitudes ---
     let mut hdr_buf = [b' '; 32];
     let mut p = 0;
-    p = push_str_ascii(&mut hdr_buf, p, b"F5J:");
+    let prefix: &[u8] = if storage.active_model().soaring.is_f3k() {
+        b"F3K:"
+    } else {
+        b"F5J:"
+    };
+    p = push_str_ascii(&mut hdr_buf, p, prefix);
     p = push_u32_ascii(&mut hdr_buf, p, f5j.display_f5j_m() as u32);
     if f5j.is_restart {
         p = push_str_ascii(&mut hdr_buf, p, b"!");
@@ -154,8 +159,28 @@ pub fn render(
     lcd.draw_vline(x_15m, y_axis_base, 2, true);
     lcd.draw_str_4x6(x_15m - 12, 59, "15m", false);
 
-    // --- 5. Optional RX Voltage Overlay in Top-Right of Chart ---
-    if telem.rx_voltage_mv > 0 {
+    // --- 5. Post-Flight Net Score + Landing Bonus OR Live RX Voltage Overlay ---
+    if f5j.landed {
+        let target_sec = (storage.active_model().soaring.target_time_mins.max(1) as u32) * 60;
+        let score_tenths = crate::soaring::f5j::score::calculate_net_score_tenths(
+            f5j.final_flight_sec,
+            target_sec,
+            f5j.f5j_start_height_m,
+            f5j.landing_bonus_pts,
+            f5j.is_restart,
+        );
+        let mut s_buf = [b' '; 20];
+        let mut sp = push_str_ascii(&mut s_buf, 0, b"B:");
+        sp = push_u32_ascii(&mut s_buf, sp, f5j.landing_bonus_pts as u32);
+        sp = push_str_ascii(&mut s_buf, sp, b" S:");
+        sp = crate::soaring::f5j::score::push_tenths(&mut s_buf, sp, score_tenths);
+        lcd.draw_str_4x6(
+            w - (sp as i32 * 4) - 2,
+            y_top,
+            ascii_as_str(&s_buf[..sp]),
+            false,
+        );
+    } else if telem.rx_voltage_mv > 0 {
         let mut rx_buf = [0u8; 6];
         let rx_str = format_vbat(telem.rx_voltage_mv, &mut rx_buf);
         let mut lbl = [b' '; 8];

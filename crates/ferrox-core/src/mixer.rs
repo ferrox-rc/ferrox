@@ -533,6 +533,42 @@ pub fn compute_channels(
         }
     }
 
+    // Stage 3c: Soaring Glider Tail Topology (V-Tail / M-Tail roll-assist) & Crow Brake
+    if model.soaring.is_active() && template != WingTailTemplate::Freeform {
+        match model.soaring.tail_type {
+            1 if template != WingTailTemplate::VTail => {
+                // V-Tail override from Soaring Setup
+                let p = ch_vals[1];
+                let y = ch_vals[3];
+                ch_vals[1] = ((p + y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+                ch_vals[3] = ((p - y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            }
+            2 => {
+                // M-Tail (V-Tail with roll-assist differential from Aileron & Rudder)
+                let p = cond_pitch as i32;
+                let y = cond_yaw as i32;
+                let roll_assist = ((cond_roll as i32) * (model.soaring.mtail_aile_ele as i32)) / 100
+                    + ((cond_yaw as i32) * (model.soaring.mtail_rud_ele as i32)) / 100;
+                ch_vals[1] = ((p + y) / 2 + roll_assist).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+                ch_vals[3] = ((p - y) / 2 - roll_assist).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            }
+            _ => {}
+        }
+
+        if model.soaring.crow_switch > 0
+            && is_switch_active(model.soaring.crow_switch, switches)
+        {
+            // Proportional crow/butterfly braking when crow_switch is active:
+            // Raise ailerons (CH1, and CH6 in Flaperon) +30% and add -10% down-elevator compensation
+            let crow_val = 300;
+            ch_vals[0] = (ch_vals[0] + crow_val).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            if template == WingTailTemplate::Flaperon {
+                ch_vals[5] = (ch_vals[5] + crow_val).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            }
+            ch_vals[1] = (ch_vals[1] - 100).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+        }
+    }
+
     // Stage 4: Outputs (convert MIXER_MIN..MIXER_MAX to standard FlySky CHANNEL_MIN_US..CHANNEL_MAX_US)
     let mut rf_chs = [CHANNEL_CENTER_US; NUM_CHANNELS];
     for (i, &val) in ch_vals.iter().enumerate() {
@@ -561,6 +597,15 @@ pub fn compute_channels(
 
     if (is_heli_hold || is_disarmed) && template != WingTailTemplate::Freeform {
         rf_chs[2] = CHANNEL_MIN_US;
+    }
+
+    if model.soaring.is_active()
+        && model.soaring.arm_switch > 0
+        && model.soaring.arm_switch <= 28
+        && !is_switch_active(model.soaring.arm_switch, switches)
+    {
+        let m_ch = (model.soaring.motor_ch as usize).min(NUM_CHANNELS - 1);
+        rf_chs[m_ch] = CHANNEL_MIN_US;
     }
 
     // Apply channel reversing bitmask

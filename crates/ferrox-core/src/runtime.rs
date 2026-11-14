@@ -727,7 +727,8 @@ impl BackgroundIdleManager {
             self.trim_dirty = false;
         }
 
-        // 8b. Long-press OK (1.2s) from flight dashboard opens Settings Menu
+        // 8b. Long-press OK (1.2s) from flight dashboard opens Settings Menu;
+        //     Short-press OK on F5J dashboard when landed cycles landing bonus points
         if !menu_active {
             if ok_held {
                 self.ok_hold_ms = self.ok_hold_ms.saturating_add(dt_ms);
@@ -737,6 +738,15 @@ impl BackgroundIdleManager {
                     self.board_idle.clear_menu_open_state();
                 }
             } else {
+                #[cfg(any(feature = "soaring", test))]
+                if self.ok_hold_ms > 0
+                    && self.ok_hold_ms < 500
+                    && dashboard.page == 5
+                    && self.f5j.landed
+                {
+                    self.f5j.cycle_landing_bonus();
+                    buzzer.click();
+                }
                 self.ok_hold_ms = 0;
                 self.board_idle.clear_menu_open_state();
             }

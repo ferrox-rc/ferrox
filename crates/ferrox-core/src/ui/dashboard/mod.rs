@@ -98,7 +98,7 @@ impl DashboardController {
     ) {
         #[cfg(any(feature = "soaring", test))]
         {
-            self.max_pages = if storage.active_model().soaring.is_f5j() {
+            self.max_pages = if storage.active_model().soaring.is_active() {
                 6
             } else {
                 5

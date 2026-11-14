@@ -126,6 +126,16 @@ impl SoaringConfig {
     }
 
     #[inline(always)]
+    pub const fn is_f3k(&self) -> bool {
+        self.discipline == (SoaringDiscipline::F3k as u8)
+    }
+
+    #[inline(always)]
+    pub const fn is_active(&self) -> bool {
+        self.discipline != (SoaringDiscipline::Off as u8)
+    }
+
+    #[inline(always)]
     pub const fn audio_cues_enabled(&self) -> bool {
         (self.flags & Self::FLAG_AUDIO_CUES) != 0
     }

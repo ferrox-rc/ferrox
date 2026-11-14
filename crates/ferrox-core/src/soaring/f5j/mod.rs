@@ -162,7 +162,17 @@ impl F5jEngine {
         }
     }
 
-    /// Update the F5J state machine, altitude graph, landing detector, and audio alerts.
+    /// Cycle landing bonus points (`0, 5, 10, ..., 50, 0`).
+    #[inline]
+    pub fn cycle_landing_bonus(&mut self) {
+        self.landing_bonus_pts = if self.landing_bonus_pts >= 50 {
+            0
+        } else {
+            (self.landing_bonus_pts + 5).min(50)
+        };
+    }
+
+    /// Update the F5J/F3K state machine, altitude graph, landing detector, and audio alerts.
     pub fn update(
         &mut self,
         now_ms: u32,
@@ -171,7 +181,7 @@ impl F5jEngine {
         cfg: &SoaringConfig,
         buzzer: &mut Buzzer,
     ) {
-        if !cfg.is_f5j() {
+        if !cfg.is_active() {
             return;
         }
 
@@ -182,8 +192,8 @@ impl F5jEngine {
             telem.alt_m.saturating_mul(10)
         };
 
-        if self.phase == F5jPhase::Idle {
-            // While idle on ground before launch, track zero reference gently unless already launched
+        if self.phase == F5jPhase::Idle && !cfg.is_f3k() {
+            // While idle on ground before motor launch, track zero reference gently unless already launched
             self.alt_zero_dm = raw_dm;
             self.rel_alt_dm = 0;
         } else {
@@ -194,15 +204,23 @@ impl F5jEngine {
         let motor_pct = Self::pulse_to_pct(rf_chs[ch_idx]);
         let audio_en = cfg.audio_cues_enabled();
 
-        // 1. Detect motor launch or motor restart
-        if !self.motor_started && motor_pct > cfg.motor_on_thr_pct {
+        // 1. Detect motor launch / restart (F5J) or hand-launch throw (F3K)
+        let f3k_throw = cfg.is_f3k()
+            && self.phase == F5jPhase::Idle
+            && (motor_pct > cfg.motor_on_thr_pct || self.rel_alt_dm >= 20);
+        if (!self.motor_started && motor_pct > cfg.motor_on_thr_pct) || f3k_throw {
             let was_in_flight = self.phase != F5jPhase::Idle;
             self.motor_started = true;
-            self.is_restart = was_in_flight;
-            self.phase = F5jPhase::Motor;
+            self.is_restart = was_in_flight && cfg.is_f5j();
+            self.phase = if cfg.is_f3k() {
+                F5jPhase::Window
+            } else {
+                F5jPhase::Motor
+            };
 
             self.launch_time_ms = now_ms;
             self.motor_start_ms = now_ms;
+            self.window_start_ms = now_ms;
             self.f5j_peak_alt_dm = self.rel_alt_dm;
             self.f5j_start_height_m = 0;
             self.final_flight_sec = 0;
