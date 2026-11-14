@@ -65,9 +65,11 @@ pub mod storage;
 pub mod time;
 pub mod timer;
 pub use timer::{TimerBank, TimerConfig};
+#[cfg(any(feature = "voice-audio", test))]
 pub mod telemetry_log;
 pub mod trainer;
 pub mod trim;
+#[cfg(any(feature = "voice-audio", test))]
 pub use telemetry_log::{FlightLogFrame, TelemetryLogger};
 pub mod ui;
 pub use ui::menu;

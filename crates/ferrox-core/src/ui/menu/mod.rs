@@ -440,9 +440,15 @@ impl MenuController {
                 screens::mixer::update_global_vars(self, lcd, &nav_keys, storage, buzzer);
             }
             MenuState::LogicalSwitches => {
+                #[cfg(any(feature = "logical-switches", test))]
                 screens::mixer::update_logical_switches(
                     self, lcd, &nav_keys, switches, storage, buzzer,
                 );
+                #[cfg(not(any(feature = "logical-switches", test)))]
+                {
+                    let _ = (lcd, &nav_keys, switches, storage, buzzer);
+                    self.state = MenuState::ModelSetup;
+                }
             }
             MenuState::AuxChannels => {
                 screens::channels::update_aux_channels(self, lcd, &nav_keys, storage, buzzer);

@@ -179,6 +179,7 @@ fn render_setup_row(
             widgets::draw_list_row(lcd, slot, inverted, "Vario: [SETUP]", None, 0);
         }
         8 => {
+            #[cfg(any(feature = "soaring", test))]
             widgets::draw_list_row(
                 lcd,
                 slot,
@@ -187,10 +188,14 @@ fn render_setup_row(
                 Some(storage.active_model.soaring.discipline_enum().as_str()),
                 64,
             );
+            #[cfg(not(any(feature = "soaring", test)))]
+            widgets::draw_list_row(lcd, slot, inverted, "Reset: [OK Defaults]", None, 0);
         }
+        #[cfg(any(feature = "logical-switches", test))]
         9 => {
             widgets::draw_list_row(lcd, slot, inverted, "Logic Sw: [L1..L8]", None, 0);
         }
+        #[cfg(any(feature = "logical-switches", test))]
         10 => {
             widgets::draw_list_row(lcd, slot, inverted, "Reset: [OK Defaults]", None, 0);
         }
@@ -207,7 +212,10 @@ pub fn update_setup(
     buzzer: &mut Buzzer,
 ) {
     let active_idx = storage.radio.active_model as usize;
+    #[cfg(any(feature = "logical-switches", test))]
     const FIELD_COUNT: usize = 11;
+    #[cfg(not(any(feature = "logical-switches", test)))]
+    const FIELD_COUNT: usize = 9;
 
     if !ctrl.editing {
         if keys.cancel {
@@ -279,6 +287,7 @@ pub fn update_setup(
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
+                #[cfg(any(feature = "soaring", test))]
                 8 => {
                     // Open Soaring / F5J Setup submenu
                     ctrl.state = MenuState::SoaringSetup;
@@ -286,6 +295,14 @@ pub fn update_setup(
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
+                #[cfg(not(any(feature = "soaring", test)))]
+                8 => {
+                    storage.active_model = ModelConfig::default_for_index(active_idx);
+                    storage::save_active_model(storage);
+                    buzzer.play_tone_pattern(2200, 80, 50, 2);
+                    ctrl.waiting_release = true;
+                }
+                #[cfg(any(feature = "logical-switches", test))]
                 9 => {
                     // Open Logical Switches (L1..L8) submenu
                     ctrl.state = MenuState::LogicalSwitches;
@@ -294,6 +311,7 @@ pub fn update_setup(
                     ctrl.sub_idx = 0;
                     buzzer.click();
                 }
+                #[cfg(any(feature = "logical-switches", test))]
                 10 => {
                     storage.active_model = ModelConfig::default_for_index(active_idx);
                     storage::save_active_model(storage);

@@ -48,7 +48,9 @@ pub struct FlightPipeline {
     pub prev_active_model: u8,
     pub telem_reading_idx: u8,
     pub vario: Vario,
+    #[cfg(any(feature = "logical-switches", test))]
     pub logical_bank: mixer::LogicalSwitchBank,
+    #[cfg(any(feature = "logical-switches", test))]
     pub last_tick_ms: u32,
 }
 
@@ -61,7 +63,9 @@ impl FlightPipeline {
             prev_active_model: storage.radio.active_model,
             telem_reading_idx: 1,
             vario: Vario::new(),
+            #[cfg(any(feature = "logical-switches", test))]
             logical_bank: mixer::LogicalSwitchBank::new(),
+            #[cfg(any(feature = "logical-switches", test))]
             last_tick_ms: 0,
         }
     }
@@ -88,33 +92,37 @@ impl FlightPipeline {
         let controls = state.flight_controls(stick_mode);
 
         // 1b. Update Logical Switches L1..L8 with millisecond delay & duration timers
-        let dt_ms = if self.last_tick_ms == 0 {
-            0
-        } else {
-            now.wrapping_sub(self.last_tick_ms).min(100) as u16
-        };
-        if dt_ms > 0 || self.last_tick_ms == 0 {
-            self.last_tick_ms = now.max(1);
+        #[cfg(any(feature = "logical-switches", test))]
+        {
+            let dt_ms = if self.last_tick_ms == 0 {
+                0
+            } else {
+                now.wrapping_sub(self.last_tick_ms).min(100) as u16
+            };
+            if dt_ms > 0 || self.last_tick_ms == 0 {
+                self.last_tick_ms = now.max(1);
+            }
+            let raw_sticks = [
+                controls.aileron,
+                controls.elevator,
+                controls.throttle,
+                controls.rudder,
+            ];
+            let dummy_chs = [0i32; mixer::NUM_CHANNELS];
+            self.logical_bank.update(
+                dt_ms,
+                &raw_sticks,
+                &state.aux_pots[4..],
+                &mut state.switches,
+                &dummy_chs,
+                active_model,
+            );
         }
-        let raw_sticks = [
-            controls.aileron,
-            controls.elevator,
-            controls.throttle,
-            controls.rudder,
-        ];
-        let dummy_chs = [0i32; mixer::NUM_CHANNELS];
-        self.logical_bank.update(
-            dt_ms,
-            &raw_sticks,
-            &state.aux_pots[4..],
-            &mut state.switches,
-            &dummy_chs,
-            active_model,
-        );
 
         // 2. Resynchronize arm state when active model changes or when exiting settings menu
         if storage.radio.active_model != self.prev_active_model {
             self.prev_active_model = storage.radio.active_model;
+            #[cfg(any(feature = "logical-switches", test))]
             self.logical_bank.reset();
             self.prev_armed = mixer::eval_arm_switch(active_model.arm_switch, &state.switches);
             self.vario.reset();
@@ -401,7 +409,9 @@ pub struct BackgroundIdleManager {
     pub trim_dirty: bool,
     pub trim_save_cooldown_ms: u16,
     pub prev_instant_trim_active: bool,
+    #[cfg(any(feature = "voice-audio", test))]
     pub telemetry_logger: crate::telemetry_log::TelemetryLogger,
+    #[cfg(any(feature = "voice-audio", test))]
     pub last_telem_log_ms: u32,
     #[cfg(feature = "voice-audio")]
     pub audio_callouts: crate::audio::CalloutScheduler,
@@ -460,7 +470,9 @@ impl BackgroundIdleManager {
             trim_dirty: false,
             trim_save_cooldown_ms: 0,
             prev_instant_trim_active: false,
+            #[cfg(any(feature = "voice-audio", test))]
             telemetry_logger: crate::telemetry_log::TelemetryLogger::new(),
+            #[cfg(any(feature = "voice-audio", test))]
             last_telem_log_ms: 0,
             #[cfg(feature = "voice-audio")]
             audio_callouts: crate::audio::CalloutScheduler::new(),
@@ -865,12 +877,13 @@ impl BackgroundIdleManager {
         );
 
         #[cfg(any(feature = "soaring", test))]
-        let was_landed = self.f5j.landed;
+        let _was_landed = self.f5j.landed;
         #[cfg(any(feature = "soaring", test))]
         self.f5j
             .update(now, &flight.rf_chs, &flight.telem, &model.soaring, buzzer);
 
         // 8d. Periodic 512-byte sector CSV telemetry logging to SD card
+        #[cfg(any(feature = "voice-audio", test))]
         if flight.just_armed {
             self.telemetry_logger.reset();
             self.last_telem_log_ms = now;
@@ -879,7 +892,7 @@ impl BackgroundIdleManager {
             let _ = crate::storage::with_storage_bus(|bus| logger.flush(bus));
         } else {
             #[cfg(any(feature = "soaring", test))]
-            if !was_landed && self.f5j.landed && model.soaring.auto_log_enabled() {
+            if !_was_landed && self.f5j.landed && model.soaring.auto_log_enabled() {
                 let logger = &mut self.telemetry_logger;
                 let _ = crate::storage::with_storage_bus(|bus| logger.flush(bus));
             }
