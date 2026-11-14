@@ -1191,8 +1191,8 @@ pub fn select_device(idx: usize) -> bool {
 /// Select a discovered device by its physical address (e.g. 0xEE for TX, 0xEC for RX).
 pub fn select_device_by_addr(addr: u8) -> bool {
     unsafe {
-        for i in 0..CONFIG_ENGINE.devices_len {
-            if CONFIG_ENGINE.devices[i].address == addr {
+        for (i, dev) in CONFIG_ENGINE.devices.iter().enumerate().take(CONFIG_ENGINE.devices_len) {
+            if dev.address == addr {
                 return select_device(i);
             }
         }

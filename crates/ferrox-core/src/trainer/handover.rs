@@ -76,11 +76,7 @@ impl SafetyHandover {
 
         // Yaw (CH4) deflection > 5%
         let yaw_diff = (instructor_chs[3] as i32 - 1500).abs();
-        if yaw_diff > TAKEOVER_THRESHOLD_US as i32 {
-            return true;
-        }
-
-        false
+        yaw_diff > TAKEOVER_THRESHOLD_US as i32
     }
 
     /// Resolve effective channel outputs between instructor and student.

@@ -387,8 +387,8 @@ pub fn apply_calibration(config: &RadioConfig) {
 
     calib.ext_switches = config.ext_switches != 0;
     calib.ext_adc = config.ext_adc != 0;
-    for i in 0..11 {
-        calib.adc_modes[i] = config.get_adc_mode_val(i);
+    for (i, mode) in calib.adc_modes.iter_mut().enumerate() {
+        *mode = config.get_adc_mode_val(i);
     }
 
     // Deadband for physical sticks: 3 counts for Hall effect to eliminate magnetic ripple, 0 for stock pots

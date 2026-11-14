@@ -179,9 +179,9 @@ pub fn update(ctrl: &mut MenuController, lcd: &mut St7567, keys: &NavKeys, buzze
             }
             let hdr = ascii_as_str(&engine.textgen_rows[0]);
             widgets::draw_header(lcd, hdr);
-            for row in 1..6 {
-                let y = 12 + ((row as i32 - 1) * 8);
-                lcd.draw_str_4x6(4, y, ascii_as_str(&engine.textgen_rows[row]), false);
+            for (idx, row) in engine.textgen_rows[1..6].iter().enumerate() {
+                let y = 12 + (idx as i32 * 8);
+                lcd.draw_str_4x6(4, y, ascii_as_str(row), false);
             }
             widgets::draw_footer(lcd, "[UP/DN/OK] Nav  [ESC] Exit");
         }
