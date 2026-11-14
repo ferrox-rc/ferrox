@@ -226,6 +226,8 @@ impl FlightPipeline {
                     rf::set_channels(&rf_chs);
                 }
             }
+            #[cfg(not(feature = "rf-dsm"))]
+            crate::board::RfProtocol::Dsm => {}
             crate::board::RfProtocol::Cc2500 => {
                 crsf::set_enabled(false, 0, false);
                 #[cfg(feature = "rf-dsm")]

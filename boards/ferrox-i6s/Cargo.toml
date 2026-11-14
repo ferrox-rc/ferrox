@@ -24,7 +24,23 @@ stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072", "rt"] }
 embedded-graphics = "0.8.1"
 
 [features]
-default = ["stm32", "soaring"]
+default = [
+    "stm32",
+    "touch",
+    "rf-afhds2a",
+    "rf-crsf",
+    "rf-cc2500",
+    "rf-dsm",
+    "dsm-fwd-prog",
+    "logical-switches",
+]
 stm32 = ["ferrox-core/stm32", "ferrox-stm32f0/stm32"]
 apm32 = ["ferrox-core/apm32", "ferrox-stm32f0/apm32"]
+touch = ["ferrox-core/touch"]
+rf-afhds2a = ["ferrox-core/rf-afhds2a"]
+rf-crsf = ["ferrox-core/rf-crsf"]
+rf-cc2500 = ["ferrox-core/rf-cc2500"]
+rf-dsm = ["ferrox-core/rf-dsm"]
+dsm-fwd-prog = ["ferrox-core/dsm-fwd-prog"]
 soaring = ["ferrox-core/soaring"]
+logical-switches = ["ferrox-core/logical-switches"]
