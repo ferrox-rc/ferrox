@@ -197,8 +197,8 @@ impl TimerBank {
                 }
             }
 
-            // Evaluate reset switch edge (1..=28 switch conditions)
-            if cfg.reset_src > 0 && cfg.reset_src <= ActiveBoard::MAX_MIX_SWITCH {
+            // Evaluate reset switch edge (1..=44 switch conditions)
+            if cfg.reset_src > 0 && (cfg.reset_src <= ActiveBoard::MAX_MIX_SWITCH || (29..=44).contains(&cfg.reset_src)) {
                 let reset_active = mixer::is_switch_active(cfg.reset_src, switches);
                 let rising_edge = reset_active && !state.prev_reset_active;
                 state.prev_reset_active = reset_active;
@@ -231,9 +231,9 @@ impl TimerBank {
                     state.latched_running
                 }
                 3 => true, // Always on
-                sw if (4..=31).contains(&sw) => {
+                sw if (4..=47).contains(&sw) => {
                     let cond_idx = sw - 3;
-                    if cond_idx <= ActiveBoard::MAX_MIX_SWITCH {
+                    if cond_idx <= ActiveBoard::MAX_MIX_SWITCH || (29..=44).contains(&cond_idx) {
                         mixer::is_switch_active(cond_idx, switches)
                     } else {
                         false
@@ -242,8 +242,8 @@ impl TimerBank {
                 _ => false,
             };
 
-            // Evaluate raw stop trigger (1..=28 switch conditions)
-            let stop_active = if cfg.stop_src > 0 && cfg.stop_src <= ActiveBoard::MAX_MIX_SWITCH {
+            // Evaluate raw stop trigger (1..=44 switch conditions)
+            let stop_active = if cfg.stop_src > 0 && (cfg.stop_src <= ActiveBoard::MAX_MIX_SWITCH || (29..=44).contains(&cfg.stop_src)) {
                 mixer::is_switch_active(cfg.stop_src, switches)
             } else {
                 false
@@ -282,10 +282,36 @@ impl TimerBank {
                             if cfg.has_audio_beeps() {
                                 if state.remaining_secs == 0 {
                                     buzzer.timer_elapsed_alarm();
+                                    #[cfg(feature = "voice-audio")]
+                                    if buzzer.enabled {
+                                        crate::audio::speak_number(
+                                            0,
+                                            Some(crate::audio::VoiceUnit::Seconds),
+                                        );
+                                    }
                                 } else if state.remaining_secs <= 10 {
                                     buzzer.timer_countdown_beep();
+                                    #[cfg(feature = "voice-audio")]
+                                    if buzzer.enabled {
+                                        crate::audio::speak_number(state.remaining_secs as i32, None);
+                                    }
+                                } else if state.remaining_secs == 30 {
+                                    #[cfg(feature = "voice-audio")]
+                                    if buzzer.enabled {
+                                        crate::audio::speak_number(
+                                            30,
+                                            Some(crate::audio::VoiceUnit::Seconds),
+                                        );
+                                    }
                                 } else if state.remaining_secs.is_multiple_of(60) {
                                     buzzer.timer_minute_beep();
+                                    #[cfg(feature = "voice-audio")]
+                                    if buzzer.enabled {
+                                        crate::audio::speak_number(
+                                            (state.remaining_secs / 60) as i32,
+                                            Some(crate::audio::VoiceUnit::Minutes),
+                                        );
+                                    }
                                 }
                             }
                         } else {
@@ -300,6 +326,13 @@ impl TimerBank {
                         state.elapsed_secs = state.elapsed_secs.saturating_add(1);
                         if cfg.has_audio_beeps() && state.elapsed_secs.is_multiple_of(60) {
                             buzzer.timer_minute_beep();
+                            #[cfg(feature = "voice-audio")]
+                            if buzzer.enabled {
+                                crate::audio::speak_number(
+                                    (state.elapsed_secs / 60) as i32,
+                                    Some(crate::audio::VoiceUnit::Minutes),
+                                );
+                            }
                         }
                     }
                 }

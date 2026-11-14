@@ -163,6 +163,8 @@ pub enum RadioSetupItem {
     ThrottleTrim,
     Beeper,
     ToneStyle,
+    VoiceVolume,
+    VoiceInterval,
     SwitchBeep,
     BacklightTimeout,
     BacklightBrightness,

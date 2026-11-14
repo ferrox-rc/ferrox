@@ -257,12 +257,37 @@ impl F5jEngine {
                     if audio_en && self.phase == F5jPhase::Glide {
                         if rem_sec > 120 && rem_sec.is_multiple_of(60) {
                             buzzer.timer_minute_beep();
+                            #[cfg(feature = "voice-audio")]
+                            if buzzer.enabled {
+                                crate::audio::speak_number(
+                                    (rem_sec / 60) as i32,
+                                    Some(crate::audio::VoiceUnit::Minutes),
+                                );
+                            }
                         } else if (60..=120).contains(&rem_sec) && rem_sec.is_multiple_of(15) {
                             buzzer.play_tone(1600, 45);
+                            #[cfg(feature = "voice-audio")]
+                            if buzzer.enabled && rem_sec == 60 {
+                                crate::audio::speak_number(
+                                    1,
+                                    Some(crate::audio::VoiceUnit::Minutes),
+                                );
+                            }
                         } else if (11..=55).contains(&rem_sec) && rem_sec.is_multiple_of(5) {
                             buzzer.play_tone(1600, 35);
+                            #[cfg(feature = "voice-audio")]
+                            if buzzer.enabled && rem_sec == 30 {
+                                crate::audio::speak_number(
+                                    30,
+                                    Some(crate::audio::VoiceUnit::Seconds),
+                                );
+                            }
                         } else if rem_sec <= 10 {
                             buzzer.timer_countdown_beep();
+                            #[cfg(feature = "voice-audio")]
+                            if buzzer.enabled {
+                                crate::audio::speak_number(rem_sec as i32, None);
+                            }
                         }
                     }
                 }
@@ -291,6 +316,10 @@ impl F5jEngine {
                                 buzzer.play_tone(1800, 60);
                             } else if (21..=29).contains(&motor_sec) {
                                 buzzer.timer_countdown_beep();
+                                #[cfg(feature = "voice-audio")]
+                                if buzzer.enabled {
+                                    crate::audio::speak_number((30 - motor_sec) as i32, None);
+                                }
                             }
                         }
                     }
@@ -321,6 +350,13 @@ impl F5jEngine {
                         self.graph.mark_f5j_window_closed();
                         if audio_en {
                             buzzer.play_tone(2600, 140);
+                            #[cfg(feature = "voice-audio")]
+                            if buzzer.enabled {
+                                crate::audio::announce_telemetry(
+                                    crate::audio::TelemetryCallout::Altitude,
+                                    self.f5j_start_height_m as i32,
+                                );
+                            }
                         }
                     }
                 }

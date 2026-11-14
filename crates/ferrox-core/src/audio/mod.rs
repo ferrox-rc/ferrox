@@ -31,6 +31,7 @@ pub enum VoiceUnit {
     Volts,
     Decibels,
     Percent,
+    Minutes,
     Seconds,
 }
 
@@ -39,6 +40,7 @@ impl VoiceUnit {
         match self {
             Self::Volts => 116,    // 0116.wav ("volts")
             Self::Meters => 123,   // 0123.wav ("meters")
+            Self::Minutes => 128,  // 0128.wav ("minutes")
             Self::Seconds => 129,  // 0129.wav ("seconds")
             Self::Percent => 134,  // 0134.wav ("percent")
             Self::Decibels => 135, // 0135.wav ("decibels")
@@ -52,6 +54,7 @@ pub enum TelemetryCallout {
     Altitude,
     Distance,
     Rssi,
+    LinkQuality,
     RxBat,
     TxBat,
 }
@@ -61,7 +64,7 @@ impl TelemetryCallout {
         match self {
             Self::Altitude => "/SOUNDS/en/altitude.wav",
             Self::Distance => "/SOUNDS/en/distance.wav",
-            Self::Rssi => "/SOUNDS/en/rssi.wav",
+            Self::Rssi | Self::LinkQuality => "/SOUNDS/en/rssi.wav",
             Self::RxBat => "/SOUNDS/en/rxbat.wav",
             Self::TxBat => "/SOUNDS/en/txbat.wav",
         }
@@ -213,6 +216,7 @@ impl AudioPlayer {
         let unit = match kind {
             TelemetryCallout::Altitude | TelemetryCallout::Distance => Some(VoiceUnit::Meters),
             TelemetryCallout::Rssi => Some(VoiceUnit::Decibels),
+            TelemetryCallout::LinkQuality => Some(VoiceUnit::Percent),
             TelemetryCallout::RxBat | TelemetryCallout::TxBat => Some(VoiceUnit::Volts),
         };
         self.speak_number(value, unit);
@@ -510,7 +514,7 @@ impl CalloutScheduler {
         Self { last_callout_ms: 0 }
     }
 
-    /// Trigger periodic altitude/RSSI callouts when `interval_s > 0` and link is active.
+    /// Trigger periodic altitude/RSSI/LQ callouts when `interval_s > 0` and link is active.
     pub fn maybe_announce(
         &mut self,
         now_ms: u32,
@@ -518,6 +522,7 @@ impl CalloutScheduler {
         link_active: bool,
         altitude_m: Option<i16>,
         rssi_dbm: i8,
+        lq_pct: u8,
     ) {
         if interval_s == 0 || !link_active || !has_audio_output() {
             return;
@@ -536,6 +541,8 @@ impl CalloutScheduler {
             announce_telemetry(TelemetryCallout::Altitude, alt as i32);
         } else if rssi_dbm < 0 {
             announce_telemetry(TelemetryCallout::Rssi, rssi_dbm as i32);
+        } else if lq_pct > 0 {
+            announce_telemetry(TelemetryCallout::LinkQuality, lq_pct as i32);
         }
     }
 }

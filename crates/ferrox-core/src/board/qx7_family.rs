@@ -350,6 +350,10 @@ macro_rules! impl_qx7_board_profile {
                 RadioSetupItem::ThrottleTrim,
                 RadioSetupItem::Beeper,
                 RadioSetupItem::ToneStyle,
+                #[cfg(feature = "voice-audio")]
+                RadioSetupItem::VoiceVolume,
+                #[cfg(feature = "voice-audio")]
+                RadioSetupItem::VoiceInterval,
                 RadioSetupItem::BacklightTimeout,
                 RadioSetupItem::BacklightBrightness,
                 RadioSetupItem::LcdContrast,

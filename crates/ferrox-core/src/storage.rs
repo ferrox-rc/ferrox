@@ -328,6 +328,57 @@ impl RadioConfig {
         self.gimbal_type == 1
     }
 
+    /// Return WAV/PCM voice playback volume (`0..=100%`, default `80%`).
+    /// Stored in `_pad_align[0]`: `0` = default `80%`, `1..=10` = `10%..100%`, `11` = `0% (Muted)`.
+    #[inline(always)]
+    pub const fn voice_volume_pct(&self) -> u8 {
+        match self._pad_align[0] {
+            0 => 80,
+            step @ 1..=10 => step * 10,
+            _ => 0,
+        }
+    }
+
+    /// Cycle WAV/PCM voice volume in 20% steps (`0% -> 20% -> 40% -> 60% -> 80% -> 100% -> 0%`).
+    #[inline]
+    pub fn cycle_voice_volume(&mut self) {
+        let cur = self.voice_volume_pct();
+        let next = if cur >= 100 { 0 } else { (cur + 20).min(100) };
+        self._pad_align[0] = if next == 0 { 11 } else { next / 10 };
+    }
+
+    /// Return periodic voice telemetry callout interval in seconds (`0` = OFF, default `15s`).
+    /// Stored in `_pad_align[1]`: `0` = `15s`, `1` = `30s`, `2` = `60s`, `3` = `0 (OFF)`, `4` = `10s`.
+    #[inline(always)]
+    pub const fn voice_interval_secs(&self) -> u8 {
+        match self._pad_align[1] {
+            0 => 15,
+            1 => 30,
+            2 => 60,
+            3 => 0,
+            4 => 10,
+            _ => 15,
+        }
+    }
+
+    /// Return UI label for the periodic voice callout interval.
+    #[inline(always)]
+    pub const fn voice_interval_label(&self) -> &'static str {
+        match self.voice_interval_secs() {
+            0 => "OFF",
+            10 => "10 SEC",
+            15 => "15 SEC",
+            30 => "30 SEC",
+            _ => "60 SEC",
+        }
+    }
+
+    /// Cycle periodic voice telemetry callout interval (`15s -> 30s -> 60s -> OFF -> 10s -> 15s`).
+    #[inline]
+    pub fn cycle_voice_interval(&mut self) {
+        self._pad_align[1] = (self._pad_align[1] + 1) % 5;
+    }
+
     /// Check if a specific stick axis is inverted (0: RH, 1: RV, 2: LV, 3: LH).
     #[inline(always)]
     pub fn is_stick_inverted(&self, stick_idx: usize) -> bool {
@@ -1182,6 +1233,12 @@ impl RadioStorage {
         }
         if self.radio.stick_invert_mask > 0x0F {
             self.radio.stick_invert_mask = 0x03; // Default RH+RV inverted
+        }
+        if self.radio._pad_align[0] > 11 {
+            self.radio._pad_align[0] = 0; // Default 80% voice volume
+        }
+        if self.radio._pad_align[1] > 4 {
+            self.radio._pad_align[1] = 0; // Default 15s voice callout interval
         }
 
         for stick in self.radio.sticks.iter_mut() {

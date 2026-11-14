@@ -152,6 +152,16 @@ pub fn update_radio_setup(
                 storage.radio.switch_beep = if storage.radio.switch_beep == 0 { 1 } else { 0 };
                 storage::save_radio_config(storage);
             }
+            RadioSetupItem::VoiceVolume => {
+                buzzer.click();
+                storage.radio.cycle_voice_volume();
+                storage::save_radio_config(storage);
+            }
+            RadioSetupItem::VoiceInterval => {
+                buzzer.click();
+                storage.radio.cycle_voice_interval();
+                storage::save_radio_config(storage);
+            }
             RadioSetupItem::InputSetupSubmenu => {
                 buzzer.click();
                 ctrl.state = MenuState::InputSetup;
@@ -208,6 +218,20 @@ fn render_radio_setup_item(
                 "SIMPLE"
             };
             widgets::draw_list_row_right(lcd, slot, is_sel, "Tones:", Some(tone_str));
+        }
+        RadioSetupItem::VoiceVolume => {
+            let mut v_buf = [0u8; 4];
+            let v_str = format_pct_3(storage.radio.voice_volume_pct(), &mut v_buf);
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Voice Vol:", Some(v_str));
+        }
+        RadioSetupItem::VoiceInterval => {
+            widgets::draw_list_row_right(
+                lcd,
+                slot,
+                is_sel,
+                "Voice Intv:",
+                Some(storage.radio.voice_interval_label()),
+            );
         }
         RadioSetupItem::BacklightTimeout => {
             let timer_str = match storage.radio.backlight_timeout {

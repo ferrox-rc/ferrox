@@ -1411,12 +1411,13 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
                 .then_some(flight_snapshot.telem.alt_m);
             idle_manager.audio_callouts.maybe_announce(
                 now,
-                10,
+                storage.radio.voice_interval_secs(),
                 flight_snapshot.telem.connected,
                 alt_m,
-                -(flight_snapshot.telem.rssi as i8),
+                0,
+                flight_snapshot.telem.rssi,
             );
-            crate::audio::tick(80);
+            crate::audio::tick(storage.radio.voice_volume_pct());
         }
     }
 }
