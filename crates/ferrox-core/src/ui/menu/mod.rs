@@ -25,6 +25,7 @@ pub enum MenuState {
     DualRateExpo,
     ThrottleCurve,
     WingMixer,
+    #[cfg(feature = "tank-mix")]
     TankSetup,
     MixerLineEdit,
     GlobalVars,
@@ -301,10 +302,15 @@ impl MenuController {
         }
 
         // Potentiometer / Jog Wheel auto-detection during source assignment
+        #[cfg(not(feature = "tank-mix"))]
+        let tank_source_selection = false;
+        #[cfg(feature = "tank-mix")]
+        let tank_source_selection =
+            self.state == MenuState::TankSetup && self.selected_item <= 1;
         let is_source_selection = self.editing
             && (self.state == MenuState::AuxChannels
                 || (self.state == MenuState::MixerLineEdit && self.selected_item == 1)
-                || (self.state == MenuState::TankSetup && self.selected_item <= 1));
+                || tank_source_selection);
         let mut pot_change = None;
         let vra_mode = storage.radio.get_raw_adc_mode(4);
         let vrb_mode = storage.radio.get_raw_adc_mode(5);
@@ -435,6 +441,7 @@ impl MenuController {
             MenuState::WingMixer => {
                 screens::mixer::update_wing_mixer(self, lcd, &nav_keys, storage, buzzer);
             }
+            #[cfg(feature = "tank-mix")]
             MenuState::TankSetup => {
                 screens::mixer::update_tank_setup(self, lcd, &nav_keys, storage, buzzer);
             }
@@ -561,6 +568,7 @@ mod tests {
         assert!(ctrl.waiting_release);
     }
 
+    #[cfg(feature = "tank-mix")]
     #[test]
     fn test_tank_moved_pot_selection_without_row_navigation() {
         let mut ctrl = MenuController::new();

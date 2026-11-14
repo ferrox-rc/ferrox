@@ -115,6 +115,7 @@ impl WingTailTemplate {
     }
 }
 
+/// Recognizes persisted Tank models even when the mixer feature is disabled.
 pub fn is_tank(model: &ModelConfig) -> bool {
     model.wing_tail_mix == WingTailTemplate::Tank as u8
 }
@@ -126,6 +127,12 @@ pub fn is_tank_motor(channel: usize, model: &ModelConfig) -> bool {
 }
 
 pub fn neutralize_tank_motors(channels: &mut [u16; NUM_CHANNELS], model: &ModelConfig) {
+    if !is_tank(model) {
+        return;
+    }
+    #[cfg(not(feature = "tank-mix"))]
+    channels.fill(CHANNEL_CENTER_US);
+    #[cfg(feature = "tank-mix")]
     for (channel, pulse) in channels.iter_mut().enumerate() {
         if is_tank_motor(channel, model) {
             *pulse = CHANNEL_CENTER_US;
@@ -142,20 +149,27 @@ pub fn safe_idle_channels(model: &ModelConfig) -> [u16; NUM_CHANNELS] {
 pub fn apply_tank_arming(
     channels: &mut [u16; NUM_CHANNELS],
     model: &ModelConfig,
-    state: &TankState,
+    _state: &TankState,
 ) {
-    if is_tank(model) && !state.armed {
+    #[cfg(feature = "tank-mix")]
+    let disarmed = !_state.armed;
+    #[cfg(not(feature = "tank-mix"))]
+    let disarmed = true;
+    if is_tank(model) && disarmed {
         neutralize_tank_motors(channels, model);
     }
 }
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct TankState {
+    #[cfg(feature = "tank-mix")]
     pub reverse: bool,
     /// Arming result from the same conditioned logical switches used by the mixer.
+    #[cfg(feature = "tank-mix")]
     pub armed: bool,
 }
 
+#[cfg(feature = "tank-mix")]
 impl TankState {
     pub const DIRECTION_THRESHOLD: i32 = 20;
 
@@ -174,11 +188,13 @@ pub struct PreparedChannels {
     pub switches: Switches,
 }
 
+#[cfg(feature = "tank-mix")]
 pub struct TankSources {
     pub drive: i32,
     pub steer: i32,
 }
 
+#[cfg(feature = "tank-mix")]
 impl TankSources {
     pub fn centered(&self) -> bool {
         (-TankState::DIRECTION_THRESHOLD..=TankState::DIRECTION_THRESHOLD).contains(&self.drive)
@@ -762,6 +778,7 @@ pub fn prepare_channels(
     }
 }
 
+#[cfg(feature = "tank-mix")]
 pub fn evaluate_tank_sources(
     prepared: &PreparedChannels,
     pots: &[i16],
@@ -801,7 +818,11 @@ pub fn compute_channels(
     throttle_trim_mode: u8,
     tank_state: &mut TankState,
 ) -> [u16; NUM_CHANNELS] {
-    let mut prepared = prepare_channels(
+    #[cfg(not(feature = "tank-mix"))]
+    if is_tank(model) {
+        return [CHANNEL_CENTER_US; NUM_CHANNELS];
+    }
+    let prepared = prepare_channels(
         raw_roll,
         raw_pitch,
         curved_throttle,
@@ -810,23 +831,28 @@ pub fn compute_channels(
         switches_in,
         model,
     );
-    if is_tank(model) {
-        // Read both channel-valued sources before overwriting either motor output.
-        let sources = evaluate_tank_sources(&prepared, pots, model);
-        tank_state.update(sources.drive);
-        tank_state.armed =
-            model.arm_switch == 0 || eval_arm_switch(model.arm_switch, &prepared.switches);
-        let steer = sources.steer
-            * model.tank.steer_weight as i32
-            * if tank_state.reverse { -1 } else { 1 }
-            / 100;
-        prepared.channels[model.tank.left_channel as usize - 1] =
-            (sources.drive + steer).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
-        prepared.channels[model.tank.right_channel as usize - 1] =
-            (sources.drive - steer).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
-    } else {
-        *tank_state = TankState::default();
-    }
+    #[cfg(feature = "tank-mix")]
+    let prepared = {
+        let mut prepared = prepared;
+        if is_tank(model) {
+            // Read both channel-valued sources before overwriting either motor output.
+            let sources = evaluate_tank_sources(&prepared, pots, model);
+            tank_state.update(sources.drive);
+            tank_state.armed =
+                model.arm_switch == 0 || eval_arm_switch(model.arm_switch, &prepared.switches);
+            let steer = sources.steer
+                * model.tank.steer_weight as i32
+                * if tank_state.reverse { -1 } else { 1 }
+                / 100;
+            prepared.channels[model.tank.left_channel as usize - 1] =
+                (sources.drive + steer).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            prepared.channels[model.tank.right_channel as usize - 1] =
+                (sources.drive - steer).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+        } else {
+            *tank_state = TankState::default();
+        }
+        prepared
+    };
     let cond_sticks = prepared.sticks;
     let [cond_roll, cond_pitch, _, cond_yaw] = cond_sticks;
     let mut ch_vals = prepared.channels;
@@ -1031,6 +1057,34 @@ mod tests {
         )
     }
 
+    #[cfg(not(feature = "tank-mix"))]
+    #[test]
+    fn disabled_tank_neutralizes_saved_models_and_trainer_outputs() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = WingTailTemplate::Tank as u8;
+        model.tank.left_channel = 17;
+        model.tank.right_channel = 18;
+        let mut state = TankState::default();
+        let channels = super::compute_channels(
+            1000,
+            -1000,
+            1000,
+            1000,
+            &[1000, 1000],
+            &Switches::new(),
+            &model,
+            &TrimController::new(),
+            0,
+            &mut state,
+        );
+        assert_eq!(channels, [CHANNEL_CENTER_US; NUM_CHANNELS]);
+        let mut student_channels = [2012; NUM_CHANNELS];
+        apply_tank_arming(&mut student_channels, &model, &state);
+        assert_eq!(student_channels, [CHANNEL_CENTER_US; NUM_CHANNELS]);
+        assert_eq!(safe_idle_channels(&model), [CHANNEL_CENTER_US; NUM_CHANNELS]);
+    }
+
+    #[cfg(feature = "tank-mix")]
     #[test]
     fn tank_vectors_hysteresis_weights_and_full_drive() {
         let mut model = ModelConfig::default_for_index(0);
@@ -1093,6 +1147,7 @@ mod tests {
         assert_eq!(WingTailTemplate::from_u8(4), WingTailTemplate::Freeform);
     }
 
+    #[cfg(feature = "tank-mix")]
     #[test]
     fn tank_channel_sources_are_read_before_motor_outputs_and_free_mixes() {
         let mut model = ModelConfig::default_for_index(0);
@@ -1156,6 +1211,7 @@ mod tests {
         assert_eq!(idle[4], CHANNEL_MIN_US);
     }
 
+    #[cfg(feature = "tank-mix")]
     #[test]
     fn tank_logical_arming_remains_safe_after_trainer_handover() {
         let mut model = ModelConfig::default_for_index(0);

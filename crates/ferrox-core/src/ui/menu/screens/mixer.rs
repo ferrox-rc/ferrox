@@ -1,6 +1,7 @@
 //! Dual Rate / Expo, Throttle Curve, Wing / Tank Templates, and Mixer Line Editor screens.
 
 use crate::buzzer::Buzzer;
+#[cfg(feature = "tank-mix")]
 use crate::board::{ActiveBoard, BoardProfile};
 use crate::curve;
 use crate::display::St7567;
@@ -489,14 +490,55 @@ pub fn update_throttle_curve(
 }
 
 fn wing_gvars_row(template: u8) -> usize {
-    if matches!(template, 1 | 3) || template == crate::mixer::WingTailTemplate::Tank as u8 {
+    if matches!(template, 1 | 3)
+        || (cfg!(feature = "tank-mix") && template == crate::mixer::WingTailTemplate::Tank as u8)
+    {
         2
     } else {
         1
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "tank-mix")))]
+mod disabled_tank_tests {
+    use super::*;
+
+    #[test]
+    fn template_selection_skips_disabled_tank_but_preserves_its_configuration() {
+        let mut storage = RadioStorage::default_factory();
+        let mut ctrl = MenuController::new();
+        let mut lcd = St7567::new();
+        let mut buzzer = Buzzer::new();
+        let keys = NavKeys {
+            ok: true,
+            cancel: false,
+            up: false,
+            down: false,
+            bind: false,
+            sw_change: None,
+            dr_change: None,
+            pot_change: None,
+        };
+        ctrl.state = MenuState::WingMixer;
+        storage.active_model.wing_tail_mix = 4;
+        update_wing_mixer(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+        if cfg!(feature = "baitboat") {
+            assert_eq!(storage.active_model.wing_tail_mix, 5);
+            update_wing_mixer(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+        }
+        assert_eq!(storage.active_model.wing_tail_mix, 0);
+        storage.active_model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        storage.active_model.tank.steer_weight = -75;
+        storage.sanitize();
+        assert!(crate::mixer::is_tank(&storage.active_model));
+        assert_eq!(wing_gvars_row(storage.active_model.wing_tail_mix), 1);
+        update_wing_mixer(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.wing_tail_mix, 0);
+        assert_eq!(storage.active_model.tank.steer_weight, -75);
+    }
+}
+
+#[cfg(all(test, feature = "tank-mix"))]
 mod tank_tests {
     use super::*;
 
@@ -588,16 +630,19 @@ mod tank_tests {
     }
 }
 
+#[cfg(feature = "tank-mix")]
 const TANK_LABELS: [&str; 5] = [
     "Drive Src:", "Steer Src:", "Left Out:", "Right Out:", "Steer Wt:",
 ];
 
+#[cfg(feature = "tank-mix")]
 fn tank_source_available(storage: &RadioStorage, source: u8) -> bool {
     (source as usize) < SOURCE_NAMES.len()
         && ((45..=57).contains(&source)
             || ActiveBoard::is_source_available(&storage.radio, &storage.active_model, source))
 }
 
+#[cfg(feature = "tank-mix")]
 fn step_tank_source(storage: &RadioStorage, source: u8, down: bool) -> u8 {
     let count = SOURCE_NAMES.len() as u16;
     let start = source.min((count - 1) as u8);
@@ -614,6 +659,7 @@ fn step_tank_source(storage: &RadioStorage, source: u8, down: bool) -> u8 {
     source
 }
 
+#[cfg(feature = "tank-mix")]
 fn edit_tank_field(storage: &mut RadioStorage, row: usize, keys: &NavKeys) -> bool {
     if row <= 1 {
         let current = if row == 0 {
@@ -673,6 +719,7 @@ fn edit_tank_field(storage: &mut RadioStorage, row: usize, keys: &NavKeys) -> bo
 }
 
 #[inline(never)]
+#[cfg(feature = "tank-mix")]
 pub fn update_tank_setup(
     ctrl: &mut MenuController,
     lcd: &mut St7567,
@@ -789,19 +836,27 @@ pub fn update_wing_mixer(
 
         if keys.ok {
             buzzer.click();
-            if ctrl.selected_item == 0 {
-                storage.active_model.wing_tail_mix =
-                    (storage.active_model.wing_tail_mix + 1) % TEMPLATE_NAMES.len() as u8;
-                if !cfg!(feature = "baitboat") && storage.active_model.wing_tail_mix == 5 {
-                    storage.active_model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
-                }
-            } else if crate::mixer::is_tank(&storage.active_model) && ctrl.selected_item == 1 {
+            #[cfg(feature = "tank-mix")]
+            if crate::mixer::is_tank(&storage.active_model) && ctrl.selected_item == 1 {
                 ctrl.selected_item = 0;
                 ctrl.scroll_offset = 0;
                 ctrl.editing = false;
                 ctrl.state = MenuState::TankSetup;
                 ctrl.waiting_release = true;
                 return;
+            }
+            if ctrl.selected_item == 0 {
+                let next = storage.active_model.wing_tail_mix as usize + 1;
+                let next = if next >= TEMPLATE_NAMES.len() {
+                    0
+                } else {
+                    next as u8
+                };
+                storage.active_model.wing_tail_mix = if next == 5 && !cfg!(feature = "baitboat") {
+                    next + 1
+                } else {
+                    next
+                };
             } else if has_diff && ctrl.selected_item == 1 {
                 ctrl.editing = true;
             } else if ctrl.selected_item == gvar_item_idx {
@@ -873,12 +928,20 @@ fn render_wing_mixer_row(
 
     let mut b6 = [0u8; 6];
     let mut ch_buf = [0u8; 4];
+    #[cfg(feature = "tank-mix")]
+    if crate::mixer::is_tank(&storage.active_model) && idx == 1 {
+        lcd.draw_str_6x10(4, y, "Tank Setup: [SETUP]", is_sel);
+        return;
+    }
     if idx == 0 {
         let t_idx = (storage.active_model.wing_tail_mix as usize).min(TEMPLATE_NAMES.len() - 1);
         lcd.draw_str_6x10(4, y, "Wing:", is_sel);
-        lcd.draw_str_6x10(36, y, TEMPLATE_NAMES[t_idx], is_sel);
-    } else if crate::mixer::is_tank(&storage.active_model) && idx == 1 {
-        lcd.draw_str_6x10(4, y, "Tank Setup: [SETUP]", is_sel);
+        let name = if !cfg!(feature = "tank-mix") && crate::mixer::is_tank(&storage.active_model) {
+            "TANK OFF"
+        } else {
+            TEMPLATE_NAMES[t_idx]
+        };
+        lcd.draw_str_6x10(36, y, name, is_sel);
     } else if has_diff && idx == 1 {
         let d_str = i8_to_dec(storage.active_model.template_diff, &mut b6);
         lcd.draw_str_6x10(4, y, "Diff:", is_sel);

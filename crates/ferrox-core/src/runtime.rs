@@ -31,7 +31,7 @@ use crate::watchdog;
 
 pub const MAX_POTS: usize = 7;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "tank-mix"))]
 mod tank_tests {
     use super::*;
 
@@ -1256,7 +1256,10 @@ pub fn run_preflight_check(
                     safety::PreflightError::ThrottleHigh { .. } => "THROTTLE NOT AT IDLE!",
                     safety::PreflightError::ThrottleNotCentered { .. } => "CENTER THROTTLE STICK!",
                     safety::PreflightError::ThrottleHoldDisengaged => "THROTTLE HOLD OFF!",
+                    #[cfg(feature = "tank-mix")]
                     safety::PreflightError::TankNotCentered => "CENTER DRIVE / STEER!",
+                    #[cfg(not(feature = "tank-mix"))]
+                    safety::PreflightError::TankFeatureDisabled => "TANK-MIX DISABLED!",
                 };
                 lcd.draw_str_6x10(2, 16, msg, false);
             }
@@ -1286,7 +1289,10 @@ pub fn run_preflight_check(
 
             lcd.draw_hline(0, 55, 128, true);
             let footer = match thr_result {
+                #[cfg(feature = "tank-mix")]
                 Err(safety::PreflightError::TankNotCentered) => "Center Drive/Steer [ESC]Skip",
+                #[cfg(not(feature = "tank-mix"))]
+                Err(safety::PreflightError::TankFeatureDisabled) => "Tank disabled     [ESC]Skip",
                 Err(safety::PreflightError::ThrottleNotCentered { .. }) => {
                     "Center Thr/Safe SW [ESC]Skip"
                 }

@@ -224,7 +224,10 @@ pub enum PreflightError {
     ThrottleHigh { current_pct: u8, threshold_pct: u8 },
     ThrottleNotCentered { offset_pct: i8 },
     ThrottleHoldDisengaged,
+    #[cfg(feature = "tank-mix")]
     TankNotCentered,
+    #[cfg(not(feature = "tank-mix"))]
+    TankFeatureDisabled,
 }
 
 pub fn check_tank_preflight(
@@ -232,23 +235,31 @@ pub fn check_tank_preflight(
     stick_mode: StickMode,
     model: &crate::storage::ModelConfig,
 ) -> Result<(), PreflightError> {
-    let controls = state.flight_controls(stick_mode);
-    let throttle = ((controls.throttle + crate::mixer::MIXER_MAX) / 2)
-        .clamp(0, crate::mixer::MIXER_MAX) as u16;
-    let pots = &state.aux_pots[4..];
-    let prepared = crate::mixer::prepare_channels(
-        controls.aileron,
-        controls.elevator,
-        throttle,
-        controls.rudder,
-        pots,
-        &state.switches,
-        model,
-    );
-    if crate::mixer::evaluate_tank_sources(&prepared, pots, model).centered() {
-        Ok(())
-    } else {
-        Err(PreflightError::TankNotCentered)
+    #[cfg(not(feature = "tank-mix"))]
+    {
+        let _ = (state, stick_mode, model);
+        Err(PreflightError::TankFeatureDisabled)
+    }
+    #[cfg(feature = "tank-mix")]
+    {
+        let controls = state.flight_controls(stick_mode);
+        let throttle = ((controls.throttle + crate::mixer::MIXER_MAX) / 2)
+            .clamp(0, crate::mixer::MIXER_MAX) as u16;
+        let pots = &state.aux_pots[4..];
+        let prepared = crate::mixer::prepare_channels(
+            controls.aileron,
+            controls.elevator,
+            throttle,
+            controls.rudder,
+            pots,
+            &state.switches,
+            model,
+        );
+        if crate::mixer::evaluate_tank_sources(&prepared, pots, model).centered() {
+            Ok(())
+        } else {
+            Err(PreflightError::TankNotCentered)
+        }
     }
 }
 
@@ -331,6 +342,18 @@ pub fn check_preflight_throttle(
 mod tests {
     use super::*;
 
+    #[cfg(not(feature = "tank-mix"))]
+    #[test]
+    fn tank_preflight_reports_disabled_feature() {
+        let mut model = crate::storage::ModelConfig::default_for_index(0);
+        model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        assert_eq!(
+            check_tank_preflight(&crate::input::read(), StickMode::Mode2, &model),
+            Err(PreflightError::TankFeatureDisabled)
+        );
+    }
+
+    #[cfg(feature = "tank-mix")]
     #[test]
     fn tank_preflight_checks_selected_sources_and_conditioning() {
         let mut state = crate::input::InputState {
