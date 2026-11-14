@@ -23,7 +23,7 @@ flowchart TD
     end
 
     subgraph S3 ["Stage 3: Mixing & Templates"]
-        TPL["Aircraft Template: Normal / Elevon / V-Tail / Flaperon"]
+        TPL["Template: Normal / Elevon / V-Tail / Flaperon / Freeform / Tank"]
         AUX["Aux Source Mapping (CH5..CH18)"]
         MIX["32 Freeform Mix Rules (Weight, Modulation, Offset, Mode, Switch)"]
     end
@@ -123,6 +123,56 @@ CH1 (Left Aileron)  = Roll + (Flap / 2)
 CH6 (Right Aileron) = -Roll + (Flap / 2)
 ```
 - Flap deployment is driven by the physical source assigned to **CH6** in the `Aux Channels` menu (e.g. switch `SB` for 3-position flaps, or rotary knob `VRA` for variable camber).
+
+### Freeform and Tank
+
+Tank is available only with the opt-in Cargo feature **`tank-mix`**. For build
+commands, see the [feature matrix](../README.md#feature-selection-matrix).
+
+**Freeform** retains stored template ID **4**, including direct CH1..CH4
+assignments and all 32 free mixes. **Tank** uses ID **6**; ID **5** remains
+reserved for the optional `baitboat` differential-thrust template. Cycling the
+`Wing & Mixer` template selector includes Tank and, with `baitboat` enabled,
+DiffThrust.
+
+Without `tank-mix`, the Tank template and setup menu are unavailable. Existing
+Tank configurations retain ID 6 and all settings, but show `TANK OFF` in the
+template selector and `TANK-MIX DISABLED!` at startup. All output channels
+remain neutral even after skipping the warning or applying trainer input.
+
+Choose `TANK`, then `Tank Setup` to configure:
+
+| Setting | Default | Range |
+| :--- | :--- | :--- |
+| Drive Src | Thr (3) | Existing mix sources 0..57 |
+| Steer Src | Yaw (4) | Existing mix sources 0..57 |
+| Left Out | CH1 | CH1..CH18 |
+| Right Out | CH2 | CH1..CH18, distinct from Left Out |
+| Steer Wt | +100 | -100..+100, one-percent steps |
+
+Source stepping and moved-pot selection skip unavailable physical inputs.
+GV1..GV5 (45..49) and the existing logical sources L1..L8 (50..57) remain
+selectable. Channel sources use the existing mixer channel snapshot.
+Selected motor outputs are labelled `L.MOT` and `R.MOT` in the channel
+monitor and count as configured even without an auxiliary assignment.
+GVars and the 32 free mixes remain accessible below `Tank Setup`; returning
+from an editor restores the corresponding row.
+
+Tank mixes bipolar drive and steering for two reversible motor controllers,
+including forward/reverse steering hysteresis and proportional saturation.
+Use a spring-centred drive input and verify neutral, direction, output
+reversing, arming and failsafe with the vehicle safely immobilized before use.
+The normal low-throttle aircraft preflight check does not apply to Tank.
+Motor arming neutralizes both selected outputs even after trainer handover;
+logical arm switches use the same conditioned decision as the mixer.
+
+Tank settings append an eight-byte `TankConfig` at model offset **464**.
+The model payload is **472 bytes**; existing field offsets and the
+**768-byte EEPROM model slots** are unchanged. Older 128-, 348-, 364-,
+368- (including legacy i6X), 392-, 416- and 464-byte models migrate with
+default Tank settings while preserving their existing template and data.
+Saving Tank edits or leaving Tank Setup retains the screen on a save error
+so the write can be retried.
 
 ---
 

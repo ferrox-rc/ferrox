@@ -97,6 +97,7 @@ pub enum WingTailTemplate {
     Freeform = 4,
     #[cfg(feature = "baitboat")]
     DiffThrust = 5,
+    Tank = 6,
 }
 
 impl WingTailTemplate {
@@ -108,8 +109,97 @@ impl WingTailTemplate {
             4 => Self::Freeform,
             #[cfg(feature = "baitboat")]
             5 => Self::DiffThrust,
+            6 => Self::Tank,
             _ => Self::Normal,
         }
+    }
+}
+
+/// Recognizes persisted Tank models even when the mixer feature is disabled.
+pub fn is_tank(model: &ModelConfig) -> bool {
+    model.wing_tail_mix == WingTailTemplate::Tank as u8
+}
+
+pub fn is_tank_motor(channel: usize, model: &ModelConfig) -> bool {
+    is_tank(model)
+        && (channel + 1 == model.tank.left_channel as usize
+            || channel + 1 == model.tank.right_channel as usize)
+}
+
+pub fn neutralize_tank_motors(channels: &mut [u16; NUM_CHANNELS], model: &ModelConfig) {
+    if !is_tank(model) {
+        return;
+    }
+    #[cfg(not(feature = "tank-mix"))]
+    channels.fill(CHANNEL_CENTER_US);
+    #[cfg(feature = "tank-mix")]
+    for (channel, pulse) in channels.iter_mut().enumerate() {
+        if is_tank_motor(channel, model) {
+            *pulse = CHANNEL_CENTER_US;
+        }
+    }
+}
+
+pub fn safe_idle_channels(model: &ModelConfig) -> [u16; NUM_CHANNELS] {
+    let mut channels = SAFE_IDLE_CHANNELS;
+    neutralize_tank_motors(&mut channels, model);
+    channels
+}
+
+pub fn apply_tank_arming(
+    channels: &mut [u16; NUM_CHANNELS],
+    model: &ModelConfig,
+    _state: &TankState,
+) {
+    #[cfg(feature = "tank-mix")]
+    let disarmed = !_state.armed;
+    #[cfg(not(feature = "tank-mix"))]
+    let disarmed = true;
+    if is_tank(model) && disarmed {
+        neutralize_tank_motors(channels, model);
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct TankState {
+    #[cfg(feature = "tank-mix")]
+    pub reverse: bool,
+    /// Arming result from the same conditioned logical switches used by the mixer.
+    #[cfg(feature = "tank-mix")]
+    pub armed: bool,
+}
+
+#[cfg(feature = "tank-mix")]
+impl TankState {
+    pub const DIRECTION_THRESHOLD: i32 = 20;
+
+    pub fn update(&mut self, drive: i32) {
+        if drive < -Self::DIRECTION_THRESHOLD {
+            self.reverse = true;
+        } else if drive > Self::DIRECTION_THRESHOLD {
+            self.reverse = false;
+        }
+    }
+}
+
+pub struct PreparedChannels {
+    pub sticks: [i16; 4],
+    pub channels: [i32; NUM_CHANNELS],
+    pub switches: Switches,
+}
+
+#[cfg(feature = "tank-mix")]
+pub struct TankSources {
+    pub drive: i32,
+    pub steer: i32,
+}
+
+#[cfg(feature = "tank-mix")]
+impl TankSources {
+    pub fn centered(&self) -> bool {
+        (-TankState::DIRECTION_THRESHOLD..=TankState::DIRECTION_THRESHOLD).contains(&self.drive)
+            && (-TankState::DIRECTION_THRESHOLD..=TankState::DIRECTION_THRESHOLD)
+                .contains(&self.steer)
     }
 }
 
@@ -533,9 +623,9 @@ impl LogicalSwitchBank {
     }
 }
 
-/// Complete 4-stage mixer pipeline producing 18 AFHDS 2A / i-BUS microsecond pulses (988..2012 µs).
+/// Condition sources and populate template/auxiliary channels before matrix mixes.
 #[allow(clippy::too_many_arguments)]
-pub fn compute_channels(
+pub fn prepare_channels(
     raw_roll: i16,
     raw_pitch: i16,
     curved_throttle: u16, // 0..1000 from throttle curve engine
@@ -543,9 +633,7 @@ pub fn compute_channels(
     pots: &[i16],
     switches_in: &Switches,
     model: &ModelConfig,
-    trims: &TrimController,
-    throttle_trim_mode: u8,
-) -> [u16; NUM_CHANNELS] {
+) -> PreparedChannels {
     let mut local_switches = *switches_in;
     let switches = &mut local_switches;
 
@@ -596,7 +684,7 @@ pub fn compute_channels(
     // Apply Wing/Tail templates to primary channels
     let template = WingTailTemplate::from_u8(model.wing_tail_mix);
     match template {
-        WingTailTemplate::Normal => {
+        WingTailTemplate::Normal | WingTailTemplate::Tank => {
             ch_vals[0] = cond_roll as i32;
             ch_vals[1] = cond_pitch as i32;
             ch_vals[2] = cond_thr as i32;
@@ -683,6 +771,94 @@ pub fn compute_channels(
         }
     }
 
+    PreparedChannels {
+        sticks: cond_sticks,
+        channels: ch_vals,
+        switches: local_switches,
+    }
+}
+
+#[cfg(feature = "tank-mix")]
+pub fn evaluate_tank_sources(
+    prepared: &PreparedChannels,
+    pots: &[i16],
+    model: &ModelConfig,
+) -> TankSources {
+    TankSources {
+        drive: evaluate_source(
+            model.tank.drive_source,
+            &prepared.sticks,
+            pots,
+            &prepared.switches,
+            &prepared.channels,
+            &model.gvars,
+        ),
+        steer: evaluate_source(
+            model.tank.steer_source,
+            &prepared.sticks,
+            pots,
+            &prepared.switches,
+            &prepared.channels,
+            &model.gvars,
+        ),
+    }
+}
+
+/// Complete mixer pipeline producing 18 channel pulses (988..2012 us).
+#[allow(clippy::too_many_arguments)]
+pub fn compute_channels(
+    raw_roll: i16,
+    raw_pitch: i16,
+    curved_throttle: u16,
+    raw_yaw: i16,
+    pots: &[i16],
+    switches_in: &Switches,
+    model: &ModelConfig,
+    trims: &TrimController,
+    throttle_trim_mode: u8,
+    tank_state: &mut TankState,
+) -> [u16; NUM_CHANNELS] {
+    #[cfg(not(feature = "tank-mix"))]
+    if is_tank(model) {
+        return [CHANNEL_CENTER_US; NUM_CHANNELS];
+    }
+    let prepared = prepare_channels(
+        raw_roll,
+        raw_pitch,
+        curved_throttle,
+        raw_yaw,
+        pots,
+        switches_in,
+        model,
+    );
+    #[cfg(feature = "tank-mix")]
+    let prepared = {
+        let mut prepared = prepared;
+        if is_tank(model) {
+            // Read both channel-valued sources before overwriting either motor output.
+            let sources = evaluate_tank_sources(&prepared, pots, model);
+            tank_state.update(sources.drive);
+            tank_state.armed =
+                model.arm_switch == 0 || eval_arm_switch(model.arm_switch, &prepared.switches);
+            let steer = sources.steer
+                * model.tank.steer_weight as i32
+                * if tank_state.reverse { -1 } else { 1 }
+                / 100;
+            prepared.channels[model.tank.left_channel as usize - 1] =
+                (sources.drive + steer).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            prepared.channels[model.tank.right_channel as usize - 1] =
+                (sources.drive - steer).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+        } else {
+            *tank_state = TankState::default();
+        }
+        prepared
+    };
+    let cond_sticks = prepared.sticks;
+    let [cond_roll, cond_pitch, _, cond_yaw] = cond_sticks;
+    let mut ch_vals = prepared.channels;
+    let switches = &prepared.switches;
+    let template = WingTailTemplate::from_u8(model.wing_tail_mix);
+
     // Stage 3b: Freeform matrix mixer lines
     for mix in model.mixes.iter() {
         if mix.target_ch == 0 || mix.target_ch > NUM_CHANNELS as u8 {
@@ -744,7 +920,10 @@ pub fn compute_channels(
     }
 
     // Stage 3c: Soaring Glider Tail Topology (V-Tail / M-Tail roll-assist) & Crow Brake
-    if model.soaring.is_active() && template != WingTailTemplate::Freeform {
+    if model.soaring.is_active()
+        && template != WingTailTemplate::Freeform
+        && template != WingTailTemplate::Tank
+    {
         match model.soaring.tail_type {
             1 if template != WingTailTemplate::VTail => {
                 // V-Tail override from Soaring Setup
@@ -757,7 +936,8 @@ pub fn compute_channels(
                 // M-Tail (V-Tail with roll-assist differential from Aileron & Rudder)
                 let p = cond_pitch as i32;
                 let y = cond_yaw as i32;
-                let roll_assist = ((cond_roll as i32) * (model.soaring.mtail_aile_ele as i32)) / 100
+                let roll_assist = ((cond_roll as i32) * (model.soaring.mtail_aile_ele as i32))
+                    / 100
                     + ((cond_yaw as i32) * (model.soaring.mtail_rud_ele as i32)) / 100;
                 ch_vals[1] = ((p + y) / 2 + roll_assist).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
                 ch_vals[3] = ((p - y) / 2 - roll_assist).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
@@ -765,9 +945,7 @@ pub fn compute_channels(
             _ => {}
         }
 
-        if model.soaring.crow_switch > 0
-            && is_switch_active(model.soaring.crow_switch, switches)
-        {
+        if model.soaring.crow_switch > 0 && is_switch_active(model.soaring.crow_switch, switches) {
             // Proportional crow/butterfly braking when crow_switch is active:
             // Raise ailerons (CH1, and CH6 in Flaperon) +30% and add -10% down-elevator compensation
             let crow_val = 300;
@@ -788,28 +966,44 @@ pub fn compute_channels(
 
     // Apply digital trims to primary flight channels if not in Freeform mode
     if template != WingTailTemplate::Freeform {
-        rf_chs[0] = TrimController::apply(rf_chs[0], trims.values.roll);
-        rf_chs[1] = TrimController::apply(rf_chs[1], trims.values.pitch);
-        rf_chs[2] =
-            TrimController::apply_throttle(rf_chs[2], trims.values.throttle, throttle_trim_mode);
-        rf_chs[3] = TrimController::apply(rf_chs[3], trims.values.yaw);
+        if !is_tank_motor(0, model) {
+            rf_chs[0] = TrimController::apply(rf_chs[0], trims.values.roll);
+        }
+        if !is_tank_motor(1, model) {
+            rf_chs[1] = TrimController::apply(rf_chs[1], trims.values.pitch);
+        }
+        if !is_tank_motor(2, model) {
+            rf_chs[2] = TrimController::apply_throttle(
+                rf_chs[2],
+                trims.values.throttle,
+                throttle_trim_mode,
+            );
+        }
+        if !is_tank_motor(3, model) {
+            rf_chs[3] = TrimController::apply(rf_chs[3], trims.values.yaw);
+        }
     }
 
     // Safety Interlocks & Throttle Lockout:
     // 1. Helicopter Throttle Hold: SA Down forces throttle channel to absolute idle (CHANNEL_MIN_US)
     //    while collective pitch and cyclic controls remain fully responsive.
     // 2. Configured Arm Switch: if an arm switch is configured (1..14) and disarmed, clamp throttle to idle.
-    let is_heli_hold =
-        model.model_type() == crate::safety::ModelType::Heli && switches.sa == SwitchPos::Down;
+    let is_heli_hold = !is_tank(model)
+        && model.model_type() == crate::safety::ModelType::Heli
+        && switches.sa == SwitchPos::Down;
     let is_disarmed = model.arm_switch > 0
         && model.arm_switch <= 28
         && !eval_arm_switch(model.arm_switch, switches);
 
-    if (is_heli_hold || is_disarmed) && template != WingTailTemplate::Freeform {
+    if (is_heli_hold || is_disarmed)
+        && template != WingTailTemplate::Freeform
+        && template != WingTailTemplate::Tank
+    {
         rf_chs[2] = CHANNEL_MIN_US;
     }
 
-    if model.soaring.is_active()
+    if !is_tank(model)
+        && model.soaring.is_active()
         && model.soaring.arm_switch > 0
         && model.soaring.arm_switch <= 28
         && !is_switch_active(model.soaring.arm_switch, switches)
@@ -817,6 +1011,8 @@ pub fn compute_channels(
         let m_ch = (model.soaring.motor_ch as usize).min(NUM_CHANNELS - 1);
         rf_chs[m_ch] = CHANNEL_MIN_US;
     }
+
+    apply_tank_arming(&mut rf_chs, model, tank_state);
 
     // Apply channel reversing bitmask
     let rev_mask = model.channel_reverse;
@@ -834,6 +1030,240 @@ mod tests {
     use super::*;
     use crate::input::{SwitchPos, Switches};
     use crate::storage::{MixLine, ModelConfig};
+
+    #[allow(clippy::too_many_arguments)]
+    fn compute_channels(
+        roll: i16,
+        pitch: i16,
+        throttle: u16,
+        yaw: i16,
+        pots: &[i16],
+        switches: &Switches,
+        model: &ModelConfig,
+        trims: &TrimController,
+        throttle_trim_mode: u8,
+    ) -> [u16; NUM_CHANNELS] {
+        super::compute_channels(
+            roll,
+            pitch,
+            throttle,
+            yaw,
+            pots,
+            switches,
+            model,
+            trims,
+            throttle_trim_mode,
+            &mut TankState::default(),
+        )
+    }
+
+    #[cfg(not(feature = "tank-mix"))]
+    #[test]
+    fn disabled_tank_neutralizes_saved_models_and_trainer_outputs() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = WingTailTemplate::Tank as u8;
+        model.tank.left_channel = 17;
+        model.tank.right_channel = 18;
+        let mut state = TankState::default();
+        let channels = super::compute_channels(
+            1000,
+            -1000,
+            1000,
+            1000,
+            &[1000, 1000],
+            &Switches::new(),
+            &model,
+            &TrimController::new(),
+            0,
+            &mut state,
+        );
+        assert_eq!(channels, [CHANNEL_CENTER_US; NUM_CHANNELS]);
+        let mut student_channels = [2012; NUM_CHANNELS];
+        apply_tank_arming(&mut student_channels, &model, &state);
+        assert_eq!(student_channels, [CHANNEL_CENTER_US; NUM_CHANNELS]);
+        assert_eq!(safe_idle_channels(&model), [CHANNEL_CENTER_US; NUM_CHANNELS]);
+    }
+
+    #[cfg(feature = "tank-mix")]
+    #[test]
+    fn tank_vectors_hysteresis_weights_and_full_drive() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = WingTailTemplate::Tank as u8;
+        model.tank.drive_source = 5;
+        model.tank.steer_source = 6;
+        let mut trims = TrimController::new();
+        trims.values.roll = 25;
+        trims.values.pitch = -25;
+        let switches = Switches::new();
+        let mut state = TankState::default();
+        for (drive, steer, expected) in [
+            (500, 250, [1884, 1628]),
+            (-500, 250, [1116, 1372]),
+            (0, 250, [1372, 1628]),
+            (20, 250, [1383, 1638]),
+            (1000, 0, [2012, 2012]),
+            (1000, 1000, [2012, 1500]),
+        ] {
+            let channels = super::compute_channels(
+                0,
+                0,
+                500,
+                0,
+                &[drive, steer],
+                &switches,
+                &model,
+                &trims,
+                2,
+                &mut state,
+            );
+            assert_eq!(&channels[..2], &expected);
+        }
+        state.update(-21);
+        assert!(state.reverse);
+        state.update(-20);
+        state.update(20);
+        assert!(state.reverse);
+        state.update(21);
+        assert!(!state.reverse);
+        for (weight, expected) in [(50, [1820, 1692]), (-50, [1692, 1820]), (0, [1756, 1756])] {
+            model.tank.steer_weight = weight;
+            let channels = super::compute_channels(
+                0,
+                0,
+                500,
+                0,
+                &[500, 250],
+                &switches,
+                &model,
+                &trims,
+                2,
+                &mut state,
+            );
+            assert_eq!(&channels[..2], &expected);
+        }
+        model.wing_tail_mix = WingTailTemplate::Freeform as u8;
+        super::compute_channels(0, 0, 500, 0, &[], &switches, &model, &trims, 2, &mut state);
+        assert!(!state.reverse);
+        assert_eq!(WingTailTemplate::from_u8(4), WingTailTemplate::Freeform);
+    }
+
+    #[cfg(feature = "tank-mix")]
+    #[test]
+    fn tank_channel_sources_are_read_before_motor_outputs_and_free_mixes() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = WingTailTemplate::Tank as u8;
+        model.tank.drive_source = 12;
+        model.tank.steer_source = 13;
+        let mut trims = TrimController::new();
+        trims.values.throttle = 25;
+        let mut state = TankState::default();
+        let mut switches = Switches::new();
+        let channels = super::compute_channels(
+            500,
+            250,
+            500,
+            0,
+            &[],
+            &switches,
+            &model,
+            &trims,
+            2,
+            &mut state,
+        );
+        assert_eq!(&channels[..2], &[1884, 1628]);
+        model.gvars[..2].copy_from_slice(&[500, 250]);
+        model.aux_channels[1] = 45;
+        model.aux_channels[2] = 46;
+        model.tank.drive_source = 17;
+        model.tank.steer_source = 18;
+        model.tank.left_channel = 6;
+        model.tank.right_channel = 7;
+        let channels =
+            super::compute_channels(0, 0, 500, 0, &[], &switches, &model, &trims, 2, &mut state);
+        assert_eq!(&channels[5..7], &[1884, 1628]);
+        model.tank.drive_source = 45;
+        model.tank.steer_source = 46;
+        model.tank.left_channel = 3;
+        model.tank.right_channel = 18;
+        model.channel_reverse = 1 << 17;
+        model.mixes[0].target_ch = 3;
+        model.mixes[0].source = 11;
+        model.mixes[0].weight = 10;
+        model.model_type = crate::safety::ModelType::Heli as u8;
+        model.soaring.discipline = 1;
+        model.soaring.motor_ch = 2;
+        model.soaring.arm_switch = 1;
+        model.soaring.tail_type = 2;
+        model.soaring.crow_switch = 2;
+        switches.sa = SwitchPos::Down;
+        let channels =
+            super::compute_channels(0, 0, 500, 0, &[], &switches, &model, &trims, 2, &mut state);
+        assert_eq!(channels[2], 1935);
+        assert_eq!(channels[17], 1372);
+        model.arm_switch = 1;
+        let channels =
+            super::compute_channels(0, 0, 500, 0, &[], &switches, &model, &trims, 2, &mut state);
+        assert_eq!(channels[2], 1500);
+        assert_eq!(channels[17], 1500);
+        let idle = safe_idle_channels(&model);
+        assert_eq!(idle[2], 1500);
+        assert_eq!(idle[17], 1500);
+        assert_eq!(idle[4], CHANNEL_MIN_US);
+    }
+
+    #[cfg(feature = "tank-mix")]
+    #[test]
+    fn tank_logical_arming_remains_safe_after_trainer_handover() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = WingTailTemplate::Tank as u8;
+        model.tank.drive_source = 45;
+        model.tank.steer_source = 46;
+        model.gvars[..2].copy_from_slice(&[500, 250]);
+        model.arm_switch = 29;
+        model.dr_high[0] = 50;
+        model.logical_switches[0].func = 1;
+        model.logical_switches[0].v1 = 1;
+        model.logical_switches[0].v2 = 40;
+        let trims = TrimController::new();
+        let mut state = TankState::default();
+        let mut switches = Switches::new();
+        switches.logical = 1;
+        let channels = super::compute_channels(
+            500,
+            0,
+            500,
+            0,
+            &[],
+            &switches,
+            &model,
+            &trims,
+            0,
+            &mut state,
+        );
+        assert_eq!(&channels[..2], &[1500, 1500]);
+        assert!(!state.armed);
+        let mut student_channels = [2012; NUM_CHANNELS];
+        apply_tank_arming(&mut student_channels, &model, &state);
+        assert_eq!(&student_channels[..3], &[1500, 1500, 2012]);
+        switches.logical = 0;
+        let channels = super::compute_channels(
+            1000,
+            0,
+            500,
+            0,
+            &[],
+            &switches,
+            &model,
+            &trims,
+            0,
+            &mut state,
+        );
+        assert_eq!(&channels[..2], &[1884, 1628]);
+        assert!(state.armed);
+        student_channels.fill(2012);
+        apply_tank_arming(&mut student_channels, &model, &state);
+        assert_eq!(&student_channels[..2], &[2012, 2012]);
+    }
 
     #[test]
     fn test_apply_dr_expo_linear() {
@@ -974,22 +1404,69 @@ mod tests {
 
         // Thr at +80% (+800) -> L1 immediately true, L2 waiting on 200ms delay
         sticks[2] = 800;
-        bank.update(10, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
-        assert_eq!(switches.logical & 0b11, 0b01, "L1 true, L2 still delayed at 10ms");
+        bank.update(
+            10,
+            &sticks,
+            &pots,
+            &mut switches,
+            &[0; NUM_CHANNELS],
+            &model,
+        );
+        assert_eq!(
+            switches.logical & 0b11,
+            0b01,
+            "L1 true, L2 still delayed at 10ms"
+        );
 
-        bank.update(150, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        bank.update(
+            150,
+            &sticks,
+            &pots,
+            &mut switches,
+            &[0; NUM_CHANNELS],
+            &model,
+        );
         assert_eq!(switches.logical & 0b11, 0b01, "L2 still delayed at 160ms");
 
-        bank.update(50, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
-        assert_eq!(switches.logical & 0b11, 0b11, "L2 fires at 210ms with 300ms pulse");
+        bank.update(
+            50,
+            &sticks,
+            &pots,
+            &mut switches,
+            &[0; NUM_CHANNELS],
+            &model,
+        );
+        assert_eq!(
+            switches.logical & 0b11,
+            0b11,
+            "L2 fires at 210ms with 300ms pulse"
+        );
 
         // Drop Thr back to 0% -> L1 immediately false, L2 remains pulsed for remaining 200ms
         sticks[2] = 0;
-        bank.update(100, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
-        assert_eq!(switches.logical & 0b11, 0b10, "L1 false, L2 still in 300ms pulse");
+        bank.update(
+            100,
+            &sticks,
+            &pots,
+            &mut switches,
+            &[0; NUM_CHANNELS],
+            &model,
+        );
+        assert_eq!(
+            switches.logical & 0b11,
+            0b10,
+            "L1 false, L2 still in 300ms pulse"
+        );
 
         // Advance another 200ms -> L2 300ms pulse expires
-        bank.update(200, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        bank.update(
+            200,
+            &sticks,
+            &pots,
+            &mut switches,
+            &[0; NUM_CHANNELS],
+            &model,
+        );
         assert_eq!(switches.logical & 0b11, 0b00, "L2 pulse expired");
     }
 

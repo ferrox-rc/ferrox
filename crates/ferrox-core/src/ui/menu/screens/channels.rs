@@ -290,6 +290,13 @@ pub fn format_channel_label<'a>(
         }
         _ => "CH",
     };
+    let name = if crate::mixer::is_tank(model) && ch_num == model.tank.left_channel as usize {
+        "L.MOT"
+    } else if crate::mixer::is_tank(model) && ch_num == model.tank.right_channel as usize {
+        "R.MOT"
+    } else {
+        name
+    };
 
     for &b in name.as_bytes() {
         if len < buf.len() {
@@ -384,6 +391,20 @@ mod tests {
         assert_eq!(format_channel_label(5, &model, &mut buf), "6:SB");
         assert_eq!(format_channel_label(9, &model, &mut buf), "10:SD");
         assert_eq!(format_channel_label(17, &model, &mut buf), "18:None");
+    }
+
+    #[test]
+    fn test_format_channel_label_tank_primary_and_aux_motors() {
+        let mut model = crate::storage::ModelConfig::default_for_index(0);
+        model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        let mut buf = [0; 10];
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:L.MOT");
+        assert_eq!(format_channel_label(1, &model, &mut buf), "2:R.MOT");
+        model.tank.left_channel = 17;
+        model.tank.right_channel = 18;
+        assert_eq!(format_channel_label(16, &model, &mut buf), "17:L.MOT");
+        assert_eq!(format_channel_label(17, &model, &mut buf), "18:R.MOT");
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:AIL");
     }
 
     #[test]

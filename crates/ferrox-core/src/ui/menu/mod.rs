@@ -25,6 +25,8 @@ pub enum MenuState {
     DualRateExpo,
     ThrottleCurve,
     WingMixer,
+    #[cfg(feature = "tank-mix")]
+    TankSetup,
     MixerLineEdit,
     GlobalVars,
     LogicalSwitches,
@@ -300,9 +302,15 @@ impl MenuController {
         }
 
         // Potentiometer / Jog Wheel auto-detection during source assignment
+        #[cfg(not(feature = "tank-mix"))]
+        let tank_source_selection = false;
+        #[cfg(feature = "tank-mix")]
+        let tank_source_selection =
+            self.state == MenuState::TankSetup && self.selected_item <= 1;
         let is_source_selection = self.editing
             && (self.state == MenuState::AuxChannels
-                || (self.state == MenuState::MixerLineEdit && self.selected_item == 1));
+                || (self.state == MenuState::MixerLineEdit && self.selected_item == 1)
+                || tank_source_selection);
         let mut pot_change = None;
         let vra_mode = storage.radio.get_raw_adc_mode(4);
         let vrb_mode = storage.radio.get_raw_adc_mode(5);
@@ -433,6 +441,10 @@ impl MenuController {
             MenuState::WingMixer => {
                 screens::mixer::update_wing_mixer(self, lcd, &nav_keys, storage, buzzer);
             }
+            #[cfg(feature = "tank-mix")]
+            MenuState::TankSetup => {
+                screens::mixer::update_tank_setup(self, lcd, &nav_keys, storage, buzzer);
+            }
             MenuState::MixerLineEdit => {
                 screens::mixer::update_mixer_line_edit(self, lcd, &nav_keys, storage, buzzer);
             }
@@ -554,6 +566,44 @@ mod tests {
         assert_eq!(ctrl.scroll_offset, 5);
         assert!(!ctrl.editing);
         assert!(ctrl.waiting_release);
+    }
+
+    #[cfg(feature = "tank-mix")]
+    #[test]
+    fn test_tank_moved_pot_selection_without_row_navigation() {
+        let mut ctrl = MenuController::new();
+        let mut lcd = St7567::new();
+        let mut buzzer = Buzzer::new();
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        storage.radio.adc_modes[4] = crate::storage::AdcInputMode::Pot as u8;
+        ctrl.state = MenuState::TankSetup;
+        ctrl.editing = true;
+        let mut trims = TrimController::new();
+        let switches = crate::input::Switches::new();
+        let raw_adc = [2048; adc::NUM_CHANNELS];
+        let rf_chs = [1500; crate::mixer::NUM_CHANNELS];
+        let mut pots = crate::input::Pots::default();
+        ctrl.update(
+            &mut lcd, 0, &switches, &pots, &mut storage, &mut trims,
+            &raw_adc, &rf_chs, &mut buzzer,
+        );
+        pots.vr1 = 350;
+        ctrl.update(
+            &mut lcd, 0, &switches, &pots, &mut storage, &mut trims,
+            &raw_adc, &rf_chs, &mut buzzer,
+        );
+        assert_eq!(storage.active_model.tank.drive_source, 5);
+        assert_eq!(ctrl.selected_item, 0);
+        ctrl.selected_item = 1;
+        storage.radio.adc_modes[4] = crate::storage::AdcInputMode::Off as u8;
+        pots.vr1 = 700;
+        ctrl.update(
+            &mut lcd, 0, &switches, &pots, &mut storage, &mut trims,
+            &raw_adc, &rf_chs, &mut buzzer,
+        );
+        assert_eq!(storage.active_model.tank.steer_source, 4);
+        assert_eq!(ctrl.selected_item, 1);
     }
 
     #[test]
