@@ -16,6 +16,9 @@ pub enum ModelType {
     Quad = 3,
     /// General surface vehicle (cars/boats/rovers): spring-centered bidirectional throttle.
     General = 4,
+    /// Bait boat (carp fishing): spring-centered throttle with twin-motor & hopper support.
+    #[cfg(feature = "baitboat")]
+    BaitBoat = 5,
 }
 
 impl ModelType {
@@ -25,6 +28,8 @@ impl ModelType {
             1 => Self::Glider,
             2 => Self::Heli,
             3 => Self::Quad,
+            #[cfg(feature = "baitboat")]
+            5 => Self::BaitBoat,
             _ => Self::General,
         }
     }
@@ -40,6 +45,8 @@ impl ModelType {
             Self::Heli => "HELICOPTER",
             Self::Quad => "MULTI / QUAD",
             Self::General => "GENERAL",
+            #[cfg(feature = "baitboat")]
+            Self::BaitBoat => "BAIT BOAT",
         }
     }
 
@@ -49,13 +56,25 @@ impl ModelType {
             Self::Glider => Self::Heli,
             Self::Heli => Self::Quad,
             Self::Quad => Self::General,
+            #[cfg(feature = "baitboat")]
+            Self::General => Self::BaitBoat,
+            #[cfg(feature = "baitboat")]
+            Self::BaitBoat => Self::Airplane,
+            #[cfg(not(feature = "baitboat"))]
             Self::General => Self::Airplane,
         }
     }
 
     #[inline(always)]
     pub const fn is_general(self) -> bool {
-        matches!(self, Self::General)
+        #[cfg(feature = "baitboat")]
+        {
+            matches!(self, Self::General | Self::BaitBoat)
+        }
+        #[cfg(not(feature = "baitboat"))]
+        {
+            matches!(self, Self::General)
+        }
     }
 }
 
@@ -243,6 +262,20 @@ pub fn check_preflight_throttle(
             }
         }
 
+        #[cfg(feature = "baitboat")]
+        ModelType::General | ModelType::BaitBoat => {
+            // Surface / rover models use spring-centered gimbals (-1000..=1000)
+            // Neutral check: stick must rest within ±2% (±20 permille) of center
+            const CENTER_PERMILLE_THRESHOLD: i16 = 20;
+
+            let normalized = cal.normalize_bipolar(raw);
+            if normalized.abs() > CENTER_PERMILLE_THRESHOLD {
+                return Err(PreflightError::ThrottleNotCentered {
+                    offset_pct: (normalized / 10) as i8,
+                });
+            }
+        }
+        #[cfg(not(feature = "baitboat"))]
         ModelType::General => {
             // Surface / rover models use spring-centered gimbals (-1000..=1000)
             // Neutral check: stick must rest within ±2% (±20 permille) of center

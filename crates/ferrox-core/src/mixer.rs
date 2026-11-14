@@ -95,6 +95,8 @@ pub enum WingTailTemplate {
     VTail = 2,
     Flaperon = 3,
     Freeform = 4,
+    #[cfg(feature = "baitboat")]
+    DiffThrust = 5,
 }
 
 impl WingTailTemplate {
@@ -104,6 +106,8 @@ impl WingTailTemplate {
             2 => Self::VTail,
             3 => Self::Flaperon,
             4 => Self::Freeform,
+            #[cfg(feature = "baitboat")]
+            5 => Self::DiffThrust,
             _ => Self::Normal,
         }
     }
@@ -637,6 +641,18 @@ pub fn compute_channels(
             ch_vals[2] = cond_thr as i32;
             ch_vals[3] = cond_yaw as i32;
             ch_vals[5] = (right_r + flap / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+        }
+        #[cfg(feature = "baitboat")]
+        WingTailTemplate::DiffThrust => {
+            // Twin-motor differential steering for bait boats:
+            // Left Motor (CH1) = (Throttle + Steering) / 2
+            // Right Motor (CH2) = (Throttle - Steering) / 2
+            let t = cond_thr as i32;
+            let y = cond_yaw as i32;
+            ch_vals[0] = ((t + y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            ch_vals[1] = ((t - y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
+            ch_vals[2] = cond_thr as i32;
+            ch_vals[3] = cond_yaw as i32;
         }
         WingTailTemplate::Freeform => {
             // Freeform (released gimbals):

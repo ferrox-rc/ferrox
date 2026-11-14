@@ -1322,7 +1322,11 @@ impl RadioStorage {
                 *slot = 22; // OFF
             }
         }
-        if m.model_type > 4 {
+        #[cfg(feature = "baitboat")]
+        let max_model_type = 5;
+        #[cfg(not(feature = "baitboat"))]
+        let max_model_type = 4;
+        if m.model_type > max_model_type {
             m.model_type = 0;
         }
         if m.rf_protocol > 3 {
