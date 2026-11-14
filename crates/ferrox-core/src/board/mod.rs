@@ -165,6 +165,7 @@ pub enum RadioSetupItem {
     ToneStyle,
     VoiceVolume,
     VoiceInterval,
+    VoiceLang,
     SwitchBeep,
     BacklightTimeout,
     BacklightBrightness,

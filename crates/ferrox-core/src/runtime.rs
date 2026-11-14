@@ -1482,6 +1482,7 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
                 0,
                 flight_snapshot.telem.rssi,
             );
+            crate::audio::set_lang(storage.radio.voice_lang());
             crate::audio::tick(storage.radio.voice_volume_pct());
         }
     }

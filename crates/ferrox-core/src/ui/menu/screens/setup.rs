@@ -162,6 +162,11 @@ pub fn update_radio_setup(
                 storage.radio.cycle_voice_interval();
                 storage::save_radio_config(storage);
             }
+            RadioSetupItem::VoiceLang => {
+                buzzer.click();
+                storage.radio.cycle_voice_lang();
+                storage::save_radio_config(storage);
+            }
             RadioSetupItem::InputSetupSubmenu => {
                 buzzer.click();
                 ctrl.state = MenuState::InputSetup;
@@ -232,6 +237,12 @@ fn render_radio_setup_item(
                 "Voice Intv:",
                 Some(storage.radio.voice_interval_label()),
             );
+        }
+        RadioSetupItem::VoiceLang => {
+            let lang = storage.radio.voice_lang().as_bytes();
+            let upper = [lang[0].to_ascii_uppercase(), lang[1].to_ascii_uppercase()];
+            let lang_str = core::str::from_utf8(&upper).unwrap_or("EN");
+            widgets::draw_list_row_right(lcd, slot, is_sel, "Voice Lang:", Some(lang_str));
         }
         RadioSetupItem::BacklightTimeout => {
             let timer_str = match storage.radio.backlight_timeout {

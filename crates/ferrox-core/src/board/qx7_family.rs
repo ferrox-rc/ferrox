@@ -354,6 +354,8 @@ macro_rules! impl_qx7_board_profile {
                 RadioSetupItem::VoiceVolume,
                 #[cfg(feature = "voice-audio")]
                 RadioSetupItem::VoiceInterval,
+                #[cfg(feature = "voice-audio")]
+                RadioSetupItem::VoiceLang,
                 RadioSetupItem::BacklightTimeout,
                 RadioSetupItem::BacklightBrightness,
                 RadioSetupItem::LcdContrast,

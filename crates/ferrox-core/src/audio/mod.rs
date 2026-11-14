@@ -60,13 +60,13 @@ pub enum TelemetryCallout {
 }
 
 impl TelemetryCallout {
-    const fn label_clip(self) -> &'static str {
+    const fn filename(self) -> &'static str {
         match self {
-            Self::Altitude => "/SOUNDS/en/altitude.wav",
-            Self::Distance => "/SOUNDS/en/distance.wav",
-            Self::Rssi | Self::LinkQuality => "/SOUNDS/en/rssi.wav",
-            Self::RxBat => "/SOUNDS/en/rxbat.wav",
-            Self::TxBat => "/SOUNDS/en/txbat.wav",
+            Self::Altitude => "altitude.wav",
+            Self::Distance => "distance.wav",
+            Self::Rssi | Self::LinkQuality => "rssi.wav",
+            Self::RxBat => "rxbat.wav",
+            Self::TxBat => "txbat.wav",
         }
     }
 }
@@ -75,6 +75,7 @@ impl TelemetryCallout {
 #[derive(Copy, Clone)]
 enum QueuedClip {
     Path { buf: [u8; 40], len: u8 },
+    Label(TelemetryCallout),
     SystemId(u16),
 }
 
@@ -101,6 +102,7 @@ pub struct AudioPlayer {
     q_head: usize,
     q_tail: usize,
     q_count: usize,
+    lang: [u8; 2],
     volume: Option<FatVolume>,
     sd_probed: bool,
     sd_available: bool,
@@ -121,6 +123,7 @@ impl AudioPlayer {
             q_head: 0,
             q_tail: 0,
             q_count: 0,
+            lang: *b"en",
             volume: None,
             sd_probed: false,
             sd_available: false,
@@ -132,6 +135,13 @@ impl AudioPlayer {
             pcm_bytes_left: 0,
             carry: [0u8; 4],
             carry_len: 0,
+        }
+    }
+
+    pub fn set_lang(&mut self, lang: &str) {
+        let bytes = lang.as_bytes();
+        if bytes.len() >= 2 {
+            self.lang = [bytes[0].to_ascii_lowercase(), bytes[1].to_ascii_lowercase()];
         }
     }
 
@@ -212,7 +222,7 @@ impl AudioPlayer {
 
     /// Queue a telemetry label + value + unit sequence.
     pub fn announce_telemetry(&mut self, kind: TelemetryCallout, value: i32) {
-        self.push_clip(kind.label_clip());
+        self.push_item(QueuedClip::Label(kind));
         let unit = match kind {
             TelemetryCallout::Altitude | TelemetryCallout::Distance => Some(VoiceUnit::Meters),
             TelemetryCallout::Rssi => Some(VoiceUnit::Decibels),
@@ -381,14 +391,22 @@ impl AudioPlayer {
                     Err(_) => return false,
                 }
             }
+            QueuedClip::Label(kind) => {
+                let mut p = [0u8; 32];
+                let s = format_label_path(&mut p, self.lang, kind.filename());
+                match vol.open_file(dev, s) {
+                    Ok(c) => c,
+                    Err(_) => return false,
+                }
+            }
             QueuedClip::SystemId(id) => {
                 let mut p1 = [0u8; 32];
-                let s1 = format_system_path(&mut p1, true, id);
+                let s1 = format_system_path(&mut p1, self.lang, true, id);
                 if let Ok(c) = vol.open_file(dev, s1) {
                     c
                 } else {
                     let mut p2 = [0u8; 32];
-                    let s2 = format_system_path(&mut p2, false, id);
+                    let s2 = format_system_path(&mut p2, self.lang, false, id);
                     match vol.open_file(dev, s2) {
                         Ok(c) => c,
                         Err(_) => return false,
@@ -424,14 +442,29 @@ impl Default for AudioPlayer {
     }
 }
 
-fn format_system_path(buf: &mut [u8; 32], with_system_dir: bool, id: u16) -> &str {
-    let prefix: &[u8] = if with_system_dir {
-        b"/SOUNDS/en/SYSTEM/"
-    } else {
-        b"/SOUNDS/en/"
-    };
-    let mut n = prefix.len();
-    buf[..n].copy_from_slice(prefix);
+fn write_lang_prefix(buf: &mut [u8; 32], lang: [u8; 2]) -> usize {
+    buf[..8].copy_from_slice(b"/SOUNDS/");
+    buf[8] = lang[0];
+    buf[9] = lang[1];
+    buf[10] = b'/';
+    11
+}
+
+fn format_label_path<'a>(buf: &'a mut [u8; 32], lang: [u8; 2], filename: &str) -> &'a str {
+    let mut n = write_lang_prefix(buf, lang);
+    let fb = filename.as_bytes();
+    let take = fb.len().min(buf.len() - n);
+    buf[n..n + take].copy_from_slice(&fb[..take]);
+    n += take;
+    core::str::from_utf8(&buf[..n]).unwrap_or("")
+}
+
+fn format_system_path(buf: &mut [u8; 32], lang: [u8; 2], with_system_dir: bool, id: u16) -> &str {
+    let mut n = write_lang_prefix(buf, lang);
+    if with_system_dir {
+        buf[n..n + 7].copy_from_slice(b"SYSTEM/");
+        n += 7;
+    }
     let d0 = ((id / 1000) % 10) as u8 + b'0';
     let d1 = ((id / 100) % 10) as u8 + b'0';
     let d2 = ((id / 10) % 10) as u8 + b'0';
@@ -462,6 +495,13 @@ pub fn init() {
         if let Some(ref mut out) = AUDIO_OUTPUT {
             out.init();
         }
+    }
+}
+
+/// Set the active EdgeTX voice pack 2-letter language folder (e.g. `"en"`, `"de"`, `"nl"`).
+pub fn set_lang(lang: &str) {
+    unsafe {
+        PLAYER.set_lang(lang);
     }
 }
 
@@ -627,13 +667,18 @@ mod tests {
     fn system_path_formatting() {
         let mut b = [0u8; 32];
         assert_eq!(
-            format_system_path(&mut b, true, 42),
+            format_system_path(&mut b, *b"en", true, 42),
             "/SOUNDS/en/SYSTEM/0042.wav"
         );
         let mut b2 = [0u8; 32];
         assert_eq!(
-            format_system_path(&mut b2, false, 123),
-            "/SOUNDS/en/0123.wav"
+            format_system_path(&mut b2, *b"de", false, 123),
+            "/SOUNDS/de/0123.wav"
+        );
+        let mut b3 = [0u8; 32];
+        assert_eq!(
+            format_label_path(&mut b3, *b"nl", TelemetryCallout::Altitude.filename()),
+            "/SOUNDS/nl/altitude.wav"
         );
     }
 

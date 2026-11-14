@@ -333,11 +333,16 @@ impl RadioConfig {
         self.gimbal_type == 1
     }
 
+    /// Supported EdgeTX 2-letter voice pack language folder codes (`/SOUNDS/<lang>/`).
+    pub const VOICE_LANGS: [&'static str; 12] = [
+        "en", "de", "fr", "nl", "es", "it", "pt", "cs", "pl", "ru", "zh", "ja",
+    ];
+
     /// Return WAV/PCM voice playback volume (`0..=100%`, default `80%`).
-    /// Stored in `_pad_align[0]`: `0` = default `80%`, `1..=10` = `10%..100%`, `11` = `0% (Muted)`.
+    /// Stored in lower nibble of `_pad_align[0]`: `0` = default `80%`, `1..=10` = `10%..100%`, `11` = `0% (Muted)`.
     #[inline(always)]
     pub const fn voice_volume_pct(&self) -> u8 {
-        match self._pad_align[0] {
+        match self._pad_align[0] & 0x0F {
             0 => 80,
             step @ 1..=10 => step * 10,
             _ => 0,
@@ -349,7 +354,32 @@ impl RadioConfig {
     pub fn cycle_voice_volume(&mut self) {
         let cur = self.voice_volume_pct();
         let next = if cur >= 100 { 0 } else { (cur + 20).min(100) };
-        self._pad_align[0] = if next == 0 { 11 } else { next / 10 };
+        let vol_nib = if next == 0 { 11 } else { next / 10 };
+        self._pad_align[0] = (self._pad_align[0] & 0xF0) | (vol_nib & 0x0F);
+    }
+
+    /// Return active 2-letter EdgeTX voice pack language code (default `"en"`).
+    /// Stored in upper nibble of `_pad_align[0]`.
+    #[inline(always)]
+    pub const fn voice_lang(&self) -> &'static str {
+        let idx = ((self._pad_align[0] >> 4) & 0x0F) as usize;
+        if idx < Self::VOICE_LANGS.len() {
+            Self::VOICE_LANGS[idx]
+        } else {
+            "en"
+        }
+    }
+
+    /// Cycle active voice pack language code through [`Self::VOICE_LANGS`].
+    #[inline]
+    pub fn cycle_voice_lang(&mut self) {
+        let cur = ((self._pad_align[0] >> 4) & 0x0F) as usize;
+        let next = if cur + 1 >= Self::VOICE_LANGS.len() {
+            0
+        } else {
+            cur + 1
+        };
+        self._pad_align[0] = (self._pad_align[0] & 0x0F) | ((next as u8) << 4);
     }
 
     /// Return periodic voice telemetry callout interval in seconds (`0` = OFF, default `15s`).
@@ -1239,8 +1269,11 @@ impl RadioStorage {
         if self.radio.stick_invert_mask > 0x0F {
             self.radio.stick_invert_mask = 0x03; // Default RH+RV inverted
         }
-        if self.radio._pad_align[0] > 11 {
-            self.radio._pad_align[0] = 0; // Default 80% voice volume
+        if (self.radio._pad_align[0] & 0x0F) > 11 {
+            self.radio._pad_align[0] &= 0xF0; // Default 80% voice volume
+        }
+        if ((self.radio._pad_align[0] >> 4) as usize) >= RadioConfig::VOICE_LANGS.len() {
+            self.radio._pad_align[0] &= 0x0F; // Default "en" voice language
         }
         if self.radio._pad_align[1] > 4 {
             self.radio._pad_align[1] = 0; // Default 15s voice callout interval
