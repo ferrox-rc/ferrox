@@ -55,6 +55,8 @@ jobs:
             ./tools/build-sd-bin.sh "${board}" "release-artifacts/ferrox-${board}-sd.bin"
           done
 
+          ./tools/build-presets.sh release-artifacts
+
           (cd release-artifacts && sha256sum *.bin *.hex *.elf > sha256sums.txt && cat sha256sums.txt)
 
       - name: Create GitHub Release
@@ -64,5 +66,6 @@ jobs:
             release-artifacts/*.bin
             release-artifacts/*.hex
             release-artifacts/*.elf
+            release-artifacts/manifest.json
             release-artifacts/sha256sums.txt
           generate_release_notes: true

@@ -75,6 +75,8 @@ jobs:
             ./tools/build-sd-bin.sh "${board}" "ci-artifacts/ferrox-${board}-sd.bin"
           done
 
+          ./tools/build-presets.sh ci-artifacts
+
           (cd ci-artifacts && sha256sum *.bin *.elf > sha256sums.txt)
 
       - name: Check binary footprints
@@ -104,4 +106,5 @@ jobs:
           files: |
             ci-artifacts/*.bin
             ci-artifacts/*.elf
+            ci-artifacts/manifest.json
             ci-artifacts/sha256sums.txt
