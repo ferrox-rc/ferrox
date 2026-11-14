@@ -219,7 +219,11 @@ pub fn update_diag_anas(
 
 const fn enabled_features_buf() -> ([u8; 32], usize) {
     let mut buf = [0u8; 32];
-    let prefix = b"Feat: ";
+    let prefix: &[u8] = if cfg!(feature = "multiswitch") {
+        b"Feat:"
+    } else {
+        b"Feat: "
+    };
     let mut len = 0usize;
     while len < prefix.len() {
         buf[len] = prefix[len];
@@ -234,6 +238,7 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         (b"FP", cfg!(feature = "dsm-fwd-prog")),
         (b"SR", cfg!(feature = "soaring")),
         (b"LS", cfg!(feature = "logical-switches")),
+        (b"MS", cfg!(feature = "multiswitch")),
         (b"VX", cfg!(feature = "voice-audio")),
         (b"SD", cfg!(feature = "sd-logging")),
         (b"TC", cfg!(feature = "touch")),
