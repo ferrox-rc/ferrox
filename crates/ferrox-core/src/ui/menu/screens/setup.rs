@@ -639,7 +639,7 @@ pub fn update_rx_setup(
     let item_count = match current_proto {
         RfProtocol::Afhds2a => 6,
         RfProtocol::Crsf => 5,
-        RfProtocol::Cc2500 => 4,
+        RfProtocol::Cc2500 => 6,
         RfProtocol::Dsm => {
             #[cfg(feature = "dsm-fwd-prog")]
             {
@@ -660,6 +660,7 @@ pub fn update_rx_setup(
             ctrl.state = MenuState::ModelSetup;
             ctrl.selected_item = 6;
             ctrl.scroll_offset = 3;
+            storage.active_model.set_mpm_range_check(false);
             storage::save_active_model(storage);
             buzzer.click();
             return;
@@ -793,13 +794,9 @@ pub fn update_rx_setup(
                         buzzer.click();
                     }
                 }
-                (RfProtocol::Cc2500, 1) => {
+                (RfProtocol::Cc2500, 1 | 3 | 4) => {
+                    ctrl.editing = true;
                     buzzer.click();
-                    let cur = crate::rf::mpm::Cc2500Protocol::from_u8(
-                        storage.active_model.rx_serial_proto,
-                    );
-                    storage.active_model.rx_serial_proto = cur.next() as u8;
-                    storage::save_active_model(storage);
                 }
                 (RfProtocol::Cc2500, 2) => {
                     buzzer.click();
@@ -807,13 +804,11 @@ pub fn update_rx_setup(
                     ctrl.state = MenuState::Closed;
                     return;
                 }
-                (RfProtocol::Cc2500, 3) => {
+                (RfProtocol::Cc2500, 5) => {
                     buzzer.click();
-                    storage.active_model.rf_power = if storage.active_model.rf_power == 0 {
-                        1
-                    } else {
-                        0
-                    };
+                    let next_rc = !storage.active_model.mpm_range_check();
+                    storage.active_model.set_mpm_range_check(next_rc);
+                    storage.active_model.rf_power = if next_rc { 1 } else { 0 };
                     storage::save_active_model(storage);
                 }
                 _ => {}
@@ -843,6 +838,38 @@ pub fn update_rx_setup(
                     } else {
                         4
                     };
+                    buzzer.play_tone(2200, 30);
+                }
+            }
+            1 if current_proto == RfProtocol::Cc2500 => {
+                let cur = crate::rf::mpm::Cc2500Protocol::from_u8(
+                    storage.active_model.rx_serial_proto,
+                );
+                if keys.up {
+                    storage.active_model.rx_serial_proto = cur.next() as u8;
+                    buzzer.play_tone(2200, 30);
+                } else if keys.down {
+                    storage.active_model.rx_serial_proto = cur.prev() as u8;
+                    buzzer.play_tone(2200, 30);
+                }
+            }
+            3 if current_proto == RfProtocol::Cc2500 => {
+                let cur = storage.active_model.mpm_rx_num();
+                if keys.up {
+                    storage.active_model.set_mpm_rx_num((cur + 1) & 0x0F);
+                    buzzer.play_tone(2200, 30);
+                } else if keys.down {
+                    storage.active_model.set_mpm_rx_num(cur.wrapping_sub(1) & 0x0F);
+                    buzzer.play_tone(2200, 30);
+                }
+            }
+            4 if current_proto == RfProtocol::Cc2500 => {
+                let cur = storage.active_model.mpm_freq_tune();
+                if keys.up {
+                    storage.active_model.set_mpm_freq_tune(cur.saturating_add(1));
+                    buzzer.play_tone(2200, 30);
+                } else if keys.down {
+                    storage.active_model.set_mpm_freq_tune(cur.saturating_sub(1));
                     buzzer.play_tone(2200, 30);
                 }
             }
@@ -936,12 +963,23 @@ pub fn update_rx_setup(
                         let proto_mode = crate::rf::mpm::Cc2500Protocol::from_u8(
                             storage.active_model.rx_serial_proto,
                         );
+                        let mut buf = [0u8; 16];
+                        let val_str = if ctrl.editing && idx == ctrl.selected_item {
+                            let s = proto_mode.name().as_bytes();
+                            let len = s.len().min(14);
+                            buf[0] = b'[';
+                            buf[1..1 + len].copy_from_slice(&s[..len]);
+                            buf[1 + len] = b']';
+                            core::str::from_utf8(&buf[..2 + len]).unwrap_or(proto_mode.name())
+                        } else {
+                            proto_mode.name()
+                        };
                         widgets::draw_list_row_right(
                             lcd,
                             slot,
                             idx == ctrl.selected_item,
                             "Mode:",
-                            Some(proto_mode.name()),
+                            Some(val_str),
                         );
                     }
                     2 => widgets::draw_list_row_right(
@@ -952,23 +990,93 @@ pub fn update_rx_setup(
                         None,
                     ),
                     3 => {
-                        let pwr_str = if storage.active_model.rf_power == 0 {
-                            "100mW (HI)"
+                        let rx_num = storage.active_model.mpm_rx_num();
+                        let mut buf = [0u8; 8];
+                        let val_str = if ctrl.editing && idx == ctrl.selected_item {
+                            buf[0] = b'[';
+                            buf[1] = b'0' + (rx_num / 10);
+                            buf[2] = b'0' + (rx_num % 10);
+                            buf[3] = b']';
+                            core::str::from_utf8(&buf[..4]).unwrap_or("[00]")
                         } else {
-                            "10mW (LOW)"
+                            buf[0] = b'0' + (rx_num / 10);
+                            buf[1] = b'0' + (rx_num % 10);
+                            core::str::from_utf8(&buf[..2]).unwrap_or("00")
                         };
                         widgets::draw_list_row_right(
                             lcd,
                             slot,
                             idx == ctrl.selected_item,
-                            "Power:",
+                            "RX Num:",
+                            Some(val_str),
+                        );
+                    }
+                    4 => {
+                        let tune = storage.active_model.mpm_freq_tune();
+                        let abs = tune.unsigned_abs();
+                        let mut buf = [0u8; 8];
+                        let mut pos = 0;
+                        if ctrl.editing && idx == ctrl.selected_item {
+                            buf[pos] = b'[';
+                            pos += 1;
+                        }
+                        if tune < 0 {
+                            buf[pos] = b'-';
+                            pos += 1;
+                        } else if tune > 0 {
+                            buf[pos] = b'+';
+                            pos += 1;
+                        }
+                        if abs >= 100 {
+                            buf[pos] = b'0' + (abs / 100);
+                            pos += 1;
+                        }
+                        if abs >= 10 {
+                            buf[pos] = b'0' + ((abs / 10) % 10);
+                            pos += 1;
+                        }
+                        buf[pos] = b'0' + (abs % 10);
+                        pos += 1;
+                        if ctrl.editing && idx == ctrl.selected_item {
+                            buf[pos] = b']';
+                            pos += 1;
+                        }
+                        let val_str = core::str::from_utf8(&buf[..pos]).unwrap_or("0");
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Freq Tune:",
+                            Some(val_str),
+                        );
+                    }
+                    5 => {
+                        let pwr_str = if storage.active_model.mpm_range_check() {
+                            "ON (LOW)"
+                        } else {
+                            "OFF"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Range Check:",
                             Some(pwr_str),
                         );
                     }
                     _ => {}
                 }
             }
-            widgets::draw_footer(lcd, "[OK] Select   [ESC] Exit");
+            let footer = if ctrl.editing {
+                "[OK] Save   [UP/DN] Change"
+            } else if ctrl.selected_item == 2 {
+                "[OK] Start Bind   [ESC] Exit"
+            } else if ctrl.selected_item == 5 {
+                "[OK] Toggle       [ESC] Exit"
+            } else {
+                "[OK] Edit         [ESC] Exit"
+            };
+            widgets::draw_footer(lcd, footer);
         }
         RfProtocol::Dsm => {
             for slot in 0..4 {

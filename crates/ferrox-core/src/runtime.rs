@@ -157,6 +157,9 @@ impl FlightPipeline {
 
         match proto {
             crate::board::RfProtocol::Crsf => {
+                #[cfg(feature = "rf-dsm")]
+                dsm::set_enabled(false);
+                rf::mpm::set_enabled(false);
                 let crsf_active = !sim_mode;
                 crsf::set_enabled(
                     crsf_active,
@@ -173,6 +176,7 @@ impl FlightPipeline {
             #[cfg(feature = "rf-dsm")]
             crate::board::RfProtocol::Dsm => {
                 crsf::set_enabled(false, 0, false);
+                rf::mpm::set_enabled(false);
                 let dsm_active = !sim_mode;
                 dsm::set_enabled(dsm_active);
                 dsm::set_bind_mode(rf::is_binding());
@@ -185,10 +189,36 @@ impl FlightPipeline {
                     rf::set_channels(&rf_chs);
                 }
             }
-            crate::board::RfProtocol::Afhds2a | crate::board::RfProtocol::Cc2500 => {
+            crate::board::RfProtocol::Cc2500 => {
                 crsf::set_enabled(false, 0, false);
                 #[cfg(feature = "rf-dsm")]
                 dsm::set_enabled(false);
+                rf::set_silenced(true);
+                let mpm_active = !sim_mode;
+                rf::mpm::set_enabled(mpm_active);
+                if mpm_active {
+                    let cc_proto = rf::mpm::Cc2500Protocol::from_u8(active_model.rx_serial_proto);
+                    let rx_num = active_model.mpm_rx_num();
+                    let freq_tune = active_model.mpm_freq_tune();
+                    let range_check = active_model.mpm_range_check();
+                    rf::mpm::update_link(
+                        now,
+                        &rf_chs,
+                        cc_proto,
+                        rx_num,
+                        freq_tune,
+                        rf::is_binding(),
+                        range_check,
+                    );
+                    rf::mpm::poll_telemetry(now);
+                    rf::set_channels(&rf_chs);
+                }
+            }
+            crate::board::RfProtocol::Afhds2a => {
+                crsf::set_enabled(false, 0, false);
+                #[cfg(feature = "rf-dsm")]
+                dsm::set_enabled(false);
+                rf::mpm::set_enabled(false);
                 rf::set_silenced(sim_mode);
                 if !sim_mode {
                     rf::set_channels(&rf_chs);
@@ -239,6 +269,27 @@ impl FlightPipeline {
                     last_temp_ms: 0,
                     packets_sent: 0,
                     packets_received: 0,
+                }
+            }
+            crate::board::RfProtocol::Cc2500 => {
+                let mt = rf::mpm::get_telemetry();
+                rf::afhds2a::TelemetryData {
+                    connected: mt.connected,
+                    rssi: mt.rssi,
+                    rx_voltage_mv: mt.rx_batt_mv,
+                    alt_m: mt.alt_m,
+                    alt_dm: mt.alt_dm,
+                    vspeed_cms: mt.vspeed_cms,
+                    has_vspeed: mt.has_vspeed,
+                    rpm: mt.rpm as u32,
+                    temp_c_x10: mt.temp_c_x10,
+                    last_rx_voltage_ms: mt.last_rx_batt_ms,
+                    last_alt_ms: mt.last_alt_ms,
+                    last_vspd_ms: mt.last_vspd_ms,
+                    last_rpm_ms: mt.last_rpm_ms,
+                    last_temp_ms: mt.last_temp_ms,
+                    packets_sent: mt.packets_sent as u32,
+                    packets_received: mt.packets_received as u32,
                 }
             }
             _ => rf::get_telemetry_local(&mut self.telem_reading_idx),

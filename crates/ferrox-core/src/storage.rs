@@ -590,6 +590,46 @@ impl ModelConfig {
         }
     }
 
+    /// Get MPM Receiver Number (`0..15`, stored in low nibble of `_pad0`).
+    #[inline(always)]
+    pub const fn mpm_rx_num(&self) -> u8 {
+        self._pad0 & 0x0F
+    }
+
+    /// Set MPM Receiver Number (`0..15`, stored in low nibble of `_pad0`).
+    #[inline(always)]
+    pub fn set_mpm_rx_num(&mut self, rx_num: u8) {
+        self._pad0 = (self._pad0 & 0xF0) | (rx_num & 0x0F);
+    }
+
+    /// Check if MPM reduced-power Range Check mode is active (bit 7 of `_pad0`).
+    #[inline(always)]
+    pub const fn mpm_range_check(&self) -> bool {
+        (self._pad0 & 0x80) != 0
+    }
+
+    /// Set MPM reduced-power Range Check mode (bit 7 of `_pad0`).
+    #[inline(always)]
+    pub fn set_mpm_range_check(&mut self, enabled: bool) {
+        if enabled {
+            self._pad0 |= 0x80;
+        } else {
+            self._pad0 &= !0x80;
+        }
+    }
+
+    /// Get MPM RF Frequency Fine-Tuning offset (`-127..+127`, stored in `_pad_crv`).
+    #[inline(always)]
+    pub const fn mpm_freq_tune(&self) -> i8 {
+        self._pad_crv as i8
+    }
+
+    /// Set MPM RF Frequency Fine-Tuning offset (`-127..+127`, stored in `_pad_crv`).
+    #[inline(always)]
+    pub fn set_mpm_freq_tune(&mut self, tune: i8) {
+        self._pad_crv = tune.clamp(-127, 127) as u8;
+    }
+
     /// Read source assigned to a logical channel (0..17 for CH1..CH18).
     /// In Freeform mode, CH1..CH4 use `freeform_ch1_4[0..4]`.
     /// In standard wing modes, CH1..CH4 default to their stick sources (1: Roll, 2: Pitch, 3: Thr, 4: Yaw).
@@ -1251,10 +1291,11 @@ impl RadioStorage {
         if m.rx_out_mode > 1 {
             m.rx_out_mode = 0;
         }
-        let max_serial_proto = if m.rf_protocol == 2 { 6 } else { 1 };
+        let max_serial_proto = if m.rf_protocol == 2 { 9 } else { 1 };
         if m.rx_serial_proto > max_serial_proto {
             m.rx_serial_proto = 0;
         }
+        m.set_mpm_range_check(false);
         if m.name[0] == 0 || m.name[0] == 0xFF {
             let num = self.radio.active_model + 1;
             let digit1 = b'0' + (num / 10);
