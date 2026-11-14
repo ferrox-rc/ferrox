@@ -11,6 +11,7 @@ pub fn render(
     slot: usize,
     page: usize,
     page_count: usize,
+    selected: u8,
 ) {
     let model = storage.active_model();
     let sim = crate::usb::is_sim_mode();
@@ -31,6 +32,9 @@ pub fn render(
             let on = switches & (1 << index) != 0;
             lcd.fill_rect(x, y, w, h, on);
             lcd.draw_rect(x, y, w, h, true);
+            if !ActiveBoard::HAS_TOUCH && index == selected {
+                lcd.draw_rect(x + 1, y + 1, w - 2, h - 2, !on);
+            }
             if model.multiswitch_momentary[slot] & (1 << index) != 0 {
                 lcd.draw_rect(x + 2, y + 2, w - 4, h - 4, !on);
             }
@@ -63,7 +67,11 @@ pub fn render(
     footer[..3].copy_from_slice(b"MS ");
     footer[3..3 + address.len()].copy_from_slice(address.as_bytes());
     let end = 3 + address.len();
-    footer[end..end + 10].copy_from_slice(b" Hold:Menu");
+    footer[end..end + 10].copy_from_slice(if ActiveBoard::HAS_TOUCH {
+        b" Hold:Menu"
+    } else {
+        b" OK:Switch"
+    });
     widgets::draw_footer_split(
         lcd,
         format::ascii_as_str(&page_buf),
