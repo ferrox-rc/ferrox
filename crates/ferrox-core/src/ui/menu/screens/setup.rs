@@ -786,6 +786,7 @@ pub fn update_rx_setup(
                 }
                 (RfProtocol::Crsf, 4) => {
                     buzzer.click();
+                    crate::crsf::start_config();
                     ctrl.state = MenuState::CrsfSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;

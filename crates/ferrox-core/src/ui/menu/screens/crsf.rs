@@ -50,6 +50,10 @@ pub fn update(ctrl: &mut MenuController, lcd: &mut St7567, keys: &NavKeys, buzze
         }
     }
 
+    if engine.state == CrsfConfigState::Idle {
+        crsf::start_config();
+    }
+
     match engine.state {
         // --- State: Idle / Device Discovery (TBS-Agent Device List) ---
         CrsfConfigState::Idle | CrsfConfigState::Discovering => {
