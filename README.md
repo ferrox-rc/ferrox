@@ -331,6 +331,7 @@ Compile-time Cargo features allow tailoring flash/RAM usage on 128 KB STM32F072 
 | :--- | :--- | :--- | :--- |
 | `soaring` | `i6x` **On**, `i6s` **Off** | **On** | F5J competition timer, altitude graph, V-Tail/M-Tail/crow soaring mixes, and setup UI (~6.0 KB flash on F0; opt in/out per board) |
 | `logical-switches` | **On** (default) | **On** | Programmable Logical Switches `L1..L8` (comparators, edges, timers, boolean logic) and menu editor |
+| `baitboat` | **Off** (opt-in) | **Off** (opt-in) | `ModelType::BaitBoat` surface profile and `DiffThrust` twin-motor differential steering mixer template |
 | `voice-audio` | **Off** | **On** | Zero-heap FAT16/FAT32 `/SOUNDS/<lang>/` WAV/PCM playback (`PA4` DAC1 + `TIM6` + `DMA1_Stream5`, `PE12` mute), configurable language/volume/interval, & F5J/timer/telemetry callouts |
 | `dsm-fwd-prog` | **On** | **On** | Spektrum Forward Programming menu & flight-log decoding |
 | `rf-afhds2a` | **On** | **Off** | Native FlySky A7105 260 Hz AFHDS 2A transceiver stack |
