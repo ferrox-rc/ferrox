@@ -155,6 +155,21 @@ cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-ea
 .\tools\build-sd-bin.bat pocket   # Windows
 ```
 
+#### Optional Tank Mixer
+
+```bash
+# Tank mixer (i6X: omit unused protocols to stay within 128 KB flash):
+cargo build-i6x --features stm32,rf-afhds2a,rf-crsf,logical-switches,tank-mix
+cargo build-i6s --features tank-mix
+cargo build-pocket --features tank-mix
+```
+
+`tank-mix` adds the **TANK** template and **Tank Setup** menu; **System Info**
+shows **TM** when enabled. Stored Tank settings and template ID 6 remain intact
+without the feature. Such models show a startup warning and keep all output
+channels neutral, including trainer input, until the feature is enabled or a
+different template/model is selected. See [Mixer documentation](docs/MIXER.md).
+
 ---
 
 ## 📚 Documentation Index

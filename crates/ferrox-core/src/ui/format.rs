@@ -220,8 +220,16 @@ pub const LOGICAL_FUNC_NAMES: [&str; 11] = [
 ];
 
 pub const MODE_NAMES: [&str; 3] = ["ADD (+)", "MULT (*)", "REPL (:=)"];
-pub const TEMPLATE_NAMES: [&str; 7] = [
-    "NORMAL", "ELEVON/DELTA", "V-TAIL", "FLAPERON", "FREEFORM", "DIFF THR", "TANK",
+pub const TEMPLATE_NAMES: &[&str] = &[
+    "NORMAL",
+    "ELEVON/DELTA",
+    "V-TAIL",
+    "FLAPERON",
+    "FREEFORM",
+    #[cfg(any(feature = "baitboat", feature = "tank-mix"))]
+    "DIFF THR",
+    #[cfg(feature = "tank-mix")]
+    "TANK",
 ];
 pub const DR_SWITCH_NAMES: [&str; 7] = ["None", "SA", "SB", "SC", "SD", "SE", "SF"];
 pub const AXIS_NAMES: [&str; 3] = ["Roll", "Pitch", "Yaw"];

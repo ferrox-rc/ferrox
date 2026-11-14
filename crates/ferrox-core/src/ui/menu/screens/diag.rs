@@ -219,14 +219,18 @@ pub fn update_diag_anas(
 
 const fn enabled_features_buf() -> ([u8; 32], usize) {
     let mut buf = [0u8; 32];
-    let prefix = b"Feat: ";
+    let prefix: &[u8] = if cfg!(feature = "tank-mix") {
+        b"Feat:"
+    } else {
+        b"Feat: "
+    };
     let mut len = 0usize;
     while len < prefix.len() {
         buf[len] = prefix[len];
         len += 1;
     }
 
-    let tags: [(&[u8], bool); 10] = [
+    let tags: [(&[u8], bool); 11] = [
         (b"A2", cfg!(feature = "rf-afhds2a")),
         (b"CR", cfg!(feature = "rf-crsf")),
         (b"CC", cfg!(feature = "rf-cc2500")),
@@ -234,6 +238,7 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         (b"FP", cfg!(feature = "dsm-fwd-prog")),
         (b"SR", cfg!(feature = "soaring")),
         (b"LS", cfg!(feature = "logical-switches")),
+        (b"TM", cfg!(feature = "tank-mix")),
         (b"VX", cfg!(feature = "voice-audio")),
         (b"SD", cfg!(feature = "sd-logging")),
         (b"TC", cfg!(feature = "touch")),

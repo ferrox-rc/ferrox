@@ -126,11 +126,19 @@ CH6 (Right Aileron) = -Roll + (Flap / 2)
 
 ### Freeform and Tank
 
+Tank is available only with the opt-in Cargo feature **`tank-mix`**. For build
+commands, see the [feature matrix](../README.md#feature-selection-matrix).
+
 **Freeform** retains stored template ID **4**, including direct CH1..CH4
 assignments and all 32 free mixes. **Tank** uses ID **6**; ID **5** remains
 reserved for the optional `baitboat` differential-thrust template. Cycling the
 `Wing & Mixer` template selector includes Tank and, with `baitboat` enabled,
 DiffThrust.
+
+Without `tank-mix`, the Tank template and setup menu are unavailable. Existing
+Tank configurations retain ID 6 and all settings, but show `TANK OFF` in the
+template selector and `TANK-MIX DISABLED!` at startup. All output channels
+remain neutral even after skipping the warning or applying trainer input.
 
 Choose `TANK`, then `Tank Setup` to configure:
 
