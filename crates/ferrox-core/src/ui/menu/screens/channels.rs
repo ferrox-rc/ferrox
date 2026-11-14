@@ -343,9 +343,12 @@ pub fn update_channel_monitor(
 
     let active_model = storage.active_model();
 
+    const MONITOR_TOP_Y: i32 = 13;
+    const MONITOR_ROW_STRIDE: i32 = 7;
+
     for i in 0..6 {
         let ch = start_ch + i;
-        let y = 12 + (i as i32 * 7);
+        let y = MONITOR_TOP_Y + (i as i32 * MONITOR_ROW_STRIDE);
 
         let mut name_buf = [0u8; 10];
         let name = format_channel_label(ch, active_model, &mut name_buf);
