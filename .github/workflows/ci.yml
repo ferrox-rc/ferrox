@@ -81,9 +81,9 @@ jobs:
 
       - name: Check binary footprints
         run: |
-          cargo size -p ferrox-i6s --bin ferrox-i6s --release -- -A
-          cargo size -p ferrox-i6x --bin ferrox-i6x --release -- -A
-          cargo size -p ferrox-f4 --bin ferrox-f4 --release -- -A
+          cargo size -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi -- -A
+          cargo size -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -A
+          cargo size -p ferrox-f4 --bin ferrox-f4 --release --target thumbv7em-none-eabihf -- -A
 
       - name: Upload PR firmware artifacts
         if: github.event_name == 'pull_request'
