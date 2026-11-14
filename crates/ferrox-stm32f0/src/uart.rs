@@ -108,39 +108,40 @@ impl SerialPort for I6xSerialPort {
                 rcc.apb1enr.modify(|r, w| w.bits(r.bits() & !(1 << 17)));
                 dma.ch6.cr.write(|w| w.bits(0));
                 dma.ch7.cr.write(|w| w.bits(0));
+                gpiod.moder.modify(|_, w| w.moder5().input());
+                gpiod.otyper.modify(|_, w| w.ot5().push_pull());
+                gpioa.moder.modify(|_, w| w.moder15().input());
                 I6X_TX_BUSY.store(false, Ordering::Release);
                 return;
             }
 
             rcc.ahbenr
                 .modify(|r, w| w.bits(r.bits() | (1 << 0) | (1 << 17) | (1 << 20)));
+            let _ = rcc.ahbenr.read().bits();
             rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 17)));
+            let _ = rcc.apb1enr.read().bits();
             rcc.apb2enr.modify(|r, w| w.bits(r.bits() | (1 << 0)));
+            let _ = rcc.apb2enr.read().bits();
 
-            syscfg.cfgr1.modify(|r, w| w.bits(r.bits() | (1 << 10)));
+            // RM0091 §9.1.1: SYSCFG_CFGR1 bit 25 (USART2_DMA_RMP) remaps
+            // USART2_RX -> DMA1 Ch6 and USART2_TX -> DMA1 Ch7.
+            syscfg.cfgr1.modify(|_, w| w.usart2_dma_rmp().remapped());
 
-            gpiod.moder.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(3 << 10)) | (2 << 10))
-            });
-            gpiod.afrl.modify(|r, w| {
-                let val = r.bits();
-                w.bits(val & !(0xF << 20))
-            });
+            gpiod.moder.modify(|_, w| w.moder5().alternate());
+            gpiod.ospeedr.modify(|_, w| w.ospeedr5().high_speed());
+            gpiod.afrl.modify(|_, w| w.afrl5().af0());
 
-            if !half_duplex {
-                gpioa.moder.modify(|r, w| {
-                    let val = r.bits();
-                    w.bits((val & !(3 << 30)) | (2 << 30))
-                });
-                gpioa.afrh.modify(|r, w| {
-                    let val = r.bits();
-                    w.bits((val & !(0xF << 28)) | (1 << 28))
-                });
-                gpioa.pupdr.modify(|r, w| {
-                    let val = r.bits();
-                    w.bits((val & !(3 << 30)) | (1 << 30))
-                });
+            if half_duplex {
+                gpiod.otyper.modify(|_, w| w.ot5().open_drain());
+                gpiod.pupdr.modify(|_, w| w.pupdr5().pull_up());
+                gpioa.moder.modify(|_, w| w.moder15().input());
+            } else {
+                gpiod.otyper.modify(|_, w| w.ot5().push_pull());
+                gpiod.pupdr.modify(|_, w| w.pupdr5().floating());
+
+                gpioa.moder.modify(|_, w| w.moder15().alternate());
+                gpioa.pupdr.modify(|_, w| w.pupdr15().pull_up());
+                gpioa.afrh.modify(|_, w| w.afrh15().af1());
             }
 
             usart2.cr1.write(|w| w.bits(0));
@@ -228,6 +229,8 @@ impl SerialPort for I6xSerialPort {
             if self.half_duplex {
                 usart2.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 2)));
             }
+
+            usart2.icr.write(|w| w.tccf().clear());
 
             TX_DMA_BUF[..bytes.len()].copy_from_slice(bytes);
 
@@ -371,23 +374,35 @@ impl SerialPort for I6sSerialPort {
                 rcc.apb2enr.modify(|r, w| w.bits(r.bits() & !(1 << 14)));
                 dma.ch3.cr.write(|w| w.bits(0));
                 dma.ch2.cr.write(|w| w.bits(0));
+                gpiob.moder.modify(|_, w| w.moder6().input().moder7().input());
+                gpiob.otyper.modify(|_, w| w.ot6().push_pull());
                 I6S_TX_BUSY.store(false, Ordering::Release);
                 return;
             }
 
             rcc.ahbenr
                 .modify(|r, w| w.bits(r.bits() | (1 << 0) | (1 << 18)));
+            let _ = rcc.ahbenr.read().bits();
             rcc.apb2enr.modify(|r, w| w.bits(r.bits() | (1 << 14)));
+            let _ = rcc.apb2enr.read().bits();
 
-            // PB6 = AF0 (TX), PB7 = AF0 (RX)
-            gpiob.moder.modify(|r, w| {
-                let val = r.bits();
-                w.bits((val & !(0x0F << 12)) | (0x0A << 12))
-            });
-            gpiob.afrl.modify(|r, w| {
-                let val = r.bits();
-                w.bits(val & !(0xFF << 24))
-            });
+            // PB6 = AF0 (USART1_TX), high speed
+            gpiob.moder.modify(|_, w| w.moder6().alternate());
+            gpiob.ospeedr.modify(|_, w| w.ospeedr6().high_speed());
+            gpiob.afrl.modify(|_, w| w.afrl6().af0());
+
+            if half_duplex {
+                gpiob.otyper.modify(|_, w| w.ot6().open_drain());
+                gpiob.pupdr.modify(|_, w| w.pupdr6().pull_up());
+                gpiob.moder.modify(|_, w| w.moder7().input());
+            } else {
+                gpiob.otyper.modify(|_, w| w.ot6().push_pull());
+                gpiob.pupdr.modify(|_, w| w.pupdr6().floating());
+
+                gpiob.moder.modify(|_, w| w.moder7().alternate());
+                gpiob.pupdr.modify(|_, w| w.pupdr7().pull_up());
+                gpiob.afrl.modify(|_, w| w.afrl7().af0());
+            }
 
             usart1.cr1.write(|w| w.bits(0));
 
@@ -468,15 +483,14 @@ impl SerialPort for I6sSerialPort {
             while I6S_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
                 timeout -= 1;
             }
-            if timeout == 0 {
-                return;
-            }
 
             I6S_TX_BUSY.store(true, Ordering::Release);
 
             if self.half_duplex {
                 usart1.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 2)));
             }
+
+            usart1.icr.write(|w| w.tccf().clear());
 
             TX_DMA_BUF[..bytes.len()].copy_from_slice(bytes);
 
