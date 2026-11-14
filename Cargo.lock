@@ -168,6 +168,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrox-f4"
+version = "1.0.0-rc.3"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "ferrox-core",
+ "ferrox-stm32f4",
+ "stm32f4",
+]
+
+[[package]]
 name = "ferrox-i6s"
 version = "1.0.0-rc.3"
 dependencies = [
@@ -192,17 +203,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ferrox-pocket"
-version = "1.0.0-rc.3"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "ferrox-core",
- "ferrox-stm32f4",
- "stm32f4",
-]
-
-[[package]]
 name = "ferrox-stm32f0"
 version = "1.0.0-rc.3"
 dependencies = [
@@ -220,17 +220,6 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "ferrox-core",
- "stm32f4",
-]
-
-[[package]]
-name = "ferrox-zorro"
-version = "1.0.0-rc.3"
-dependencies = [
- "cortex-m",
- "cortex-m-rt",
- "ferrox-core",
- "ferrox-stm32f4",
  "stm32f4",
 ]
 

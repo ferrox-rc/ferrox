@@ -55,8 +55,8 @@ PAD_BIN="${TMP_DIR}/pad32k.bin"
 
 echo "Building ferrox-${BOARD} (edgetx-bootloader @ 0x08008000)..."
 cargo objcopy \
-    -p ferrox-pocket \
-    --bin ferrox-pocket \
+    -p ferrox-f4 \
+    --bin ferrox-f4 \
     --release \
     --target thumbv7em-none-eabihf \
     --no-default-features \

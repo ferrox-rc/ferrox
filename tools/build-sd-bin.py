@@ -31,8 +31,8 @@ def main():
         app_bin = os.path.join(tmpdir, "app.bin")
         cmd = [
             "cargo", "objcopy",
-            "-p", "ferrox-pocket",
-            "--bin", "ferrox-pocket",
+            "-p", "ferrox-f4",
+            "--bin", "ferrox-f4",
             "--release",
             "--target", "thumbv7em-none-eabihf",
             "--no-default-features",

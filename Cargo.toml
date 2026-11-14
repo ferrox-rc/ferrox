@@ -5,8 +5,7 @@ members = [
     "crates/ferrox-stm32f4",
     "boards/ferrox-i6s",
     "boards/ferrox-i6x",
-    "boards/ferrox-pocket",
-    "boards/ferrox-zorro",
+    "boards/ferrox-f4",
 ]
 resolver = "2"
 

@@ -13,12 +13,12 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **FlySky FS-i6X** (`boards/ferrox-i6x`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** | 128x64 Mono LCD |
 | **FlySky FS-i6S** (`boards/ferrox-i6s`) | STM32F072VB / APM32F072VB (Cortex-M0) | **Production** | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **Spektrum DSM** | Capacitive Touch 128x64 |
-| **RadioMaster Pocket** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Hardware Bring-Up** | Internal **ExpressLRS (CRSF)** or **CC2500** + Nano Module Bay | 128x64 Mono LCD + Scroll Wheel |
-| **Jumper T12 / T12 Pro** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal Multi-Protocol / CC2500 + External Module Bay | 128x64 Mono LCD + Scroll Wheel |
-| **FrSky Taranis X9D / X9D+** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD |
-| **FrSky Taranis X9E** (`boards/ferrox-pocket`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD (Tray) |
-| **RadioLink AT9S Pro / AT10II** (`boards/ferrox-pocket`) | STM32F405 / STM32F407 (Cortex-M4F) | **Supported Target** | Multi-Protocol + External CRSF / ELRS Bay | 320x240 Color TFT (4-bit Indexed) |
-| **RadioMaster GX12** (`boards/ferrox-pocket`) | STM32F407xG (Cortex-M4F) | **Supported Target** | Internal **ExpressLRS Gemini (CRSF)** + External JR Bay | 128x64 Mono OLED + Scroll Wheel |
+| **RadioMaster Pocket** (`boards/ferrox-f4`) | STM32F407VET6 (Cortex-M4F) | **Hardware Bring-Up** | Internal **ExpressLRS (CRSF)** or **CC2500** + Nano Module Bay | 128x64 Mono LCD + Scroll Wheel |
+| **Jumper T12 / T12 Pro** (`boards/ferrox-f4`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal Multi-Protocol / CC2500 + External Module Bay | 128x64 Mono LCD + Scroll Wheel |
+| **FrSky Taranis X9D / X9D+** (`boards/ferrox-f4`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD |
+| **FrSky Taranis X9E** (`boards/ferrox-f4`) | STM32F407VET6 (Cortex-M4F) | **Supported Target** | Internal FrSky ACCST/ACCESS + External JR Module Bay | 212x64 Wide Mono LCD (Tray) |
+| **RadioLink AT9S Pro / AT10II** (`boards/ferrox-f4`) | STM32F405 / STM32F407 (Cortex-M4F) | **Supported Target** | Multi-Protocol + External CRSF / ELRS Bay | 320x240 Color TFT (4-bit Indexed) |
+| **RadioMaster GX12** (`boards/ferrox-f4`) | STM32F407xG (Cortex-M4F) | **Supported Target** | Internal **ExpressLRS Gemini (CRSF)** + External JR Bay | 128x64 Mono OLED + Scroll Wheel |
 
 Supports modular RF protocols (**AFHDS 2A**, **CRSF / ExpressLRS** with native on-radio device configurator, **CC2500**, and **Spektrum DSM2 / DSMX** with optional Forward Programming), zero-dependency direct PAC **USB 2.0 Full-Speed** stack (HID Joystick & CDC-ACM Serial CLI/telemetry), **FT6236 Capacitive Touchscreen** & **Electronic Power Management** (i6S), **Matrix Keypad** (i6X), **Rotary Scroll Wheel** (Pocket, T12, X9D, AT9S Pro), **MicroSD SPI Storage & Flight Telemetry Logging** (Pocket), **Trainer Subsystem** (CPPM Out/In & Spektrum Satellite wireless trainer), **Responsive 128x64 and 212x64 Wide Displays**, and a zero-heap **320x240 4-bit Indexed RGB565 Color Canvas**.
 
@@ -133,14 +133,14 @@ ferrox/
 └── boards/
     ├── ferrox-i6s/             # FlySky FS-i6S target (capacitive touch, power latch, 11/15 ADC)
     ├── ferrox-i6x/             # FlySky FS-i6X target (matrix keypad, optical jog wheel, 10/14 ADC)
-    └── ferrox-pocket/          # High-speed Cortex-M4F target (Pocket, T12, X9D, X9E, AT9S Pro)
+    └── ferrox-f4/              # High-speed Cortex-M4F target (Pocket, Boxer, Zorro, TX12, QX7, T-Pro V2, T12, X9D, X9E, AT9S Pro, GX12)
 ```
 
 - **`crates/ferrox-core`**: 100% portable, target-agnostic firmware engine containing the 18-channel 32-line matrix mixer, Catmull-Rom spline curves, external I2C EEPROM storage abstraction, pre-flight safety checks, dual-target unit tests, direct PAC USB driver, CRSF/ELRS configurator, responsive display engine (128x64 & 212x64), and zero-heap 4-bit indexed color canvas.
 - **`crates/ferrox-stm32f0`**: Reusable hardware driver implementation of `ToneOutput`, `DisplayBus`, and `StorageBus` traits for the STM32F0/APM32F0 series.
 - **`crates/ferrox-stm32f4`**: Reusable hardware drivers for STM32F407/F405 targets, featuring bare-metal SPI2 microSD driver (`sdcard.rs`), ST7567 display flush with page-stride math, and hybrid EEPROM/SD storage fallback.
 - **`boards/ferrox-i6s` & `boards/ferrox-i6x`**: Zero-overhead Cortex-M0 target crates providing reset vectors, pin configurations, hardware drivers, and `BoardProfile` implementations.
-- **`boards/ferrox-pocket`**: High-performance Cortex-M4F target crate providing automated memory map selection (direct DFU at `0x08000000` vs EdgeTX SD bootloader at `0x08008000`) and feature-gated compilation for RadioMaster Pocket, Jumper T12, FrSky X9D, FrSky X9E, and RadioLink AT9S Pro.
+- **`boards/ferrox-f4`**: High-performance Cortex-M4F target crate providing automated memory map selection (direct DFU at `0x08000000` vs EdgeTX SD bootloader at `0x08008000`) and feature-gated compilation for all 11 STM32F407/F405 radios.
 - **Extending to Other Radios**: To bring Ferrox to a new radio, simply implement the `BoardProfile` const trait. The new target immediately inherits the complete flight pipeline, mixer, telemetry, USB simulator, and configurator with zero duplicate code.
 
 ---
@@ -311,14 +311,14 @@ cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-ea
 cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -O binary ferrox-i6x.bin
 
 # RadioMaster Pocket (direct DFU @ 0x08000000):
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
+cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
 
 # EdgeTX SD Bootloader image (~134 KiB with 32 KiB padding):
 .\tools\build-sd-bin.bat pocket   # Windows (or .ps1)
 ./tools/build-sd-bin.sh pocket    # Linux / macOS (or python tools/build-sd-bin.py pocket)
 
 # Other Cortex-M4F Targets (direct DFU @ 0x08000000):
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
+cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
 ```
 
 *(Workspace aliases `cargo build-i6s`, `cargo build-i6x`, `cargo build-pocket`, `cargo build-gx12`, `cargo build-t12`, `cargo build-x9d`, `cargo build-x9e`, and `cargo build-at9spro` are also available for quick ELF compilation or SWD flashing via `probe-rs`.)*

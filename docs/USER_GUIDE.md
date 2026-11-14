@@ -593,14 +593,14 @@ dfu-util -a 0 -d 314b:0106 -s 0x08000000:131072 -U stock_backup_flysky.bin
 If building from source instead of using a pre-built release `.bin`, note that `cargo build-*` outputs an ELF file. Use `cargo objcopy` (`cargo install cargo-binutils` with `rustup component add llvm-tools-preview`) to produce the raw `.bin` file required by `dfu-util`:
 ```bash
 # RadioMaster Pocket (Direct DFU):
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
+cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
 
 # FlySky FS-i6X / FS-i6S:
 cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -O binary ferrox-i6x.bin
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi -- -O binary ferrox-i6s.bin
 
-# Other STM32F4 targets (e.g. t12, x9d, x9e, gx12):
-cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
+# Other STM32F4 targets (e.g. zorro, t12, x9d, x9e, gx12):
+cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --target thumbv7em-none-eabihf --no-default-features --features <board> -- -O binary ferrox-<board>.bin
 ```
 
 Flash the `.bin` binary corresponding to your radio:

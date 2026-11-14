@@ -40,20 +40,13 @@ jobs:
             cp "target/thumbv6m-none-eabi/release/${pkg}" "release-artifacts/${pkg}.elf"
           done
 
-          # STM32F4 target: RadioMaster Zorro (standalone crate)
-          echo "=== Building ferrox-zorro ==="
-          cargo build --release -p ferrox-zorro --target thumbv7em-none-eabihf
-          cargo objcopy -p ferrox-zorro --bin ferrox-zorro --release --target thumbv7em-none-eabihf -- -O binary "release-artifacts/ferrox-zorro.bin"
-          cargo objcopy -p ferrox-zorro --bin ferrox-zorro --release --target thumbv7em-none-eabihf -- -O ihex "release-artifacts/ferrox-zorro.hex"
-          cp "target/thumbv7em-none-eabihf/release/ferrox-zorro" "release-artifacts/ferrox-zorro.elf"
-
-          # STM32F4 targets: EdgeTX-derived radios (feature-selected via ferrox-pocket)
-          for board in pocket boxer tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
+          # STM32F4 targets: EdgeTX-derived radios (feature-selected via ferrox-f4)
+          for board in pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
             echo "=== Building ferrox-${board} ==="
-            cargo build --release -p ferrox-pocket --no-default-features --features "${board}" --target thumbv7em-none-eabihf
-            cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O binary "release-artifacts/ferrox-${board}.bin"
-            cargo objcopy -p ferrox-pocket --bin ferrox-pocket --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O ihex "release-artifacts/ferrox-${board}.hex"
-            cp "target/thumbv7em-none-eabihf/release/ferrox-pocket" "release-artifacts/ferrox-${board}.elf"
+            cargo build --release -p ferrox-f4 --no-default-features --features "${board}" --target thumbv7em-none-eabihf
+            cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O binary "release-artifacts/ferrox-${board}.bin"
+            cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O ihex "release-artifacts/ferrox-${board}.hex"
+            cp "target/thumbv7em-none-eabihf/release/ferrox-f4" "release-artifacts/ferrox-${board}.elf"
           done
 
           # EdgeTX bootloader-flashable SD .bin images (32 KiB padded, linked at 0x08008000)

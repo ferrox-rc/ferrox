@@ -30,7 +30,7 @@ The repository is organized as a unified Cargo workspace supporting multiple pro
 | **STM32F0 HAL Driver** | `crates/ferrox-stm32f0/` | Shared peripheral drivers for STM32F072 / APM32F072 (Cortex-M0 @ 48 MHz) implementing `ToneOutput`, `DisplayBus`, and `StorageBus` |
 | **STM32F4 HAL Driver** | `crates/ferrox-stm32f4/` | Shared peripheral drivers for STM32F407 / STM32F405 (Cortex-M4F @ 168 MHz) featuring SPI2 microSD block driver, DMA display flushes, and QX7-family descriptors |
 | **Cortex-M0 Board Crates** | `boards/ferrox-i6s/`, `boards/ferrox-i6x/` | Target crates for FlySky FS-i6S (touch, power latch) and FS-i6X (matrix keypad, optical jog wheel) |
-| **Cortex-M4F Board Crate** | `boards/ferrox-pocket/` | Target crate for RadioMaster Pocket, Jumper T12, FrSky X9D / X9E, and RadioLink AT9S Pro |
+| **Cortex-M4F Board Crate** | `boards/ferrox-f4/` | Target crate for all STM32F407/F405 targets (Pocket, Boxer, Zorro, TX12, QX7, T-Pro V2, T12, X9D/X9E, AT9S Pro, GX12) |
 
 ---
 
