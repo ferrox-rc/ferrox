@@ -216,6 +216,14 @@ The curve engine transforms normalized stick inputs (0..1000) into tailored outp
 
 ## 6. Voice Audio & FAT32 Streaming (STM32F4, `voice-audio` feature)
 
-- **Zero-Heap FAT16/FAT32 Reader (`crates/ferrox-core/src/fat.rs`)**: Mounts MBR or superfloppy microSD cards with a 1-sector FAT cache, traverses `/SOUNDS/en/` paths (8.3 + VFAT LFN), and streams WAV files one 512-byte sector at a time.
-- **Non-Blocking Background Streaming (`crates/ferrox-core/src/audio/`)**: `AudioPlayer` and `CalloutScheduler` decode 8-bit/16-bit mono/stereo PCM into 12-bit unsigned DAC samples (`0..=4095`) in the background idle loop (up to 4 sectors per tick), never blocking the 4 ms RF flight loop.
+- **Zero-Heap FAT16/FAT32 Reader (`crates/ferrox-core/src/fat.rs`)**: Mounts MBR or superfloppy microSD cards with a 1-sector FAT cache, traverses `/SOUNDS/<lang>/` paths (8.3 + VFAT LFN) using the Radio Setup voice language setting, and streams WAV files one 512-byte sector at a time.
+- **Non-Blocking Background Streaming (`crates/ferrox-core/src/audio/`)**: `AudioPlayer` and `CalloutScheduler` decode 8-bit/16-bit mono/stereo PCM into 12-bit unsigned DAC samples (`0..=4095`) in the background idle loop (up to 4 sectors per tick), supporting configurable volume, repeat interval, and F5J/timer/telemetry cues without blocking the 4 ms RF flight loop.
 - **STM32F407 DAC + Circular DMA (`crates/ferrox-stm32f4/src/audio.rs`)**: Uses `PA4` (`DAC_OUT1`), `TIM6_TRGO`, and `DMA1_Stream5` (Channel 7) over a 2048-sample (`4 KiB`) circular ring buffer, clearing consumed slots to DAC midpoint (`2048`) and coordinating `PA4`/`PE12` (`AUDIO_MUTE`) with `DacToneBuzzer`.
+
+---
+
+## 7. Multi-Protocol Module (MPM), Logical Switches & SD Telemetry Logging
+
+- **100k 8E2 MPM Serial Link (`crates/ferrox-core/src/rf/mpm.rs`)**: Drives external/internal Multi-Protocol Modules over 100,000 baud 8E2 UART (`baud_idx = 5` in STM32F0/F4 UART drivers) with FrSky D8/D16/LBT, SFHSS, and Graupner HoTT protocol selection, RX number, frequency fine-tuning, range-check, and FrSky S.Port / HoTT telemetry decoding.
+- **Programmable Logical Switches (`crates/ferrox-core/src/mixer.rs`, `logical-switches` feature)**: Evaluates 8 configurable logical switches (`L1..L8`) supporting comparator (`a>x`, `a<x`), edge/sticky, timer/pulse, and boolean (`AND`, `OR`, `XOR`) operations as mixer/timer/audio sources.
+- **SD Telemetry CSV Logger (`crates/ferrox-core/src/telemetry_log.rs`, STM32F4)**: Buffers 512-byte CSV flight telemetry sectors to `/FERROX/` on microSD cards during background idle ticks.

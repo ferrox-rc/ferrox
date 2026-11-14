@@ -214,3 +214,10 @@ This document tracks the phased implementation, historical milestones, and ongoi
 - [x] EdgeTX SD bootloader compatibility (`chip::pre_init()` VTOR relocation + NVIC/SysTick cleanup, PLL reset before reconfig, SPI3 reset & ST7567 init timing fix, `.fwversiondata` header, and `tools/build-sd-bin.*`).
 - [x] Compile-time `voice-audio` (STM32F4 only by default) and `soaring` (default-on, opt-out via `--no-default-features`) Cargo feature flags to preserve STM32F072 flash headroom.
 
+### Phase 36: MPM 100k 8E2 Link, Logical Switches, Soaring & Voice Polish (COMPLETED)
+- [x] 100k 8E2 Multi-Protocol Module serial link, FrSky S.Port / Graupner HoTT telemetry decoding, HoTT/LBT options, RX Num, Freq Tune, and Range Check (`crates/ferrox-core/src/rf/mpm.rs`).
+- [x] Programmable Logical Switches `L1..L8` (`logical-switches` feature) with mixer/UI editor integration.
+- [x] Soaring V-Tail/M-Tail roll-assist, crow switch, F3K throw, and F5J score display.
+- [x] Configurable EdgeTX voice pack language folder (`/SOUNDS/<lang>/`), voice volume, callout interval, and F5J/timer voice cues.
+- [x] RadioMaster GX12 PCA9555/SSD1309/power drivers, SD `TelemetryLogger`, and individual selectable Cargo features on `ferrox-i6s` / `ferrox-i6x`.
+

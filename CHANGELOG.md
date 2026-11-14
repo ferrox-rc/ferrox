@@ -5,6 +5,21 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Multi-Protocol Module (MPM) 100k 8E2 Link (`crates/ferrox-core/src/rf/mpm.rs`)**: Wired 100,000 baud 8E2 UART transport, FrSky S.Port / Graupner HoTT telemetry decoding, CC2500 HoTT & FrSky LBT options, RX Num, Freq Tune, and Range Check; enabled `rf-cc2500` by default on `ferrox-i6s` and `ferrox-i6x`.
+- **Programmable Logical Switches (`L1..L8`)**: Added `logical-switches` feature with 8 programmable logical switches and menu editor (`crates/ferrox-core/src/mixer.rs`, `crates/ferrox-core/src/ui/menu/screens/mixer.rs`).
+- **Soaring Enhancements**: Added V-Tail/M-Tail roll-assist, crow switch, F3K throw, and F5J score display (`crates/ferrox-core/src/soaring/`).
+- **Voice Audio Enhancements**: Added configurable voice volume, callout repeat interval, F5J/timer voice cues, and selectable EdgeTX voice pack language folder (`/SOUNDS/<lang>/`) in Radio Setup (`crates/ferrox-core/src/audio/mod.rs`).
+- **GX12 & SD Telemetry Logger**: Implemented GX12 PCA9555/SSD1309/power drivers (`crates/ferrox-stm32f4`) and wired background SD `TelemetryLogger` (`crates/ferrox-core/src/runtime.rs`).
+- **Granular F0 Feature Flags**: Exposed individual selectable Cargo features on `boards/ferrox-i6s` and `boards/ferrox-i6x`.
+
+### Fixed
+- **CRSF Configurator Auto-Discovery**: Auto-start device discovery (`crsf::start_config()`) when opening the CRSF setup menu (`crates/ferrox-core/src/ui/menu/screens/setup.rs`, `crates/ferrox-core/src/ui/menu/screens/crsf.rs`).
+- **RadioMaster Zorro**: Flipped roller direction, prevented `RTN` long-press menu exit from resetting timer, fixed `TELE` key, `SE..SH` display, 2S battery voltage divider, stick mode in Analog Diag, and build script commit hash output.
+- **FlySky FS-i6S**: Restored full 7-byte FT6236 touch packet driver without gating on `TOUCH_INT` (`PC12`) and fixed `AUX_SOURCES` mapping.
+
 ## [1.0.0-rc3] - 2026-11-10
 
 ### Added

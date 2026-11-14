@@ -329,21 +329,22 @@ Compile-time Cargo features allow tailoring flash/RAM usage on 128 KB STM32F072 
 
 | Feature | STM32F0 (`i6x` / `i6s`) | STM32F4 (`pocket`, `zorro`, etc.) | Purpose & Flash Impact |
 | :--- | :--- | :--- | :--- |
-| `soaring` | **On** (default) | **On** | F5J competition timer, altitude graph, and soaring setup UI (~6.0 KB flash on F0; opt out with `--no-default-features --features stm32`) |
-| `voice-audio` | **Off** | **On** | Zero-heap FAT16/FAT32 `/SOUNDS/en/` WAV/PCM playback (`PA4` DAC1 + `TIM6` + `DMA1_Stream5`, `PE12` mute) & telemetry callouts (~8.7 KB flash saved when off on F0) |
+| `soaring` | `i6x` **On**, `i6s` **Off** | **On** | F5J competition timer, altitude graph, V-Tail/M-Tail/crow soaring mixes, and setup UI (~6.0 KB flash on F0; opt in/out per board) |
+| `logical-switches` | **On** (default) | **On** | Programmable Logical Switches `L1..L8` (comparators, edges, timers, boolean logic) and menu editor |
+| `voice-audio` | **Off** | **On** | Zero-heap FAT16/FAT32 `/SOUNDS/<lang>/` WAV/PCM playback (`PA4` DAC1 + `TIM6` + `DMA1_Stream5`, `PE12` mute), configurable language/volume/interval, & F5J/timer/telemetry callouts |
 | `dsm-fwd-prog` | **On** | **On** | Spektrum Forward Programming menu & flight-log decoding |
 | `rf-afhds2a` | **On** | **Off** | Native FlySky A7105 260 Hz AFHDS 2A transceiver stack |
 | `rf-crsf` | **On** | **On** | Crossfire / ExpressLRS serial protocol & telemetry |
-| `rf-cc2500` | **Off** | Board-dependent | CC2500 SPI RF support (`pocket-cc2500`, `zorro`, `t12`, `at9spro`) |
+| `rf-cc2500` | **On** (MPM) | **On** (MPM / SPI) | CC2500 / Multi-Module protocols (FrSky D8/D16/LBT, SFHSS, Graupner HoTT) |
 | `rf-dsm` | **On** | **On** | Spektrum DSM2/DSMX satellite RX & MPM serial protocol |
 | `touch` | `i6s` **On**, `i6x` **Off** | **Off** | FT6236 capacitive touch screen driver |
 | `edgetx-bootloader` | N/A | Optional | Relocates `.text` / `VTOR` to `0x08008000` with `.fwversiondata` header for EdgeTX SD dual-boot (`tools/build-sd-bin.*`) |
 | `stm32` / `apm32` | `stm32` (default) | N/A | Selects STM32F072 vs APM32F072 clone peripheral handling |
 
 ```bash
-# Slim FS-i6X / FS-i6S release build without soaring (~6 KB smaller):
-cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi --no-default-features --features stm32 -- -O binary ferrox-i6x-slim.bin
-cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi --no-default-features --features stm32 -- -O binary ferrox-i6s-slim.bin
+# Custom FS-i6X / FS-i6S release build with individually selected features:
+cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi --no-default-features --features stm32,rf-afhds2a,rf-crsf -- -O binary ferrox-i6x-slim.bin
+cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi --no-default-features --features stm32,touch,rf-crsf,soaring -- -O binary ferrox-i6s-soaring.bin
 ```
 
 Flash the extracted `.bin` file via USB DFU:
