@@ -223,7 +223,7 @@ impl RadioConfig {
             audio_enabled: 1,
             backlight_timeout: 0,
             backlight_brightness: 10,
-            vbat_warn_deci: 44,
+            vbat_warn_deci: crate::board::ActiveBoard::VBAT_WARN_DEFAULT_DECI,
             lcd_contrast: 37,
             usb_mode: 0,
             sticks: [
@@ -1212,8 +1212,10 @@ impl RadioStorage {
     pub fn sanitize(&mut self) {
         self.radio.magic = FLASH_MAGIC;
         self.radio.version = CONFIG_VERSION;
-        if self.radio.vbat_warn_deci < 35 || self.radio.vbat_warn_deci > 60 {
-            self.radio.vbat_warn_deci = 44;
+        if self.radio.vbat_warn_deci < crate::board::ActiveBoard::VBAT_WARN_MIN_DECI
+            || self.radio.vbat_warn_deci > crate::board::ActiveBoard::VBAT_WARN_MAX_DECI
+        {
+            self.radio.vbat_warn_deci = crate::board::ActiveBoard::VBAT_WARN_DEFAULT_DECI;
         }
         if self.radio.active_model >= NUM_MODELS as u8 {
             self.radio.active_model = 0;

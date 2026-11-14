@@ -262,11 +262,23 @@ impl MenuController {
         };
         self.prev_keys = keys;
 
-        let raw_down = (keys & (1 << 8)) != 0 && !self.waiting_release;
-        let raw_up = (keys & (1 << 9)) != 0 && !self.waiting_release;
+        let raw_down = !ActiveBoard::HAS_ROTARY_ENCODER
+            && (keys & (1 << 8)) != 0
+            && !self.waiting_release;
+        let raw_up = !ActiveBoard::HAS_ROTARY_ENCODER
+            && (keys & (1 << 9)) != 0
+            && !self.waiting_release;
 
-        let mut down_pressed = (newly_pressed & (1 << 8)) != 0;
-        let mut up_pressed = (newly_pressed & (1 << 9)) != 0;
+        let mut down_pressed = if ActiveBoard::HAS_ROTARY_ENCODER {
+            !self.waiting_release && (keys & (1 << 8)) != 0
+        } else {
+            (newly_pressed & (1 << 8)) != 0
+        };
+        let mut up_pressed = if ActiveBoard::HAS_ROTARY_ENCODER {
+            !self.waiting_release && (keys & (1 << 9)) != 0
+        } else {
+            (newly_pressed & (1 << 9)) != 0
+        };
 
         // Auto-repeat when UP or DOWN is held (quick traversal of lists, values, and characters)
         if raw_down {

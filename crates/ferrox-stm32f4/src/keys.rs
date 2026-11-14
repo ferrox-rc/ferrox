@@ -7,6 +7,7 @@ use crate::descriptor::{PocketHal, Qx7HalDescriptor};
 
 pub struct Qx7KeyDriver<H: Qx7HalDescriptor = PocketHal> {
     prev_enc_state: u8,
+    enc_acc: i8,
     _phantom: PhantomData<H>,
 }
 
@@ -14,6 +15,7 @@ impl<H: Qx7HalDescriptor> Qx7KeyDriver<H> {
     pub const fn new() -> Self {
         Self {
             prev_enc_state: 0,
+            enc_acc: 0,
             _phantom: PhantomData,
         }
     }
@@ -133,18 +135,19 @@ impl<H: Qx7HalDescriptor> KeyDriver for Qx7KeyDriver<H> {
             if enc_cur != self.prev_enc_state {
                 let transition = (self.prev_enc_state << 2) | enc_cur;
                 self.prev_enc_state = enc_cur;
-                if H::ROTENC_INVERT {
-                    match transition {
-                        0b0001 | 0b0111 | 0b1110 | 0b1000 => keys |= 1 << 8, // Down
-                        0b0010 | 0b1011 | 0b1101 | 0b0100 => keys |= 1 << 9, // Up
-                        _ => {}
-                    }
-                } else {
-                    match transition {
-                        0b0001 | 0b0111 | 0b1110 | 0b1000 => keys |= 1 << 9, // Up
-                        0b0010 | 0b1011 | 0b1101 | 0b0100 => keys |= 1 << 8, // Down
-                        _ => {}
-                    }
+                let raw_delta: i8 = match transition {
+                    0b0001 | 0b0111 | 0b1110 | 0b1000 => 1,
+                    0b0010 | 0b1011 | 0b1101 | 0b0100 => -1,
+                    _ => 0,
+                };
+                let delta = if H::ROTENC_INVERT { -raw_delta } else { raw_delta };
+                self.enc_acc = (self.enc_acc + delta).clamp(-4, 4);
+                if self.enc_acc >= 2 {
+                    self.enc_acc -= 2;
+                    keys |= 1 << 9; // Up
+                } else if self.enc_acc <= -2 {
+                    self.enc_acc += 2;
+                    keys |= 1 << 8; // Down
                 }
             }
         }

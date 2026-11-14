@@ -5,6 +5,13 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc6] - 2026-11-14
+
+### Fixed
+- **STM32F4 Battery Warning Range (`crates/ferrox-core/src/board/qx7_family.rs`, `storage.rs`, `setup.rs`)**: Added board-specific `VBAT_WARN_MIN_DECI` / `MAX_DECI` / `DEFAULT_DECI` bounds to `BoardProfile`, setting `5.8V..8.0V` (default `6.6V`) for 2S/NiMH STM32F4 radios while preserving `4.0V..5.0V` on FS-i6S/FS-i6X.
+- **STM32F4 Return Long-Press Timer Reset (`crates/ferrox-core/src/runtime.rs`, `qx7_family.rs`)**: Added `ALLOW_CANCEL_HOLD_TIMER_RESET` to `BoardProfile` and disabled it on `Qx7FamilySpec` so long-pressing Return/`EXIT` on the dashboard no longer resets flight timers.
+- **STM32F4 Rotary Encoder Debounce & Value Editing (`crates/ferrox-stm32f4/src/keys.rs`, `crates/ferrox-core/src/ui/menu/mod.rs`)**: Added a quadrature accumulator (`enc_acc`, `±2` threshold) to cancel contact bounce, and fixed `MenuController::update` so consecutive-frame rotary pulses are not dropped and do not trigger button-hold auto-repeat.
+
 ## [1.0.0-rc5] - 2026-11-14
 
 ### Added

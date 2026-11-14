@@ -97,11 +97,13 @@ pub fn update_radio_setup(
             }
             RadioSetupItem::BatteryWarn => {
                 buzzer.click();
-                storage.radio.vbat_warn_deci = if storage.radio.vbat_warn_deci >= 50 {
-                    40
-                } else {
-                    storage.radio.vbat_warn_deci + 1
-                };
+                storage.radio.vbat_warn_deci =
+                    if storage.radio.vbat_warn_deci >= crate::board::ActiveBoard::VBAT_WARN_MAX_DECI
+                    {
+                        crate::board::ActiveBoard::VBAT_WARN_MIN_DECI
+                    } else {
+                        storage.radio.vbat_warn_deci + 1
+                    };
                 storage::save_radio_config(storage);
             }
             RadioSetupItem::UsbMode => {

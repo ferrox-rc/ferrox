@@ -330,6 +330,11 @@ macro_rules! impl_qx7_board_profile {
             const HAS_RGB_BACKLIGHT: bool = true;
             const HAS_REAR_AND_J4_SWITCHES: bool = false;
             const HAS_SOFT_POWER_LATCH: bool = true;
+            const ALLOW_CANCEL_HOLD_TIMER_RESET: bool = false;
+
+            const VBAT_WARN_MIN_DECI: u8 = 58;
+            const VBAT_WARN_MAX_DECI: u8 = 80;
+            const VBAT_WARN_DEFAULT_DECI: u8 = 66;
 
             const MAIN_MENU_ITEMS: &'static [MainMenuItem] = &[
                 MainMenuItem::ModelSelect,

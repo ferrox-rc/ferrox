@@ -249,6 +249,12 @@ pub trait BoardProfile: Copy + Clone + 'static {
     const HAS_RGB_BACKLIGHT: bool;
     const HAS_REAR_AND_J4_SWITCHES: bool;
     const HAS_SOFT_POWER_LATCH: bool;
+    const ALLOW_CANCEL_HOLD_TIMER_RESET: bool = true;
+
+    // Battery Warning Bounds (in 0.1V decivolts)
+    const VBAT_WARN_MIN_DECI: u8 = 40;
+    const VBAT_WARN_MAX_DECI: u8 = 50;
+    const VBAT_WARN_DEFAULT_DECI: u8 = 44;
 
     // RF Protocol Capabilities
     const HAS_INTERNAL_AFHDS2A: bool;

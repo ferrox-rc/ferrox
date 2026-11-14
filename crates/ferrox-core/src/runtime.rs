@@ -832,7 +832,8 @@ impl BackgroundIdleManager {
             self.timer_reset_toast_ms = 800;
             self.timer_reset_cooldown_ms = 1500;
             buzzer.play_tone(2400, 100);
-        } else if !menu_active
+        } else if ActiveBoard::ALLOW_CANCEL_HOLD_TIMER_RESET
+            && !menu_active
             && cancel_key
             && !self.cancel_waiting_release
             && self.timer_reset_cooldown_ms == 0
