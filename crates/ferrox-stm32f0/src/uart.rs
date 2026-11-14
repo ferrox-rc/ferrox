@@ -222,9 +222,6 @@ impl SerialPort for I6xSerialPort {
             while I6X_TX_BUSY.load(Ordering::Acquire) && timeout > 0 {
                 timeout -= 1;
             }
-            if timeout == 0 {
-                return;
-            }
 
             I6X_TX_BUSY.store(true, Ordering::Release);
 
