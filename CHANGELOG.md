@@ -5,7 +5,7 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0-rc4] - 2026-11-14
 
 ### Added
 - **Multi-Protocol Module (MPM) 100k 8E2 Link (`crates/ferrox-core/src/rf/mpm.rs`)**: Wired 100,000 baud 8E2 UART transport, FrSky S.Port / Graupner HoTT telemetry decoding, CC2500 HoTT & FrSky LBT options, RX Num, Freq Tune, and Range Check; enabled `rf-cc2500` by default on `ferrox-i6s` and `ferrox-i6x`.
@@ -13,12 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Soaring Enhancements**: Added V-Tail/M-Tail roll-assist, crow switch, F3K throw, and F5J score display (`crates/ferrox-core/src/soaring/`).
 - **Voice Audio Enhancements**: Added configurable voice volume, callout repeat interval, F5J/timer voice cues, and selectable EdgeTX voice pack language folder (`/SOUNDS/<lang>/`) in Radio Setup (`crates/ferrox-core/src/audio/mod.rs`).
 - **GX12 & SD Telemetry Logger**: Implemented GX12 PCA9555/SSD1309/power drivers (`crates/ferrox-stm32f4`) and wired background SD `TelemetryLogger` (`crates/ferrox-core/src/runtime.rs`).
-- **Granular F0 Feature Flags**: Exposed individual selectable Cargo features on `boards/ferrox-i6s` and `boards/ferrox-i6x`.
+- **System Info & Build**: Added compile-time enabled features line to System Info, exposed individual selectable Cargo features on `boards/ferrox-i6s` and `boards/ferrox-i6x`, and consolidated STM32F4 targets into `boards/ferrox-f4`.
 
 ### Fixed
-- **CRSF Configurator Auto-Discovery**: Auto-start device discovery (`crsf::start_config()`) when opening the CRSF setup menu (`crates/ferrox-core/src/ui/menu/screens/setup.rs`, `crates/ferrox-core/src/ui/menu/screens/crsf.rs`).
+- **STM32F0 UART & CRSF Configurator**: Prevented `I6X_TX_BUSY` timeout wedge in `uart.rs` and auto-started device discovery (`crsf::start_config()`) when opening the CRSF setup menu.
 - **RadioMaster Zorro**: Flipped roller direction, prevented `RTN` long-press menu exit from resetting timer, fixed `TELE` key, `SE..SH` display, 2S battery voltage divider, stick mode in Analog Diag, and build script commit hash output.
-- **FlySky FS-i6S**: Restored full 7-byte FT6236 touch packet driver without gating on `TOUCH_INT` (`PC12`) and fixed `AUX_SOURCES` mapping.
+- **FlySky FS-i6S & UI**: Restored full 7-byte FT6236 touch packet driver without gating on `TOUCH_INT` (`PC12`), fixed `AUX_SOURCES` mapping, right-aligned `[ESC]`-only footers, renamed `Aux Channels` to `Channels`, and shifted Channel Monitor rows down 1px.
+- **GX12 Hardware Hardening**: Added `I2C2` `STOP`/`POS`/`AF` error recovery, set `I2C2_TRISE = 14`, and set `BSRR` before `MODER` in `PinDef::enable_clock_and_output`.
 
 ## [1.0.0-rc3] - 2026-11-10
 
