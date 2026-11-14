@@ -217,6 +217,60 @@ pub fn update_diag_anas(
     widgets::draw_footer(lcd, "[UP/DN/OK] Page  [ESC] Back");
 }
 
+const fn enabled_features_buf() -> ([u8; 32], usize) {
+    let mut buf = [0u8; 32];
+    let prefix = b"Feat: ";
+    let mut len = 0usize;
+    while len < prefix.len() {
+        buf[len] = prefix[len];
+        len += 1;
+    }
+
+    let tags: [(&[u8], bool); 9] = [
+        (b"A2", cfg!(feature = "rf-afhds2a")),
+        (b"CR", cfg!(feature = "rf-crsf")),
+        (b"CC", cfg!(feature = "rf-cc2500")),
+        (b"DS", cfg!(feature = "rf-dsm")),
+        (b"FP", cfg!(feature = "dsm-fwd-prog")),
+        (b"SR", cfg!(feature = "soaring")),
+        (b"LS", cfg!(feature = "logical-switches")),
+        (b"VX", cfg!(feature = "voice-audio")),
+        (b"TC", cfg!(feature = "touch")),
+    ];
+
+    let mut first = true;
+    let mut i = 0;
+    while i < tags.len() {
+        if tags[i].1 {
+            if !first && len < buf.len() {
+                buf[len] = b' ';
+                len += 1;
+            }
+            let tag = tags[i].0;
+            let mut j = 0;
+            while j < tag.len() && len < buf.len() {
+                buf[len] = tag[j];
+                len += 1;
+                j += 1;
+            }
+            first = false;
+        }
+        i += 1;
+    }
+
+    if first {
+        let none = b"none";
+        let mut j = 0;
+        while j < none.len() && len < buf.len() {
+            buf[len] = none[j];
+            len += 1;
+            j += 1;
+        }
+    }
+
+    (buf, len)
+}
+
 #[inline(never)]
 pub fn update_system_info(
     ctrl: &mut MenuController,
@@ -270,7 +324,10 @@ pub fn update_system_info(
     }
 
     lcd.draw_str_4x6(4, 42, "Profiles: 20 Models (16KB)", false);
-    lcd.draw_str_4x6(4, 49, "Bootloader: [OK] Reboot DFU", false);
+
+    const FEAT_INFO: ([u8; 32], usize) = enabled_features_buf();
+    let feat_str = ascii_as_str(&FEAT_INFO.0[..FEAT_INFO.1]);
+    lcd.draw_str_4x6(4, 49, feat_str, false);
 
     if keys.ok {
         buzzer.play_tone(2400, 100);
