@@ -473,7 +473,52 @@ impl MixLine {
     }
 }
 
-/// Complete profile for an individual aircraft/model (exactly 348 bytes).
+pub const NUM_LOGICAL_SWITCHES: usize = 8;
+
+/// Programmable boolean Logical Switch (`L1..L8`, 6 bytes).
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct LogicalSwitch {
+    /// Function:
+    /// 0: OFF, 1: a>x, 2: a<x, 3: |a|>x, 4: |a|<x,
+    /// 5: AND, 6: OR, 7: XOR, 8: a=b, 9: a>b, 10: a<b
+    pub func: u8,
+    /// Primary source index (`0..=57` for value functions) or switch condition (`0..=44` for boolean functions)
+    pub v1: u8,
+    /// Threshold (`-100..=100%` for `1..=4`) or secondary source/switch index (`0..=57`/`0..=44` for `5..=10`)
+    pub v2: i8,
+    /// Optional secondary AND switch condition (`0` = None, `1..=44` = switch condition)
+    pub and_sw: u8,
+    /// Activation delay in `0.1s` steps (`0..=100` = `0.0..10.0s`)
+    pub delay_tenths: u8,
+    /// Pulse duration in `0.1s` steps (`0` = continuous while condition holds, `1..=100` = `0.1..10.0s` pulse)
+    pub duration_tenths: u8,
+}
+
+impl LogicalSwitch {
+    pub const fn disabled() -> Self {
+        Self {
+            func: 0,
+            v1: 0,
+            v2: 0,
+            and_sw: 0,
+            delay_tenths: 0,
+            duration_tenths: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn is_boolean_func(&self) -> bool {
+        matches!(self.func, 5..=7)
+    }
+
+    #[inline(always)]
+    pub const fn is_dual_source_func(&self) -> bool {
+        matches!(self.func, 8..=10)
+    }
+}
+
+/// Complete profile for an individual aircraft/model (exactly 464 bytes).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ModelConfig {
@@ -505,12 +550,12 @@ pub struct ModelConfig {
     pub failsafe_timeout: u8, // 337: 10..50 (1.0s..5.0s)
     pub rf_protocol: u8,  // 338: 0: AFHDS 2A, 1: CRSF / ELRS
     pub crsf_baud: u8,    // 339: 0: 115.2k, 1: 416.6k, 2: 420k, 3: 921.6k, 4: 1.875M
-    pub arm_switch: u8,   // 340: 0: None, 1..14: SA^..SFv
+    pub arm_switch: u8,   // 340: 0: None, 1..44: SA^..SFv, L1..!L8
     pub rx_out_mode: u8,  // 341: 0: PWM, 1: PPM (default 0)
     pub servo_rate_hz: u16, // 342..344: 50..400 Hz (default 50 Hz)
     pub rx_serial_proto: u8, // 344: 0: i-BUS, 1: S.BUS (default 0)
     pub crsf_half_duplex: u8, // 345: 0: Full-Duplex (2-Wire), 1: Half-Duplex (1-Wire)
-    pub vario_switch: u8, // 346: 0: Off, 1..=28: switch condition
+    pub vario_switch: u8, // 346: 0: Off, 1..=44: switch condition
     pub vario_climb_deadband: u8, // 347: Climb deadband in 0.1 m/s (default 2 = +0.2 m/s)
     pub vario_sink_deadband: u8, // 348: Sink deadband in 0.1 m/s (default 5 = -0.5 m/s)
     pub vario_sink_mode: u8, // 349: 0: Mute, 1: Pulse, 2: Continuous (default 1)
@@ -519,12 +564,13 @@ pub struct ModelConfig {
     pub gvars: [i16; 5],   // 352..362: Global Variables GV1..GV5 (-1000..+1000)
     pub telem_slots: [u8; 4], // 362..366: Configurable telemetry dashboard sensor slots (1..4)
     pub dsm_sub_proto: u8, // 366: Spektrum DSM sub-protocol (0: DSMX-11, 1: DSMX-22, 2: DSM2-11, 3: DSM2-22)
-    pub timer1_stop_src: u8, // 367: Timer 1 Stop switch (0: None, 1..=28: switch conditions)
-    pub timer1_reset_src: u8, // 368: Timer 1 Reset switch (0: None, 1..=28: switch conditions)
+    pub timer1_stop_src: u8, // 367: Timer 1 Stop switch (0: None, 1..=44: switch conditions)
+    pub timer1_reset_src: u8, // 368: Timer 1 Reset switch (0: None, 1..=44: switch conditions)
     pub timer1_flags: u8,  // 369: Timer 1 bitflags (bit 0: latch, bit 1: arm reset, bit 2: audio)
     pub timers_ext: [crate::timer::TimerConfig; 3], // 370..388: Independent Timer 2, 3, 4 configs (3 * 6 = 18 bytes)
     pub freeform_ch1_4: [u8; 4], // 388..392: Direct source assignments for CH1..CH4 in Freeform mode
-    pub soaring: crate::soaring::SoaringConfig, // 392..416: F5J / F3K Soaring competition & glider config (Total: 416 bytes)
+    pub soaring: crate::soaring::SoaringConfig, // 392..416: F5J / F3K Soaring competition & glider config (24 bytes)
+    pub logical_switches: [LogicalSwitch; NUM_LOGICAL_SWITCHES], // 416..464: 8 Logical Switches L1..L8 (48 bytes)
 }
 
 impl ModelConfig {
@@ -587,6 +633,7 @@ impl ModelConfig {
             ],
             freeform_ch1_4: [0; 4],
             soaring: crate::soaring::SoaringConfig::default_factory(),
+            logical_switches: [LogicalSwitch::disabled(); NUM_LOGICAL_SWITCHES],
         }
     }
 
@@ -759,16 +806,22 @@ impl RadioStorage {
         &mut self.active_model
     }
 
-    /// Check if a mix source ID (0..40, matching `SOURCE_NAMES`) is available on this radio.
+    /// Check if a mix source ID (0..57, matching `SOURCE_NAMES`) is available on this radio.
     /// Filters out unconfigured switches, potentiometers, and unmapped channels.
     #[inline]
     pub fn is_source_available(&self, src: u8) -> bool {
+        if (50..=57).contains(&src) {
+            return true;
+        }
         crate::board::ActiveBoard::is_source_available(&self.radio, &self.active_model, src)
     }
 
-    /// Check if a switch condition index (0..28, matching `SWITCH_COND_NAMES`) is valid given hardware config.
+    /// Check if a switch condition index (0..44, matching `SWITCH_COND_NAMES`) is valid given hardware config.
     #[inline]
     pub fn is_switch_cond_available(&self, cond: u8) -> bool {
+        if (29..=44).contains(&cond) {
+            return true;
+        }
         crate::board::ActiveBoard::is_switch_cond_available(&self.radio, cond)
     }
 
@@ -982,6 +1035,7 @@ impl RadioStorage {
                         AdcInputMode::TwoPos | AdcInputMode::ThreePos
                     )
             } // SWM
+            50..=57 => true, // L1..L8 Logical Switches
             _ => false,
         }
     }
@@ -1218,21 +1272,21 @@ impl RadioStorage {
             m.aux_channels = [7, 8, 5, 6, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0];
         }
         for src in m.aux_channels.iter_mut() {
-            if *src > 44 {
+            if *src > 57 {
                 *src = 0;
             }
         }
         for src in m.freeform_ch1_4.iter_mut() {
-            if *src > 44 {
+            if *src > 57 {
                 *src = 0;
             }
         }
         for mix in m.mixes.iter_mut() {
             if mix.target_ch > 18
-                || mix.source > 49
+                || mix.source > 57
                 || mix.weight_src > 41
                 || mix.mode > 2
-                || mix.switch > 28
+                || mix.switch > 44
             {
                 *mix = MixLine::disabled();
             }
@@ -1244,7 +1298,7 @@ impl RadioStorage {
             m.thr_curve_pts = 5;
             m.thr_curve = [0, 25, 50, 75, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         }
-        if m.arm_switch > 28 {
+        if m.arm_switch > 44 {
             m.arm_switch = 0;
         }
         if m.crsf_arm_mode > 1 {
@@ -1256,10 +1310,10 @@ impl RadioStorage {
         if m.timer_secs > 3600 {
             m.timer_secs = 0;
         }
-        if m.timer1_stop_src > 28 {
+        if m.timer1_stop_src > 44 {
             m.timer1_stop_src = 0;
         }
-        if m.timer1_reset_src > 28 {
+        if m.timer1_reset_src > 44 {
             m.timer1_reset_src = 0;
         }
         if m.timer1_flags > 0x07 {
@@ -1272,10 +1326,10 @@ impl RadioStorage {
             if timer.start_src > 31 {
                 timer.start_src = 0;
             }
-            if timer.stop_src > 28 {
+            if timer.stop_src > 44 {
                 timer.stop_src = 0;
             }
-            if timer.reset_src > 28 {
+            if timer.reset_src > 44 {
                 timer.reset_src = 0;
             }
             if timer.flags > 0x07 {
@@ -1304,7 +1358,7 @@ impl RadioStorage {
                 b'M', b'O', b'D', b'E', b'L', b' ', digit1, digit2, b' ', b' ',
             ];
         }
-        if m.vario_switch > 29 {
+        if m.vario_switch > 44 {
             m.vario_switch = 0;
         }
         if m.vario_climb_deadband < 1 || m.vario_climb_deadband > 10 {
@@ -1320,6 +1374,40 @@ impl RadioStorage {
             m.vario_motor_mute = 1;
         }
         m.soaring.sanitize();
+        for ls in m.logical_switches.iter_mut() {
+            if ls.func > 10 {
+                *ls = LogicalSwitch::disabled();
+                continue;
+            }
+            if ls.is_boolean_func() {
+                if ls.v1 > 44 {
+                    ls.v1 = 0;
+                }
+                if ls.v2 < 0 || ls.v2 > 44 {
+                    ls.v2 = 0;
+                }
+            } else {
+                if ls.v1 > 57 {
+                    ls.v1 = 0;
+                }
+                if ls.is_dual_source_func() {
+                    if ls.v2 < 0 || ls.v2 > 57 {
+                        ls.v2 = 0;
+                    }
+                } else {
+                    ls.v2 = ls.v2.clamp(-100, 100);
+                }
+            }
+            if ls.and_sw > 44 {
+                ls.and_sw = 0;
+            }
+            if ls.delay_tenths > 100 {
+                ls.delay_tenths = 100;
+            }
+            if ls.duration_tenths > 100 {
+                ls.duration_tenths = 100;
+            }
+        }
     }
 
     /// Extract vario configuration for the active model.
@@ -1336,8 +1424,9 @@ impl RadioStorage {
 
 const _: () = assert!(core::mem::size_of::<RadioConfig>() == 148);
 const _: () = assert!(core::mem::size_of::<MixLine>() == 8);
-const _: () = assert!(core::mem::size_of::<ModelConfig>() == 416);
-const _: () = assert!(core::mem::size_of::<RadioStorage>() == 564);
+const _: () = assert!(core::mem::size_of::<LogicalSwitch>() == 6);
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 464);
+const _: () = assert!(core::mem::size_of::<RadioStorage>() == 612);
 
 static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 
@@ -1891,9 +1980,13 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
             return Ok(());
         }
 
-        // Check if this is a ModelConfig request and the slot holds legacy 348, 364, 368, or 392 bytes
+        // Check if this is a ModelConfig request and the slot holds legacy 348, 364, 368, 392, or 416 bytes
         if expected_size == core::mem::size_of::<ModelConfig>()
-            && (hdr.len == 348 || hdr.len == 364 || hdr.len == 368 || hdr.len == 392)
+            && (hdr.len == 348
+                || hdr.len == 364
+                || hdr.len == 368
+                || hdr.len == 392
+                || hdr.len == 416)
             && hdr.magic == SLOT_MAGIC
             && hdr.flags == 0
         {
@@ -1935,6 +2028,9 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
             }
             if hdr.len <= 392 {
                 model.soaring = crate::soaring::SoaringConfig::default_factory();
+            }
+            if hdr.len <= 416 {
+                model.logical_switches = [LogicalSwitch::disabled(); NUM_LOGICAL_SWITCHES];
             }
             unsafe {
                 core::ptr::copy_nonoverlapping(
@@ -2342,9 +2438,9 @@ mod tests {
 
     #[test]
     fn test_model_config_size_and_rf_power() {
-        assert_eq!(core::mem::size_of::<ModelConfig>(), 416);
+        assert_eq!(core::mem::size_of::<ModelConfig>(), 464);
         assert_eq!(core::mem::size_of::<RadioConfig>(), 148);
-        assert_eq!(core::mem::size_of::<RadioStorage>(), 564);
+        assert_eq!(core::mem::size_of::<RadioStorage>(), 612);
 
         let default_m = ModelConfig::default_for_index(0);
         assert_eq!(default_m.rf_power, 0);
@@ -2872,20 +2968,20 @@ mod tests {
     #[test]
     fn test_sanitize_extended_bounds() {
         let mut storage = RadioStorage::default_factory();
-        storage.active_model.aux_channels[0] = 44;
-        storage.active_model.aux_channels[1] = 45;
-        storage.active_model.freeform_ch1_4[0] = 44;
-        storage.active_model.freeform_ch1_4[1] = 45;
-        storage.active_model.mixes[0].switch = 28;
-        storage.active_model.mixes[1].switch = 29;
+        storage.active_model.aux_channels[0] = 57;
+        storage.active_model.aux_channels[1] = 58;
+        storage.active_model.freeform_ch1_4[0] = 57;
+        storage.active_model.freeform_ch1_4[1] = 58;
+        storage.active_model.mixes[0].switch = 44;
+        storage.active_model.mixes[1].switch = 45;
 
         storage.sanitize();
 
-        assert_eq!(storage.active_model.aux_channels[0], 44);
+        assert_eq!(storage.active_model.aux_channels[0], 57);
         assert_eq!(storage.active_model.aux_channels[1], 0);
-        assert_eq!(storage.active_model.freeform_ch1_4[0], 44);
+        assert_eq!(storage.active_model.freeform_ch1_4[0], 57);
         assert_eq!(storage.active_model.freeform_ch1_4[1], 0);
-        assert_eq!(storage.active_model.mixes[0].switch, 28);
+        assert_eq!(storage.active_model.mixes[0].switch, 44);
         assert_eq!(storage.active_model.mixes[1].switch, 0);
     }
 }

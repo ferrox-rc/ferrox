@@ -48,6 +48,8 @@ pub struct FlightPipeline {
     pub prev_active_model: u8,
     pub telem_reading_idx: u8,
     pub vario: Vario,
+    pub logical_bank: mixer::LogicalSwitchBank,
+    pub last_tick_ms: u32,
 }
 
 impl FlightPipeline {
@@ -59,6 +61,8 @@ impl FlightPipeline {
             prev_active_model: storage.radio.active_model,
             telem_reading_idx: 1,
             vario: Vario::new(),
+            logical_bank: mixer::LogicalSwitchBank::new(),
+            last_tick_ms: 0,
         }
     }
 
@@ -80,10 +84,38 @@ impl FlightPipeline {
         ActiveBoard::update_flight_switches(&mut state, storage, menu_active);
 
         let active_model = storage.active_model();
+        let stick_mode = StickMode::from_u8(storage.radio.stick_mode);
+        let controls = state.flight_controls(stick_mode);
+
+        // 1b. Update Logical Switches L1..L8 with millisecond delay & duration timers
+        let dt_ms = if self.last_tick_ms == 0 {
+            0
+        } else {
+            now.wrapping_sub(self.last_tick_ms).min(100) as u16
+        };
+        if dt_ms > 0 || self.last_tick_ms == 0 {
+            self.last_tick_ms = now.max(1);
+        }
+        let raw_sticks = [
+            controls.aileron,
+            controls.elevator,
+            controls.throttle,
+            controls.rudder,
+        ];
+        let dummy_chs = [0i32; mixer::NUM_CHANNELS];
+        self.logical_bank.update(
+            dt_ms,
+            &raw_sticks,
+            &state.aux_pots[4..],
+            &mut state.switches,
+            &dummy_chs,
+            active_model,
+        );
 
         // 2. Resynchronize arm state when active model changes or when exiting settings menu
         if storage.radio.active_model != self.prev_active_model {
             self.prev_active_model = storage.radio.active_model;
+            self.logical_bank.reset();
             self.prev_armed = mixer::eval_arm_switch(active_model.arm_switch, &state.switches);
             self.vario.reset();
         }
@@ -93,7 +125,7 @@ impl FlightPipeline {
         let mut just_disarmed = false;
         let is_armed = mixer::eval_arm_switch(active_model.arm_switch, &state.switches);
         if active_model.arm_switch > 0
-            && active_model.arm_switch <= ActiveBoard::MAX_MIX_SWITCH
+            && active_model.arm_switch <= 44
             && is_armed != self.prev_armed
         {
             if is_armed {
@@ -109,9 +141,6 @@ impl FlightPipeline {
             }
             self.prev_armed = is_armed;
         }
-
-        let stick_mode = StickMode::from_u8(storage.radio.stick_mode);
-        let controls = state.flight_controls(stick_mode);
 
         // 4. Evaluate active model throttle curve (normalized 0..MIXER_MAX)
         let thr_input =

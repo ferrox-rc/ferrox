@@ -27,6 +27,7 @@ pub enum MenuState {
     WingMixer,
     MixerLineEdit,
     GlobalVars,
+    LogicalSwitches,
     AuxChannels,
     ChannelReverse,
     RadioSetup,
@@ -164,6 +165,7 @@ impl MenuController {
             MenuState::ThrottleCurve,
             MenuState::AuxChannels,
             MenuState::ChannelReverse,
+            MenuState::LogicalSwitches,
             MenuState::TimerSetup,
             MenuState::TelemSetup,
             MenuState::VarioSetup,
@@ -436,6 +438,11 @@ impl MenuController {
             }
             MenuState::GlobalVars => {
                 screens::mixer::update_global_vars(self, lcd, &nav_keys, storage, buzzer);
+            }
+            MenuState::LogicalSwitches => {
+                screens::mixer::update_logical_switches(
+                    self, lcd, &nav_keys, switches, storage, buzzer,
+                );
             }
             MenuState::AuxChannels => {
                 screens::channels::update_aux_channels(self, lcd, &nav_keys, storage, buzzer);

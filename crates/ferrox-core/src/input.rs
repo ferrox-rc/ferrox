@@ -114,6 +114,7 @@ pub struct Switches {
     pub swk: SwitchPos, // 2-pos or 3-pos (Ext ADC 3 / PC3 when configured as switch)
     pub swl: SwitchPos, // 2-pos or 3-pos (Ext ADC 4 / PC4 when configured as switch)
     pub swm: SwitchPos, // 2-pos or 3-pos (Ext ADC 5 / PC5 when configured as switch)
+    pub logical: u8,    // Bitmask of evaluated Logical Switches L1..L8 (bit 0 = L1 .. bit 7 = L8)
 }
 
 impl Switches {
@@ -134,6 +135,7 @@ impl Switches {
             swk: SwitchPos::Up,
             swl: SwitchPos::Up,
             swm: SwitchPos::Up,
+            logical: 0,
         }
     }
 
@@ -625,6 +627,7 @@ pub fn process(raw: [u16; adc::NUM_CHANNELS]) -> InputState {
         swk,
         swl,
         swm,
+        logical: 0,
     };
 
     let instant_mv = calculate_battery_mv(raw[10]); // PC0

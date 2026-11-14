@@ -4,8 +4,8 @@ use crate::buzzer::Buzzer;
 use crate::curve;
 use crate::display::St7567;
 use crate::menu::format::{
-    ascii_as_str, i8_to_dec, u8_to_dec, AXIS_NAMES, DR_SWITCH_NAMES, MODE_NAMES, SOURCE_NAMES,
-    SWITCH_COND_NAMES, TEMPLATE_NAMES, WEIGHT_SRC_NAMES,
+    ascii_as_str, i8_to_dec, u8_to_dec, AXIS_NAMES, DR_SWITCH_NAMES, LOGICAL_FUNC_NAMES,
+    MODE_NAMES, SOURCE_NAMES, SWITCH_COND_NAMES, TEMPLATE_NAMES, WEIGHT_SRC_NAMES,
 };
 use crate::menu::widgets;
 use crate::menu::{MenuController, MenuState, NavKeys};
@@ -922,6 +922,305 @@ pub fn update_global_vars(
 
     let footer = if ctrl.editing {
         "[OK] Done   [UP/DN] Value"
+    } else {
+        "[OK] Edit   [ESC] Back"
+    };
+    widgets::draw_footer(lcd, footer);
+}
+
+#[inline(never)]
+pub fn update_logical_switches(
+    ctrl: &mut MenuController,
+    lcd: &mut St7567,
+    keys: &NavKeys,
+    switches: &crate::input::Switches,
+    storage: &mut RadioStorage,
+    buzzer: &mut Buzzer,
+) {
+    const FIELD_COUNT: usize = 7;
+    let ls_idx = ctrl.sub_idx.min(crate::storage::NUM_LOGICAL_SWITCHES - 1);
+
+    if !ctrl.editing {
+        if keys.cancel {
+            storage::save_active_model(storage);
+            ctrl.state = MenuState::ModelSetup;
+            ctrl.selected_item = 9;
+            ctrl.scroll_offset = 6;
+            ctrl.waiting_release = true;
+            buzzer.click();
+            return;
+        }
+
+        widgets::navigate_4slot_list(
+            &mut ctrl.selected_item,
+            &mut ctrl.scroll_offset,
+            FIELD_COUNT,
+            keys.up,
+            keys.down,
+            buzzer,
+        );
+
+        if keys.ok {
+            ctrl.editing = true;
+            buzzer.click();
+        }
+    } else {
+        match ctrl.selected_item {
+            0 => {
+                // Select Logical Switch L1..L8
+                if keys.up {
+                    ctrl.sub_idx = (ls_idx + 1) % crate::storage::NUM_LOGICAL_SWITCHES;
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    ctrl.sub_idx = if ls_idx == 0 {
+                        crate::storage::NUM_LOGICAL_SWITCHES - 1
+                    } else {
+                        ls_idx - 1
+                    };
+                    buzzer.play_tone(2200, 20);
+                }
+            }
+            1 => {
+                // Function: 0..=10
+                let ls = &mut storage.active_model.logical_switches[ls_idx];
+                if keys.up {
+                    ls.func = (ls.func + 1) % (LOGICAL_FUNC_NAMES.len() as u8);
+                    ls.v1 = 0;
+                    ls.v2 = 0;
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    ls.func = if ls.func == 0 {
+                        (LOGICAL_FUNC_NAMES.len() - 1) as u8
+                    } else {
+                        ls.func - 1
+                    };
+                    ls.v1 = 0;
+                    ls.v2 = 0;
+                    buzzer.play_tone(2200, 20);
+                }
+            }
+            2 => {
+                // V1: Source or Switch Condition
+                let is_bool = storage.active_model.logical_switches[ls_idx].is_boolean_func();
+                let cur = storage.active_model.logical_switches[ls_idx].v1;
+                if is_bool {
+                    if let Some(sw) = keys.sw_change {
+                        if storage.is_switch_cond_available(sw) {
+                            storage.active_model.logical_switches[ls_idx].v1 = sw;
+                            buzzer.play_tone(2400, 40);
+                        }
+                    } else if keys.up {
+                        storage.active_model.logical_switches[ls_idx].v1 =
+                            storage.next_available_switch_cond(cur, SWITCH_COND_NAMES.len());
+                        buzzer.play_tone(2200, 20);
+                    } else if keys.down {
+                        storage.active_model.logical_switches[ls_idx].v1 =
+                            storage.prev_available_switch_cond(cur, SWITCH_COND_NAMES.len());
+                        buzzer.play_tone(2200, 20);
+                    }
+                } else if keys.up {
+                    storage.active_model.logical_switches[ls_idx].v1 =
+                        storage.next_available_source(cur, SOURCE_NAMES.len());
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    storage.active_model.logical_switches[ls_idx].v1 =
+                        storage.prev_available_source(cur, SOURCE_NAMES.len());
+                    buzzer.play_tone(2200, 20);
+                }
+            }
+            3 => {
+                // V2: Threshold (-100..+100%) or secondary Source/Switch
+                let ls_copy = storage.active_model.logical_switches[ls_idx];
+                if ls_copy.is_boolean_func() {
+                    let cur = ls_copy.v2.max(0) as u8;
+                    if let Some(sw) = keys.sw_change {
+                        if storage.is_switch_cond_available(sw) {
+                            storage.active_model.logical_switches[ls_idx].v2 = sw as i8;
+                            buzzer.play_tone(2400, 40);
+                        }
+                    } else if keys.up {
+                        storage.active_model.logical_switches[ls_idx].v2 =
+                            storage.next_available_switch_cond(cur, SWITCH_COND_NAMES.len()) as i8;
+                        buzzer.play_tone(2200, 20);
+                    } else if keys.down {
+                        storage.active_model.logical_switches[ls_idx].v2 =
+                            storage.prev_available_switch_cond(cur, SWITCH_COND_NAMES.len()) as i8;
+                        buzzer.play_tone(2200, 20);
+                    }
+                } else if ls_copy.is_dual_source_func() {
+                    let cur = ls_copy.v2.max(0) as u8;
+                    if keys.up {
+                        storage.active_model.logical_switches[ls_idx].v2 =
+                            storage.next_available_source(cur, SOURCE_NAMES.len()) as i8;
+                        buzzer.play_tone(2200, 20);
+                    } else if keys.down {
+                        storage.active_model.logical_switches[ls_idx].v2 =
+                            storage.prev_available_source(cur, SOURCE_NAMES.len()) as i8;
+                        buzzer.play_tone(2200, 20);
+                    }
+                } else {
+                    adjust_clamped_i8(
+                        &mut storage.active_model.logical_switches[ls_idx].v2,
+                        -100,
+                        100,
+                        5,
+                        keys.up,
+                        keys.down,
+                        buzzer,
+                    );
+                }
+            }
+            4 => {
+                // Secondary AND Switch
+                let cur = storage.active_model.logical_switches[ls_idx].and_sw;
+                if let Some(sw) = keys.sw_change {
+                    if storage.is_switch_cond_available(sw) {
+                        storage.active_model.logical_switches[ls_idx].and_sw = sw;
+                        buzzer.play_tone(2400, 40);
+                    }
+                } else if keys.up {
+                    storage.active_model.logical_switches[ls_idx].and_sw =
+                        storage.next_available_switch_cond(cur, SWITCH_COND_NAMES.len());
+                    buzzer.play_tone(2200, 20);
+                } else if keys.down {
+                    storage.active_model.logical_switches[ls_idx].and_sw =
+                        storage.prev_available_switch_cond(cur, SWITCH_COND_NAMES.len());
+                    buzzer.play_tone(2200, 20);
+                }
+            }
+            5 => {
+                // Delay (0.0s .. 10.0s in 0.1s steps)
+                adjust_clamped_u8(
+                    &mut storage.active_model.logical_switches[ls_idx].delay_tenths,
+                    0,
+                    100,
+                    1,
+                    keys.up,
+                    keys.down,
+                    buzzer,
+                );
+            }
+            6 => {
+                // Duration (0 = Cont., 0.1s .. 10.0s in 0.1s steps)
+                adjust_clamped_u8(
+                    &mut storage.active_model.logical_switches[ls_idx].duration_tenths,
+                    0,
+                    100,
+                    1,
+                    keys.up,
+                    keys.down,
+                    buzzer,
+                );
+            }
+            _ => {}
+        }
+
+        if keys.ok || keys.cancel {
+            ctrl.editing = false;
+            storage::save_active_model(storage);
+            buzzer.click();
+        }
+    }
+
+    widgets::draw_header(lcd, "LOGICAL SWITCHES");
+
+    let ls = storage.active_model.logical_switches[ls_idx];
+    let is_active = (switches.logical & (1 << ls_idx)) != 0;
+    let mut b6 = [0u8; 6];
+    let mut t_buf = [0u8; 8];
+
+    for slot in 0..4 {
+        let idx = ctrl.scroll_offset + slot;
+        if idx >= FIELD_COUNT {
+            break;
+        }
+        let is_sel = idx == ctrl.selected_item;
+        match idx {
+            0 => {
+                let mut sw_buf = *b"L1 [OFF]";
+                sw_buf[1] = b'1' + (ls_idx as u8);
+                if is_active {
+                    sw_buf[4..8].copy_from_slice(b"ON] ");
+                }
+                let s = ascii_as_str(if is_active { &sw_buf[..7] } else { &sw_buf[..8] });
+                widgets::draw_list_row(lcd, slot, is_sel, "Switch:", Some(s), 56);
+            }
+            1 => {
+                let f_idx = (ls.func as usize).min(LOGICAL_FUNC_NAMES.len() - 1);
+                widgets::draw_list_row(
+                    lcd,
+                    slot,
+                    is_sel,
+                    "Func:",
+                    Some(LOGICAL_FUNC_NAMES[f_idx]),
+                    56,
+                );
+            }
+            2 => {
+                let v1_str = if ls.is_boolean_func() {
+                    let s_idx = (ls.v1 as usize).min(SWITCH_COND_NAMES.len() - 1);
+                    SWITCH_COND_NAMES[s_idx]
+                } else {
+                    let s_idx = (ls.v1 as usize).min(SOURCE_NAMES.len() - 1);
+                    SOURCE_NAMES[s_idx]
+                };
+                widgets::draw_list_row(lcd, slot, is_sel, "V1:", Some(v1_str), 56);
+            }
+            3 => {
+                let v2_str = if ls.is_boolean_func() {
+                    let s_idx = (ls.v2.max(0) as usize).min(SWITCH_COND_NAMES.len() - 1);
+                    SWITCH_COND_NAMES[s_idx]
+                } else if ls.is_dual_source_func() {
+                    let s_idx = (ls.v2.max(0) as usize).min(SOURCE_NAMES.len() - 1);
+                    SOURCE_NAMES[s_idx]
+                } else {
+                    i8_to_dec(ls.v2, &mut b6)
+                };
+                widgets::draw_list_row(lcd, slot, is_sel, "V2:", Some(v2_str), 56);
+            }
+            4 => {
+                let and_idx = (ls.and_sw as usize).min(SWITCH_COND_NAMES.len() - 1);
+                let and_str = if and_idx == 0 {
+                    "---"
+                } else {
+                    SWITCH_COND_NAMES[and_idx]
+                };
+                widgets::draw_list_row(lcd, slot, is_sel, "AND Sw:", Some(and_str), 56);
+            }
+            5 => {
+                let d_str = crate::ui::format::format_fixed(
+                    ls.delay_tenths as i32,
+                    1,
+                    0,
+                    false,
+                    crate::ui::format::SignMode::None,
+                    "s",
+                    &mut t_buf,
+                );
+                widgets::draw_list_row(lcd, slot, is_sel, "Delay:", Some(d_str), 56);
+            }
+            6 => {
+                let dur_str = if ls.duration_tenths == 0 {
+                    "Cont."
+                } else {
+                    crate::ui::format::format_fixed(
+                        ls.duration_tenths as i32,
+                        1,
+                        0,
+                        false,
+                        crate::ui::format::SignMode::None,
+                        "s",
+                        &mut t_buf,
+                    )
+                };
+                widgets::draw_list_row(lcd, slot, is_sel, "Duration:", Some(dur_str), 56);
+            }
+            _ => {}
+        }
+    }
+
+    let footer = if ctrl.editing {
+        "[OK] Save   [UP/DN] Change"
     } else {
         "[OK] Edit   [ESC] Back"
     };

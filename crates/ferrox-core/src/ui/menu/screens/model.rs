@@ -189,6 +189,9 @@ fn render_setup_row(
             );
         }
         9 => {
+            widgets::draw_list_row(lcd, slot, inverted, "Logic Sw: [L1..L8]", None, 0);
+        }
+        10 => {
             widgets::draw_list_row(lcd, slot, inverted, "Reset: [OK Defaults]", None, 0);
         }
         _ => {}
@@ -204,7 +207,7 @@ pub fn update_setup(
     buzzer: &mut Buzzer,
 ) {
     let active_idx = storage.radio.active_model as usize;
-    const FIELD_COUNT: usize = 10;
+    const FIELD_COUNT: usize = 11;
 
     if !ctrl.editing {
         if keys.cancel {
@@ -284,6 +287,14 @@ pub fn update_setup(
                     buzzer.click();
                 }
                 9 => {
+                    // Open Logical Switches (L1..L8) submenu
+                    ctrl.state = MenuState::LogicalSwitches;
+                    ctrl.selected_item = 0;
+                    ctrl.scroll_offset = 0;
+                    ctrl.sub_idx = 0;
+                    buzzer.click();
+                }
+                10 => {
                     storage.active_model = ModelConfig::default_for_index(active_idx);
                     storage::save_active_model(storage);
                     buzzer.play_tone_pattern(2200, 80, 50, 2);

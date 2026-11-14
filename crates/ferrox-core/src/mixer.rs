@@ -155,7 +155,7 @@ pub fn apply_dr_expo(input: i16, rate: u8, expo: i8) -> i16 {
     result.clamp(MIXER_MIN as i32, MIXER_MAX as i32) as i16
 }
 
-/// Check if a physical switch satisfies a mixer line activation condition.
+/// Check if a physical or logical switch satisfies a mixer line activation condition.
 pub fn is_switch_active(condition: u8, switches: &Switches) -> bool {
     match condition {
         0 => true, // Always active
@@ -187,6 +187,8 @@ pub fn is_switch_active(condition: u8, switches: &Switches) -> bool {
         26 => switches.swl == SwitchPos::Down,
         27 => switches.swm == SwitchPos::Up,
         28 => switches.swm == SwitchPos::Down,
+        29..=36 => (switches.logical & (1 << (condition - 29))) != 0,
+        37..=44 => (switches.logical & (1 << (condition - 37))) == 0,
         _ => true,
     }
 }
@@ -195,7 +197,7 @@ pub fn is_switch_active(condition: u8, switches: &Switches) -> bool {
 /// Returns false if arm_switch is 0 (unassigned) or out of range.
 #[inline]
 pub fn eval_arm_switch(arm_switch: u8, switches: &Switches) -> bool {
-    if arm_switch > 0 && arm_switch <= 28 {
+    if arm_switch > 0 && arm_switch <= 44 {
         is_switch_active(arm_switch, switches)
     } else {
         false
@@ -353,7 +355,177 @@ pub fn evaluate_source(
             let gv_idx = (src - 45) as usize;
             gvars[gv_idx].clamp(MIXER_MIN, MIXER_MAX) as i32
         }
+        50..=57 => {
+            if (switches.logical & (1 << (src - 50))) != 0 {
+                MIXER_MAX as i32
+            } else {
+                MIXER_MIN as i32
+            }
+        }
         _ => MIXER_CENTER as i32,
+    }
+}
+
+/// Evaluate the raw boolean condition of a single `LogicalSwitch` (`L1..L8`).
+pub fn evaluate_logical_switch_raw(
+    ls: &crate::storage::LogicalSwitch,
+    cond_sticks: &[i16; 4],
+    pots: &[i16],
+    switches: &Switches,
+    channels: &[i32; NUM_CHANNELS],
+    gvars: &[i16; 5],
+) -> bool {
+    if ls.func == 0 {
+        return false;
+    }
+
+    // Secondary AND switch gate (if configured)
+    if ls.and_sw > 0 && !is_switch_active(ls.and_sw, switches) {
+        return false;
+    }
+
+    match ls.func {
+        1..=4 => {
+            let a = evaluate_source(ls.v1, cond_sticks, pots, switches, channels, gvars);
+            let x = (ls.v2 as i32) * 10; // -100..+100% -> -1000..+1000
+            match ls.func {
+                1 => a > x,
+                2 => a < x,
+                3 => a.abs() > x,
+                4 => a.abs() < x,
+                _ => false,
+            }
+        }
+        5..=7 => {
+            let s1 = if ls.v1 > 0 {
+                is_switch_active(ls.v1, switches)
+            } else {
+                false
+            };
+            let s2 = if ls.v2 > 0 {
+                is_switch_active(ls.v2 as u8, switches)
+            } else {
+                false
+            };
+            match ls.func {
+                5 => s1 && s2,
+                6 => s1 || s2,
+                7 => s1 != s2,
+                _ => false,
+            }
+        }
+        8..=10 => {
+            let a = evaluate_source(ls.v1, cond_sticks, pots, switches, channels, gvars);
+            let b = evaluate_source(
+                ls.v2.max(0) as u8,
+                cond_sticks,
+                pots,
+                switches,
+                channels,
+                gvars,
+            );
+            match ls.func {
+                8 => (a - b).abs() <= 20, // a=b within ±2% tolerance
+                9 => a > b,
+                10 => a < b,
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Real-time state bank for `L1..L8` Delay and Duration timers.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct LogicalSwitchBank {
+    delay_ms: [u16; crate::storage::NUM_LOGICAL_SWITCHES],
+    duration_ms: [u16; crate::storage::NUM_LOGICAL_SWITCHES],
+    prev_raw: u8,
+    active_mask: u8,
+}
+
+impl LogicalSwitchBank {
+    pub const fn new() -> Self {
+        Self {
+            delay_ms: [0; crate::storage::NUM_LOGICAL_SWITCHES],
+            duration_ms: [0; crate::storage::NUM_LOGICAL_SWITCHES],
+            prev_raw: 0,
+            active_mask: 0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    /// Evaluate all 8 logical switches sequentially (`L1` -> `L8` so later L-switches can chain earlier ones)
+    /// and advance Delay (`0.1s` steps) and Duration (`0.1s` pulse) timers by `dt_ms`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(
+        &mut self,
+        dt_ms: u16,
+        cond_sticks: &[i16; 4],
+        pots: &[i16],
+        switches: &mut Switches,
+        channels: &[i32; NUM_CHANNELS],
+        model: &ModelConfig,
+    ) -> u8 {
+        switches.logical = self.active_mask;
+        for (i, ls) in model.logical_switches.iter().enumerate() {
+            let bit = 1u8 << i;
+            let raw = evaluate_logical_switch_raw(
+                ls,
+                cond_sticks,
+                pots,
+                switches,
+                channels,
+                &model.gvars,
+            );
+            let was_raw = (self.prev_raw & bit) != 0;
+            if raw {
+                self.prev_raw |= bit;
+            } else {
+                self.prev_raw &= !bit;
+            }
+
+            let delay_target_ms = (ls.delay_tenths as u16) * 100;
+            let dur_target_ms = (ls.duration_tenths as u16) * 100;
+
+            let triggered = if !raw {
+                self.delay_ms[i] = 0;
+                false
+            } else if delay_target_ms == 0 {
+                !was_raw || dur_target_ms == 0
+            } else if self.delay_ms[i] < delay_target_ms {
+                self.delay_ms[i] = self.delay_ms[i].saturating_add(dt_ms);
+                self.delay_ms[i] >= delay_target_ms
+            } else {
+                dur_target_ms == 0
+            };
+
+            let out = if dur_target_ms > 0 {
+                if triggered {
+                    self.duration_ms[i] = dur_target_ms;
+                    true
+                } else if self.duration_ms[i] > 0 {
+                    self.duration_ms[i] = self.duration_ms[i].saturating_sub(dt_ms);
+                    self.duration_ms[i] > 0
+                } else {
+                    false
+                }
+            } else {
+                raw && self.delay_ms[i] >= delay_target_ms
+            };
+
+            if out {
+                self.active_mask |= bit;
+                switches.logical |= bit;
+            } else {
+                self.active_mask &= !bit;
+                switches.logical &= !bit;
+            }
+        }
+        self.active_mask
     }
 }
 
@@ -365,11 +537,14 @@ pub fn compute_channels(
     curved_throttle: u16, // 0..1000 from throttle curve engine
     raw_yaw: i16,
     pots: &[i16],
-    switches: &Switches,
+    switches_in: &Switches,
     model: &ModelConfig,
     trims: &TrimController,
     throttle_trim_mode: u8,
 ) -> [u16; NUM_CHANNELS] {
+    let mut local_switches = *switches_in;
+    let switches = &mut local_switches;
+
     // Stage 1 & 2: Input conditioning with Dual Rates & Expo
     let high_rate = is_dr_high(model.dr_switch, switches);
     let rates = if high_rate {
@@ -394,6 +569,25 @@ pub fn compute_channels(
 
     // Stage 3: Initialize channels (MIXER_MIN..MIXER_MAX)
     let mut ch_vals = [0i32; NUM_CHANNELS];
+
+    // Evaluate instantaneous (zero-delay/zero-duration) Logical Switches L1..L8
+    for (i, ls) in model.logical_switches.iter().enumerate() {
+        if ls.func != 0 && ls.delay_tenths == 0 && ls.duration_tenths == 0 {
+            let active = evaluate_logical_switch_raw(
+                ls,
+                &cond_sticks,
+                pots,
+                switches,
+                &ch_vals,
+                &model.gvars,
+            );
+            if active {
+                switches.logical |= 1 << i;
+            } else {
+                switches.logical &= !(1 << i);
+            }
+        }
+    }
 
     // Apply Wing/Tail templates to primary channels
     let template = WingTailTemplate::from_u8(model.wing_tail_mix);
@@ -688,6 +882,7 @@ mod tests {
             swk: SwitchPos::Up,
             swl: SwitchPos::Down,
             swm: SwitchPos::Up,
+            logical: 0b0000_0101,
         };
 
         assert!(is_switch_active(0, &switches), "Switch 0 is always active");
@@ -719,6 +914,67 @@ mod tests {
         assert!(is_switch_active(26, &switches), "SWL Down");
         assert!(is_switch_active(27, &switches), "SWM Up");
         assert!(!is_switch_active(28, &switches), "SWM Down");
+        assert!(is_switch_active(29, &switches), "L1 active");
+        assert!(!is_switch_active(30, &switches), "L2 inactive");
+        assert!(is_switch_active(31, &switches), "L3 active");
+        assert!(!is_switch_active(37, &switches), "!L1 inactive");
+        assert!(is_switch_active(38, &switches), "!L2 active");
+    }
+
+    #[test]
+    fn test_logical_switches_and_bank() {
+        use crate::storage::{LogicalSwitch, ModelConfig};
+
+        let mut model = ModelConfig::default_for_index(0);
+
+        // L1: Thr (src 3) > 50% (v2 = 50)
+        model.logical_switches[0] = LogicalSwitch {
+            func: 1, // a > x
+            v1: 3,   // Thr
+            v2: 50,  // +50% (+500)
+            and_sw: 0,
+            delay_tenths: 0,
+            duration_tenths: 0,
+        };
+        // L2: L1 (cond 29) AND SA↑ (cond 1), with 0.2s delay and 0.3s duration
+        model.logical_switches[1] = LogicalSwitch {
+            func: 5, // AND
+            v1: 29,  // L1
+            v2: 1,   // SA↑
+            and_sw: 0,
+            delay_tenths: 2,
+            duration_tenths: 3,
+        };
+
+        let mut sticks = [0i16; 4];
+        let pots = [0i16; 7];
+        let mut switches = Switches::DEFAULT;
+        switches.sa = SwitchPos::Up;
+
+        // Thr at 0% -> L1 false
+        let mut bank = LogicalSwitchBank::new();
+        bank.update(0, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        assert_eq!(switches.logical & 0b11, 0b00);
+
+        // Thr at +80% (+800) -> L1 immediately true, L2 waiting on 200ms delay
+        sticks[2] = 800;
+        bank.update(10, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        assert_eq!(switches.logical & 0b11, 0b01, "L1 true, L2 still delayed at 10ms");
+
+        bank.update(150, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        assert_eq!(switches.logical & 0b11, 0b01, "L2 still delayed at 160ms");
+
+        bank.update(50, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        assert_eq!(switches.logical & 0b11, 0b11, "L2 fires at 210ms with 300ms pulse");
+
+        // Drop Thr back to 0% -> L1 immediately false, L2 remains pulsed for remaining 200ms
+        sticks[2] = 0;
+        bank.update(100, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        assert_eq!(switches.logical & 0b11, 0b10, "L1 false, L2 still in 300ms pulse");
+
+        // Advance another 200ms -> L2 300ms pulse expires
+        bank.update(200, &sticks, &pots, &mut switches, &[0; NUM_CHANNELS], &model);
+        assert_eq!(switches.logical & 0b11, 0b00, "L2 pulse expired");
     }
 
     #[test]

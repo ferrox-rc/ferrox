@@ -200,17 +200,23 @@ pub fn prev_ascii(c: u8) -> u8 {
     }
 }
 
-pub const SOURCE_NAMES: [&str; 50] = [
+pub const SOURCE_NAMES: [&str; 58] = [
     "None", "Roll", "Pitch", "Thr", "Yaw", "VRA", "VRB", "SA", "SB", "SC", "SD", "MAX", "CH1",
     "CH2", "CH3", "CH4", "CH5", "CH6", "CH7", "CH8", "CH9", "CH10", "CH11", "CH12", "CH13", "CH14",
     "CH15", "CH16", "CH17", "CH18", "Thr+", "SE", "SF", "SG", "SH", "SWI", "SWJ", "VRC", "VRD",
-    "VRE", "VRF", "VRG", "SWK", "SWL", "SWM", "GV1", "GV2", "GV3", "GV4", "GV5",
+    "VRE", "VRF", "VRG", "SWK", "SWL", "SWM", "GV1", "GV2", "GV3", "GV4", "GV5", "L1", "L2", "L3",
+    "L4", "L5", "L6", "L7", "L8",
 ];
 
-pub const SWITCH_COND_NAMES: [&str; 29] = [
+pub const SWITCH_COND_NAMES: [&str; 45] = [
     "ON", "SA^", "SAv", "SB^", "SB-", "SBv", "SC^", "SC-", "SCv", "SD^", "SDv", "SE^", "SEv",
     "SF^", "SFv", "SG^", "SGv", "SH^", "SHv", "SWI^", "SWIv", "SWJ^", "SWJv", "SWK^", "SWKv",
-    "SWL^", "SWLv", "SWM^", "SWMv",
+    "SWL^", "SWLv", "SWM^", "SWMv", "L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "!L1", "!L2",
+    "!L3", "!L4", "!L5", "!L6", "!L7", "!L8",
+];
+
+pub const LOGICAL_FUNC_NAMES: [&str; 11] = [
+    "OFF", "a>x", "a<x", "|a|>x", "|a|<x", "AND", "OR", "XOR", "a=b", "a>b", "a<b",
 ];
 
 pub const MODE_NAMES: [&str; 3] = ["ADD (+)", "MULT (*)", "REPL (:=)"];
