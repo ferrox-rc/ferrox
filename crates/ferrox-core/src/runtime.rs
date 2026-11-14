@@ -885,47 +885,62 @@ impl BackgroundIdleManager {
             .update(now, &flight.rf_chs, &flight.telem, &model.soaring, buzzer);
 
         // 8d. Periodic 512-byte sector CSV telemetry logging to SD card
-        #[cfg(any(feature = "voice-audio", test))]
-        if flight.just_armed {
-            self.telemetry_logger.reset();
-            self.last_telem_log_ms = now;
-        } else if flight.just_disarmed {
-            let logger = &mut self.telemetry_logger;
-            let _ = crate::storage::with_storage_bus(|bus| logger.flush(bus));
-        } else {
+        #[cfg(any(feature = "sd-logging", test))]
+        {
+            let sd_sw_active = match model.sd_log_mode {
+                0 => false,
+                1 => is_armed_or_unassigned,
+                sw if sw <= (ActiveBoard::MAX_MIX_SWITCH + 1) => {
+                    mixer::eval_arm_switch(sw - 1, &flight.state.switches)
+                }
+                _ => false,
+            };
             #[cfg(any(feature = "soaring", test))]
-            if !_was_landed && self.f5j.landed && model.soaring.auto_log_enabled() {
+            let soaring_auto = model.soaring.auto_log_enabled() && is_armed_or_unassigned;
+            #[cfg(not(any(feature = "soaring", test)))]
+            let soaring_auto = false;
+            let sd_log_active = sd_sw_active || soaring_auto;
+
+            if flight.just_armed {
+                self.telemetry_logger.reset();
+                self.last_telem_log_ms = now;
+            } else if flight.just_disarmed {
                 let logger = &mut self.telemetry_logger;
                 let _ = crate::storage::with_storage_bus(|bus| logger.flush(bus));
-            }
-            if is_armed_or_unassigned
-                && flight.telem.connected
-                && model.soaring.auto_log_enabled()
-                && now.wrapping_sub(self.last_telem_log_ms) >= 500
-            {
-                self.last_telem_log_ms = now;
-                let frame = crate::telemetry_log::FlightLogFrame {
-                    time_ms: now,
-                    rqly: flight.telem.rssi,
-                    rssi_dbm: 0,
-                    snr_db: 0,
-                    tx_pwr: model.rf_power,
-                    rx_vbat_mv: flight.telem.rx_voltage_mv,
-                    curr_ma: 0,
-                    mah: 0,
-                    lat: 0,
-                    lon: 0,
-                    alt_m: flight.telem.alt_m,
-                    spd_kt: 0,
-                    sats: 0,
-                    vspd_cms: flight.telem.vspeed_cms,
-                    ch1: flight.rf_chs[0],
-                    ch2: flight.rf_chs[1],
-                    ch3: flight.rf_chs[2],
-                    ch4: flight.rf_chs[3],
-                };
-                let logger = &mut self.telemetry_logger;
-                let _ = crate::storage::with_storage_bus(|bus| logger.log_frame(&frame, bus));
+            } else {
+                #[cfg(any(feature = "soaring", test))]
+                if !_was_landed && self.f5j.landed && sd_log_active {
+                    let logger = &mut self.telemetry_logger;
+                    let _ = crate::storage::with_storage_bus(|bus| logger.flush(bus));
+                }
+                if sd_log_active
+                    && flight.telem.connected
+                    && now.wrapping_sub(self.last_telem_log_ms) >= 500
+                {
+                    self.last_telem_log_ms = now;
+                    let frame = crate::telemetry_log::FlightLogFrame {
+                        time_ms: now,
+                        rqly: flight.telem.rssi,
+                        rssi_dbm: 0,
+                        snr_db: 0,
+                        tx_pwr: model.rf_power,
+                        rx_vbat_mv: flight.telem.rx_voltage_mv,
+                        curr_ma: 0,
+                        mah: 0,
+                        lat: 0,
+                        lon: 0,
+                        alt_m: flight.telem.alt_m,
+                        spd_kt: 0,
+                        sats: 0,
+                        vspd_cms: flight.telem.vspeed_cms,
+                        ch1: flight.rf_chs[0],
+                        ch2: flight.rf_chs[1],
+                        ch3: flight.rf_chs[2],
+                        ch4: flight.rf_chs[3],
+                    };
+                    let logger = &mut self.telemetry_logger;
+                    let _ = crate::storage::with_storage_bus(|bus| logger.log_frame(&frame, bus));
+                }
             }
         }
 

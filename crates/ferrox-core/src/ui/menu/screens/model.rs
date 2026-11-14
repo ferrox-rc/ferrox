@@ -106,11 +106,93 @@ pub fn update_select(
     widgets::draw_footer(lcd, "[OK] Load     [ESC] Back");
 }
 
-#[inline(never)]
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum SetupItem {
+    Name,
+    Type,
+    ArmSw,
+    Timers,
+    Copy,
+    Protocol,
+    Telemetry,
+    Vario,
+    #[cfg(any(feature = "sd-logging", test))]
+    SdLog,
+    #[cfg(any(feature = "soaring", test))]
+    Soaring,
+    #[cfg(any(feature = "logical-switches", test))]
+    LogicalSwitches,
+    Reset,
+}
+
+const SETUP_ITEMS: &[SetupItem] = &[
+    SetupItem::Name,
+    SetupItem::Type,
+    SetupItem::ArmSw,
+    SetupItem::Timers,
+    SetupItem::Copy,
+    SetupItem::Protocol,
+    SetupItem::Telemetry,
+    SetupItem::Vario,
+    #[cfg(any(feature = "sd-logging", test))]
+    SetupItem::SdLog,
+    #[cfg(any(feature = "soaring", test))]
+    SetupItem::Soaring,
+    #[cfg(any(feature = "logical-switches", test))]
+    SetupItem::LogicalSwitches,
+    SetupItem::Reset,
+];
+
+fn edit_switch_mode(
+    val: &mut u8,
+    keys: &NavKeys,
+    storage: &RadioStorage,
+    buzzer: &mut Buzzer,
+) -> bool {
+    if let Some(sw) = keys.sw_change {
+        if sw > 0 && storage.is_switch_cond_available(sw) {
+            *val = sw + 1;
+            buzzer.chime_armed();
+        }
+    } else if keys.up {
+        let cur = *val;
+        let mut cand = (cur + 1) % 30;
+        while cand != cur {
+            if cand <= 1 || storage.is_switch_cond_available(cand - 1) {
+                break;
+            }
+            cand = (cand + 1) % 30;
+        }
+        *val = cand;
+        buzzer.play_tone(2200, 20);
+    } else if keys.down {
+        let cur = *val;
+        let mut cand = if cur == 0 { 29 } else { cur - 1 };
+        while cand != cur {
+            if cand <= 1 || storage.is_switch_cond_available(cand - 1) {
+                break;
+            }
+            cand = if cand == 0 { 29 } else { cand - 1 };
+        }
+        *val = cand;
+        buzzer.play_tone(2200, 20);
+    }
+    keys.ok || keys.cancel
+}
+
+fn switch_mode_label(val: u8, one_label: &'static str) -> &'static str {
+    match val {
+        0 => "OFF",
+        1 => one_label,
+        s if s <= 29 => crate::ui::format::SWITCH_COND_NAMES[(s - 1) as usize],
+        _ => "OFF",
+    }
+}
+
 fn render_setup_row(
     lcd: &mut St7567,
     slot: usize,
-    idx: usize,
+    item: SetupItem,
     is_sel: bool,
     is_edit: bool,
     sub_idx: usize,
@@ -118,8 +200,8 @@ fn render_setup_row(
 ) {
     let inverted = is_sel || is_edit;
     let y = 14 + (slot as i32 * 9);
-    match idx {
-        0 => {
+    match item {
+        SetupItem::Name => {
             widgets::draw_list_row(
                 lcd,
                 slot,
@@ -135,7 +217,7 @@ fn render_setup_row(
                 lcd.draw_str_6x10(char_x, y, ascii_as_str(&single_char), true);
             }
         }
-        1 => {
+        SetupItem::Type => {
             widgets::draw_list_row(
                 lcd,
                 slot,
@@ -145,7 +227,7 @@ fn render_setup_row(
                 40,
             );
         }
-        2 => {
+        SetupItem::ArmSw => {
             let arm_idx = (storage.active_model.arm_switch as usize)
                 .min(crate::ui::format::SWITCH_COND_NAMES.len() - 1);
             let arm_str = if arm_idx == 0 {
@@ -155,10 +237,10 @@ fn render_setup_row(
             };
             widgets::draw_list_row(lcd, slot, inverted, "Arm Sw:", Some(arm_str), 52);
         }
-        3 => {
+        SetupItem::Timers => {
             widgets::draw_list_row(lcd, slot, inverted, "Timers: [SETUP]", None, 0);
         }
-        4 => {
+        SetupItem::Copy => {
             if is_edit {
                 let mut cp_buf = *b"Copy -> M00";
                 write_dec2((sub_idx + 1) as u8, &mut cp_buf[9..11]);
@@ -167,19 +249,24 @@ fn render_setup_row(
                 widgets::draw_list_row(lcd, slot, inverted, "Copy: [OK Duplicate]", None, 0);
             }
         }
-        5 => {
+        SetupItem::Protocol => {
             let proto =
                 crate::board::ActiveBoard::resolve_protocol(storage.active_model.rf_protocol);
             widgets::draw_list_row(lcd, slot, inverted, "Protocol:", Some(proto.name()), 64);
         }
-        6 => {
+        SetupItem::Telemetry => {
             widgets::draw_list_row(lcd, slot, inverted, "Telemetry: [SETUP]", None, 0);
         }
-        7 => {
+        SetupItem::Vario => {
             widgets::draw_list_row(lcd, slot, inverted, "Vario: [SETUP]", None, 0);
         }
-        8 => {
-            #[cfg(any(feature = "soaring", test))]
+        #[cfg(any(feature = "sd-logging", test))]
+        SetupItem::SdLog => {
+            let log_str = switch_mode_label(storage.active_model.sd_log_mode, "ARMED");
+            widgets::draw_list_row(lcd, slot, inverted, "SD Log:", Some(log_str), 52);
+        }
+        #[cfg(any(feature = "soaring", test))]
+        SetupItem::Soaring => {
             widgets::draw_list_row(
                 lcd,
                 slot,
@@ -188,18 +275,14 @@ fn render_setup_row(
                 Some(storage.active_model.soaring.discipline_enum().as_str()),
                 64,
             );
-            #[cfg(not(any(feature = "soaring", test)))]
-            widgets::draw_list_row(lcd, slot, inverted, "Reset: [OK Defaults]", None, 0);
         }
         #[cfg(any(feature = "logical-switches", test))]
-        9 => {
+        SetupItem::LogicalSwitches => {
             widgets::draw_list_row(lcd, slot, inverted, "Logic Sw: [L1..L8]", None, 0);
         }
-        #[cfg(any(feature = "logical-switches", test))]
-        10 => {
+        SetupItem::Reset => {
             widgets::draw_list_row(lcd, slot, inverted, "Reset: [OK Defaults]", None, 0);
         }
-        _ => {}
     }
 }
 
@@ -212,10 +295,8 @@ pub fn update_setup(
     buzzer: &mut Buzzer,
 ) {
     let active_idx = storage.radio.active_model as usize;
-    #[cfg(any(feature = "logical-switches", test))]
-    const FIELD_COUNT: usize = 11;
-    #[cfg(not(any(feature = "logical-switches", test)))]
-    const FIELD_COUNT: usize = 9;
+    let field_count = SETUP_ITEMS.len();
+    let cur_item = SETUP_ITEMS[ctrl.selected_item.min(field_count - 1)];
 
     if !ctrl.editing {
         if keys.cancel {
@@ -228,31 +309,31 @@ pub fn update_setup(
         widgets::navigate_4slot_list(
             &mut ctrl.selected_item,
             &mut ctrl.scroll_offset,
-            FIELD_COUNT,
+            field_count,
             keys.up,
             keys.down || keys.bind,
             buzzer,
         );
 
         if keys.ok {
-            match ctrl.selected_item {
-                0 => {
+            match cur_item {
+                SetupItem::Name => {
                     ctrl.editing = true;
                     ctrl.sub_idx = 0;
                     buzzer.click();
                 }
-                1 => {
+                SetupItem::Type => {
                     let next_type = storage.active_model.model_type().next();
                     storage.active_model.set_model_type(next_type);
                     storage::save_active_model(storage);
                     buzzer.click();
                 }
-                2 => {
+                SetupItem::ArmSw => {
                     // Arm switch edit
                     ctrl.editing = true;
                     buzzer.click();
                 }
-                3 => {
+                SetupItem::Timers => {
                     // Open Timers (1..4) submenu
                     ctrl.state = MenuState::TimerSetup;
                     ctrl.selected_item = 0;
@@ -260,50 +341,48 @@ pub fn update_setup(
                     ctrl.sub_idx = 0; // Timer 1..4 selector (0 = Timer 1)
                     buzzer.click();
                 }
-                4 => {
+                SetupItem::Copy => {
                     // Model duplicate/copy edit
                     ctrl.editing = true;
                     ctrl.sub_idx = (active_idx + 1) % NUM_MODELS;
                     buzzer.click();
                 }
-                5 => {
+                SetupItem::Protocol => {
                     // Open Protocol Setup submenu (RxSetup)
                     ctrl.state = MenuState::RxSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
-                6 => {
+                SetupItem::Telemetry => {
                     // Open Telemetry Setup submenu
                     ctrl.state = MenuState::TelemSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
-                7 => {
+                SetupItem::Vario => {
                     // Open Vario Setup submenu
                     ctrl.state = MenuState::VarioSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
+                #[cfg(any(feature = "sd-logging", test))]
+                SetupItem::SdLog => {
+                    ctrl.editing = true;
+                    buzzer.click();
+                }
                 #[cfg(any(feature = "soaring", test))]
-                8 => {
+                SetupItem::Soaring => {
                     // Open Soaring / F5J Setup submenu
                     ctrl.state = MenuState::SoaringSetup;
                     ctrl.selected_item = 0;
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
-                #[cfg(not(any(feature = "soaring", test)))]
-                8 => {
-                    storage.active_model = ModelConfig::default_for_index(active_idx);
-                    storage::save_active_model(storage);
-                    buzzer.play_tone_pattern(2200, 80, 50, 2);
-                    ctrl.waiting_release = true;
-                }
                 #[cfg(any(feature = "logical-switches", test))]
-                9 => {
+                SetupItem::LogicalSwitches => {
                     // Open Logical Switches (L1..L8) submenu
                     ctrl.state = MenuState::LogicalSwitches;
                     ctrl.selected_item = 0;
@@ -311,19 +390,17 @@ pub fn update_setup(
                     ctrl.sub_idx = 0;
                     buzzer.click();
                 }
-                #[cfg(any(feature = "logical-switches", test))]
-                10 => {
+                SetupItem::Reset => {
                     storage.active_model = ModelConfig::default_for_index(active_idx);
                     storage::save_active_model(storage);
                     buzzer.play_tone_pattern(2200, 80, 50, 2);
                     ctrl.waiting_release = true;
                 }
-                _ => {}
             }
         }
     } else {
-        match ctrl.selected_item {
-            0 => {
+        match cur_item {
+            SetupItem::Name => {
                 // Name editing mode
                 if keys.cancel {
                     ctrl.editing = false;
@@ -352,7 +429,7 @@ pub fn update_setup(
                     buzzer.play_tone(2200, 20);
                 }
             }
-            2 => {
+            SetupItem::ArmSw => {
                 // Arm switch editing mode (with switch auto-detection)
                 if let Some(sw) = keys.sw_change {
                     if storage.is_arm_switch_available(sw) {
@@ -374,7 +451,7 @@ pub fn update_setup(
                     buzzer.click();
                 }
             }
-            4 => {
+            SetupItem::Copy => {
                 // Model duplicate target selection
                 if keys.up {
                     ctrl.sub_idx = (ctrl.sub_idx + 1) % NUM_MODELS;
@@ -397,6 +474,17 @@ pub fn update_setup(
                     ctrl.editing = false;
                 }
             }
+            #[cfg(any(feature = "sd-logging", test))]
+            SetupItem::SdLog => {
+                let mut val = storage.active_model.sd_log_mode;
+                let done = edit_switch_mode(&mut val, keys, storage, buzzer);
+                storage.active_model.sd_log_mode = val;
+                if done {
+                    ctrl.editing = false;
+                    storage::save_active_model(storage);
+                    buzzer.click();
+                }
+            }
             _ => {
                 ctrl.editing = false;
             }
@@ -407,18 +495,26 @@ pub fn update_setup(
 
     for slot in 0..4 {
         let idx = ctrl.scroll_offset + slot;
-        if idx >= FIELD_COUNT {
+        if idx >= field_count {
             break;
         }
         let is_sel = !ctrl.editing && idx == ctrl.selected_item;
         let is_edit = ctrl.editing && idx == ctrl.selected_item;
-        render_setup_row(lcd, slot, idx, is_sel, is_edit, ctrl.sub_idx, storage);
+        render_setup_row(
+            lcd,
+            slot,
+            SETUP_ITEMS[idx],
+            is_sel,
+            is_edit,
+            ctrl.sub_idx,
+            storage,
+        );
     }
 
     if ctrl.editing {
-        if ctrl.selected_item == 0 {
+        if cur_item == SetupItem::Name {
             widgets::draw_footer(lcd, "[OK] Next Char [ESC] Done");
-        } else if ctrl.selected_item == 5 {
+        } else if cur_item == SetupItem::Copy {
             widgets::draw_footer(lcd, "[OK] Duplicate [ESC] Cancel");
         } else {
             widgets::draw_footer(lcd, "[OK] Done   [UP/DN] Value");
@@ -499,36 +595,10 @@ pub fn update_vario_setup(
             }
         }
     } else {
-        // Switch editing mode: 0: OFF, 1: ON, 2..=29: SWITCH_COND_NAMES[1..=28]
-        if let Some(sw) = keys.sw_change {
-            if sw > 0 && storage.is_switch_cond_available(sw) {
-                storage.active_model.vario_switch = sw + 1;
-                buzzer.chime_armed();
-            }
-        } else if keys.up {
-            let cur = storage.active_model.vario_switch;
-            let mut cand = (cur + 1) % 30;
-            while cand != cur {
-                if cand <= 1 || storage.is_switch_cond_available(cand - 1) {
-                    break;
-                }
-                cand = (cand + 1) % 30;
-            }
-            storage.active_model.vario_switch = cand;
-            buzzer.play_tone(2200, 20);
-        } else if keys.down {
-            let cur = storage.active_model.vario_switch;
-            let mut cand = if cur == 0 { 29 } else { cur - 1 };
-            while cand != cur {
-                if cand <= 1 || storage.is_switch_cond_available(cand - 1) {
-                    break;
-                }
-                cand = if cand == 0 { 29 } else { cand - 1 };
-            }
-            storage.active_model.vario_switch = cand;
-            buzzer.play_tone(2200, 20);
-        }
-        if keys.ok || keys.cancel {
+        let mut val = storage.active_model.vario_switch;
+        let done = edit_switch_mode(&mut val, keys, storage, buzzer);
+        storage.active_model.vario_switch = val;
+        if done {
             ctrl.editing = false;
             storage::save_active_model(storage);
             buzzer.click();
@@ -545,12 +615,7 @@ pub fn update_vario_setup(
 
         match idx {
             0 => {
-                let sw_str = match storage.active_model.vario_switch {
-                    0 => "OFF",
-                    1 => "ON",
-                    s if s <= 29 => crate::ui::format::SWITCH_COND_NAMES[(s - 1) as usize],
-                    _ => "OFF",
-                };
+                let sw_str = switch_mode_label(storage.active_model.vario_switch, "ON");
                 let is_sel = idx == ctrl.selected_item;
                 widgets::draw_list_row_right(lcd, slot, is_sel, "Switch:", Some(sw_str));
             }

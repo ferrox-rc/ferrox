@@ -68,10 +68,19 @@ impl ToneOutput for DacToneBuzzer {
         let ccr = period_us / 2; // 50% duty square wave
 
         unsafe {
-            tim5.arr.write(|w| w.bits(arr));
-            tim5.ccr1().write(|w| w.bits(ccr));
-            tim5.egr.write(|w| w.bits(1));
-            tim5.cr1.modify(|r, w| w.bits(r.bits() | 0x01)); // CEN
+            let is_running = (tim5.cr1.read().bits() & 0x01) != 0;
+            if !is_running {
+                tim5.arr.write(|w| w.bits(arr));
+                tim5.ccr1().write(|w| w.bits(ccr));
+                tim5.egr.write(|w| w.bits(1));
+                tim5.cr1.modify(|r, w| w.bits(r.bits() | (1 << 7) | 0x01)); // ARPE + CEN
+            } else if tim5.arr.read().bits() != arr {
+                tim5.arr.write(|w| w.bits(arr));
+                tim5.ccr1().write(|w| w.bits(ccr));
+                if tim5.cnt.read().bits() > arr {
+                    tim5.cnt.write(|w| w.bits(0));
+                }
+            }
 
             // Unmute audio amp (PE12 LOW)
             gpioe.bsrr.write(|w| w.bits(1 << (12 + 16)));

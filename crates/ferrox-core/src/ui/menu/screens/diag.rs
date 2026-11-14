@@ -226,7 +226,7 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         len += 1;
     }
 
-    let tags: [(&[u8], bool); 9] = [
+    let tags: [(&[u8], bool); 10] = [
         (b"A2", cfg!(feature = "rf-afhds2a")),
         (b"CR", cfg!(feature = "rf-crsf")),
         (b"CC", cfg!(feature = "rf-cc2500")),
@@ -235,6 +235,7 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         (b"SR", cfg!(feature = "soaring")),
         (b"LS", cfg!(feature = "logical-switches")),
         (b"VX", cfg!(feature = "voice-audio")),
+        (b"SD", cfg!(feature = "sd-logging")),
         (b"TC", cfg!(feature = "touch")),
     ];
 

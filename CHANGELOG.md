@@ -5,6 +5,14 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc5] - 2026-11-14
+
+### Added
+- **Standalone SD Telemetry Logging (`sd-logging`)**: Decoupled `TelemetryLogger` from `voice-audio` into its own `sd-logging` Cargo feature (enabled on all STM32F4 boards, `SD` tag in System Info) and added an `SD Log:` setting (`OFF`, `ARMED`, or physical/logical switch) directly in **Model Setup** (`crates/ferrox-core/src/ui/menu/screens/model.rs`, `crates/ferrox-core/src/storage.rs`, `crates/ferrox-core/src/runtime.rs`).
+
+### Fixed
+- **STM32F4 Variometer Tone (`crates/ferrox-stm32f4/src/buzzer.rs`)**: Stopped `DacToneBuzzer::on()` from unconditionally writing `TIM5.EGR = 1` on every tick when `TIM5` is already running, preventing counter/phase resets that chopped or silenced variometer tones on the speaker.
+
 ## [1.0.0-rc4] - 2026-11-14
 
 ### Added

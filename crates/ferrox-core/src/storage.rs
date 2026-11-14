@@ -623,7 +623,7 @@ pub struct ModelConfig {
     pub dr_low: [u8; 3], // 48..51: Low rate (AIL, ELE, RUD: 30..100%)
     pub expo_high: [i8; 3], // 51..54: High expo (-100..+100%)
     pub expo_low: [i8; 3], // 54..57: Low expo (-100..+100%)
-    pub _pad1: u8,      // 57..58: align timer_secs to 2-byte boundary
+    pub sd_log_mode: u8, // 57..58: SD telemetry logging (0: Off, 1: Armed, 2..=29: switch condition)
     pub timer_secs: u16, // 58..60: Countdown timer in seconds (e.g. 300 = 5 min)
     pub timer_source: u8, // 60: 0: Off, 1: THs (Thr>5%), 2: THt (Thr Latched), 3: Always On, 4..17: SA^..SFv
     pub rf_power: u8,     // 61: AFHDS 2A RF power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
@@ -682,7 +682,7 @@ impl ModelConfig {
             dr_low: [70, 70, 70],
             expo_high: [0, 0, 0],
             expo_low: [0, 0, 0],
-            _pad1: 0,
+            sd_log_mode: 0,
             timer_secs: 300,
             timer_source: 1,
             rf_power: 0,
