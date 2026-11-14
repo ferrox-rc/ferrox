@@ -31,6 +31,133 @@ use crate::watchdog;
 
 pub const MAX_POTS: usize = 7;
 
+#[cfg(all(test, feature = "multiswitch"))]
+mod multiswitch_tests {
+    use super::*;
+
+    #[cfg(not(feature = "board-i6s"))]
+    #[test]
+    fn keyboard_controls_switches_without_triggering_momentary_menu_hold() {
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.rf_protocol = crate::board::RfProtocol::Crsf as u8;
+        storage.active_model.multiswitch_addresses = [42, -1, -1, -1];
+        storage.active_model.multiswitch_momentary = [2, 0, 0, 0];
+        crate::adc::set_test_adc_snapshot([crate::adc::ADC_CENTER; crate::adc::NUM_CHANNELS]);
+        input::apply_calibration(&storage.radio);
+        let mut state = input::read();
+        state.battery_mv = 5000;
+        let mut pipeline = FlightPipeline::new(&storage, &state);
+        pipeline.update_multiswitch(0, &storage.active_model, false, false);
+        let mut idle = BackgroundIdleManager::new(&state, false);
+        let flight = FlightSnapshot {
+            state,
+            rf_chs: [1500; mixer::NUM_CHANNELS],
+            telem: TelemetryData::default(),
+            is_binding: false,
+            is_armed: false,
+            just_armed: false,
+            just_disarmed: false,
+        };
+        let mut trims = TrimController::new();
+        let mut lcd = St7567::new();
+        let mut buzzer = Buzzer::new();
+        let mut dashboard = DashboardController::new();
+        dashboard.page = 5;
+        let mut menu = MenuController::new();
+        let mut calib = CalibWizard::new();
+        let mut now = 0;
+        let mut step = |keys, dt_ms| {
+            now += dt_ms as u32;
+            idle.tick(
+                now,
+                dt_ms,
+                keys,
+                &flight,
+                &mut pipeline,
+                &mut storage,
+                &mut trims,
+                &mut lcd,
+                &mut buzzer,
+                &mut dashboard,
+                &mut menu,
+                &mut calib,
+                true,
+            );
+            (
+                pipeline.multiswitch_pages.switches()[0],
+                dashboard.multiswitch_selected,
+                menu.is_active(),
+            )
+        };
+        assert_eq!(step(1 << 10, 20), (0, 0, false));
+        assert_eq!(step(0, 20), (1, 0, false));
+        assert_eq!(step(1 << 8, 20), (1, 1, false));
+        step(0, 20);
+        assert_eq!(step(1 << 10, 20), (3, 1, false));
+        for _ in 0..12 {
+            assert_eq!(step(1 << 10, 100), (3, 1, false));
+        }
+        assert_eq!(step((1 << 8) | (1 << 10), 20), (1, 2, false));
+        assert_eq!(step(1 << 10, 20), (1, 2, false));
+        assert_eq!(step(0, 20), (1, 2, false));
+        for _ in 0..11 {
+            assert_eq!(step(1 << 10, 100), (1, 2, false));
+        }
+        assert_eq!(step(1 << 10, 100), (1, 2, true));
+    }
+
+    #[test]
+    fn pipeline_retries_commands_and_releases_on_menu_and_protocol_changes() {
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.rf_protocol = crate::board::RfProtocol::Crsf as u8;
+        storage.active_model.multiswitch_addresses = [42, -1, -1, -1];
+        storage.active_model.multiswitch_momentary = [1, 0, 0, 0];
+        crate::adc::set_test_adc_snapshot([crate::adc::ADC_CENTER; crate::adc::NUM_CHANNELS]);
+        input::apply_calibration(&storage.radio);
+        let mut pipeline = FlightPipeline::new(&storage, &input::read());
+        crate::uart::mock::clear();
+        crsf::set_enabled(false, 0, false);
+        crsf::set_enabled(true, 0, false);
+        crsf::update_channels(1000, &[1500; mixer::NUM_CHANNELS], false, false);
+        pipeline.update_multiswitch(1000, &storage.active_model, false, false);
+        crate::uart::mock::clear();
+        pipeline.multiswitch_pages.update_touch(Some(0), Some(0), None);
+        crate::uart::mock::set_tx_blocked(true);
+        pipeline.update_multiswitch(1002, &storage.active_model, false, false);
+        assert!(pipeline.multiswitch_pages.states[0].pending);
+        assert_eq!(crate::uart::mock::tx_count(), 0);
+        crate::uart::mock::set_tx_blocked(false);
+        pipeline.update_multiswitch(1003, &storage.active_model, false, false);
+        assert!(!pipeline.multiswitch_pages.states[0].pending);
+        let mut expected = [0; 12];
+        crate::multiswitch::build_set4(42, 1, &mut expected);
+        assert_eq!(crate::uart::mock::take_tx(), [expected.to_vec()]);
+        pipeline.update_multiswitch(1004, &storage.active_model, true, false);
+        assert_eq!(pipeline.multiswitch_pages.switches(), [0; 4]);
+        crate::multiswitch::build_set4(42, 0, &mut expected);
+        assert_eq!(crate::uart::mock::take_tx(), [expected.to_vec()]);
+        pipeline.multiswitch_pages.update_touch(Some(0), None, Some(1));
+        assert_eq!(pipeline.multiswitch_pages.switches()[0], 2);
+        if let Some(&protocol) = ActiveBoard::SUPPORTED_PROTOCOLS
+            .iter()
+            .find(|&&protocol| protocol != crate::board::RfProtocol::Crsf)
+        {
+            storage.active_model.rf_protocol = protocol as u8;
+            pipeline.update_multiswitch(1006, &storage.active_model, false, false);
+            assert_eq!(pipeline.multiswitch_pages.switches(), [0; 4]);
+            assert_eq!(pipeline.multiswitch_pages.due(1006), None);
+        }
+        storage.active_model.rf_protocol = crate::board::RfProtocol::Crsf as u8;
+        pipeline.update_multiswitch(1007, &storage.active_model, false, false);
+        pipeline.multiswitch_pages.update_touch(Some(0), Some(0), Some(1));
+        pipeline.update_multiswitch(1007, &storage.active_model, false, true);
+        assert_eq!(pipeline.multiswitch_pages.switches(), [0; 4]);
+        assert_eq!(pipeline.multiswitch_pages.due(1007), None);
+        crsf::set_enabled(false, 0, false);
+        crate::uart::mock::clear();
+    }
+}
+
 /// High-rate flight pipeline state and outputs.
 pub struct FlightSnapshot {
     pub state: InputState,
@@ -48,6 +175,8 @@ pub struct FlightPipeline {
     pub prev_active_model: u8,
     pub telem_reading_idx: u8,
     pub vario: Vario,
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_pages: crate::multiswitch::Pages,
     #[cfg(any(feature = "logical-switches", test))]
     pub logical_bank: mixer::LogicalSwitchBank,
     #[cfg(any(feature = "logical-switches", test))]
@@ -55,6 +184,37 @@ pub struct FlightPipeline {
 }
 
 impl FlightPipeline {
+    #[cfg(feature = "multiswitch")]
+    fn update_multiswitch(
+        &mut self,
+        now: u32,
+        model: &crate::storage::ModelConfig,
+        menu_active: bool,
+        sim_mode: bool,
+    ) {
+        if sim_mode
+            || ActiveBoard::resolve_protocol(model.rf_protocol) != crate::board::RfProtocol::Crsf
+        {
+            self.multiswitch_pages = crate::multiswitch::Pages::new();
+            return;
+        }
+        self.multiswitch_pages.configure(
+            &model.multiswitch_addresses, &model.multiswitch_momentary,
+        );
+        if menu_active {
+            self.multiswitch_pages.update_touch(None, None, None);
+        }
+        if let Some(slot) = self.multiswitch_pages.due(now) {
+            if crsf::send_set4(
+                now,
+                self.multiswitch_pages.addresses[slot as usize] as u8,
+                self.multiswitch_pages.states[slot as usize].switches,
+            ) {
+                self.multiswitch_pages.sent(slot, now);
+            }
+        }
+    }
+
     pub fn new(storage: &RadioStorage, init_state: &InputState) -> Self {
         let active = storage.active_model();
         let prev_armed = mixer::eval_arm_switch(active.arm_switch, &init_state.switches);
@@ -63,6 +223,8 @@ impl FlightPipeline {
             prev_active_model: storage.radio.active_model,
             telem_reading_idx: 1,
             vario: Vario::new(),
+            #[cfg(feature = "multiswitch")]
+            multiswitch_pages: crate::multiswitch::Pages::new(),
             #[cfg(any(feature = "logical-switches", test))]
             logical_bank: mixer::LogicalSwitchBank::new(),
             #[cfg(any(feature = "logical-switches", test))]
@@ -126,6 +288,10 @@ impl FlightPipeline {
             self.logical_bank.reset();
             self.prev_armed = mixer::eval_arm_switch(active_model.arm_switch, &state.switches);
             self.vario.reset();
+            #[cfg(feature = "multiswitch")]
+            {
+                self.multiswitch_pages = crate::multiswitch::Pages::new();
+            }
         }
 
         // 3. Check configured Arm Switch condition and play Armed/Disarmed chimes
@@ -264,6 +430,9 @@ impl FlightPipeline {
                 }
             }
         }
+
+        #[cfg(feature = "multiswitch")]
+        self.update_multiswitch(now, active_model, menu_active, sim_mode);
 
         // 7. Map telemetry data based on active protocol
         let telem = match proto {
@@ -418,6 +587,8 @@ pub struct BackgroundIdleManager {
     #[cfg(feature = "voice-audio")]
     pub audio_callouts: crate::audio::CalloutScheduler,
     pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_keys: crate::multiswitch::KeyInput,
 }
 
 impl BackgroundIdleManager {
@@ -479,6 +650,8 @@ impl BackgroundIdleManager {
             #[cfg(feature = "voice-audio")]
             audio_callouts: crate::audio::CalloutScheduler::new(),
             board_idle: ActiveBoard::create_idle_state(),
+            #[cfg(feature = "multiswitch")]
+            multiswitch_keys: crate::multiswitch::KeyInput::default(),
         }
     }
 
@@ -502,6 +675,7 @@ impl BackgroundIdleManager {
         rf_ok: bool,
     ) {
         let menu_active = menu_controller.is_active() || calib_wizard.is_active();
+        dashboard.configure_pages(storage);
 
         let (ok_held, timer_reset_clicked, instant_trim_clicked) =
             self.board_idle
@@ -571,6 +745,28 @@ impl BackgroundIdleManager {
         self.prev_switches = flight.state.switches;
 
         let user_active = keys != 0 || stick_moved || sw_changed;
+        #[cfg(feature = "multiswitch")]
+        let user_active = if ActiveBoard::HAS_TOUCH {
+            let (held, tapped) = crate::touch::nav::take_multiswitch_touch();
+            let enabled = !menu_active
+                && !flight.is_binding
+                && !usb::is_sim_mode()
+                && storage.radio.touch_disabled == 0
+                && ActiveBoard::resolve_protocol(storage.active_model().rf_protocol)
+                    == crate::board::RfProtocol::Crsf;
+            let slot = if enabled {
+                dashboard.multiswitch_slot(storage)
+            } else {
+                None
+            };
+            if pipeline.multiswitch_pages.update_touch(slot, held, tapped) {
+                buzzer.click();
+            }
+            dashboard.multiswitch_states = pipeline.multiswitch_pages.switches();
+            user_active || held.is_some() || tapped.is_some()
+        } else {
+            user_active
+        };
 
         // 3. Backlight auto-dim timeout tracking
         if user_active {
@@ -632,6 +828,7 @@ impl BackgroundIdleManager {
             keys,
             crate::boot::scan_edgetx_keys(),
             menu_active,
+            storage,
             dashboard,
             menu_controller,
             buzzer,
@@ -642,9 +839,9 @@ impl BackgroundIdleManager {
         } else {
             // Dashboard page cycling via UP/DOWN keys
             if up_pressed {
-                dashboard.prev_page(buzzer);
+                dashboard.navigate(false, storage, buzzer);
             } else if down_pressed {
-                dashboard.next_page(buzzer);
+                dashboard.navigate(true, storage, buzzer);
             }
 
             if bind_key_raw {
@@ -662,6 +859,46 @@ impl BackgroundIdleManager {
                 self.bind_was_held = false;
             }
         }
+
+        #[cfg(feature = "multiswitch")]
+        let ok_held = if ActiveBoard::HAS_TOUCH {
+            ok_held
+        } else {
+            let model = storage.active_model();
+            let enabled =
+                !menu_controller.is_active() && !calib_wizard.is_active() && !flight.is_binding;
+            let slot = if enabled {
+                dashboard.multiswitch_key_slot(storage)
+            } else {
+                None
+            };
+            let context = slot.map(|slot| {
+                (
+                    storage.radio.active_model,
+                    slot,
+                    dashboard.multiswitch_selected,
+                )
+            });
+            let momentary = slot.is_some_and(|slot| {
+                model.multiswitch_momentary[slot] & (1 << dashboard.multiswitch_selected) != 0
+            });
+            let actions =
+                self.multiswitch_keys
+                    .update(context, momentary, keys & (1 << 10) != 0, dt_ms);
+            if actions.open_menu {
+                menu_controller.open(buzzer);
+                self.ok_hold_ms = 0;
+                self.board_idle.clear_menu_open_state();
+            }
+            if pipeline
+                .multiswitch_pages
+                .update_touch(slot, actions.held, actions.tapped)
+            {
+                buzzer.click();
+            }
+            dashboard.multiswitch_states = pipeline.multiswitch_pages.switches();
+            ok_held && slot.is_none()
+        };
 
         // 6. Persist newly bound RX ID safely to Flash outside ISR (inhibit while armed)
         if let Some(new_rx_id) = rf::take_pending_rx_save() {
@@ -788,7 +1025,7 @@ impl BackgroundIdleManager {
                 #[cfg(any(feature = "soaring", test))]
                 if self.ok_hold_ms > 0
                     && self.ok_hold_ms < 500
-                    && dashboard.page == 5
+                    && dashboard.is_soaring_page(storage)
                     && self.f5j.landed
                 {
                     self.f5j.cycle_landing_bonus();
@@ -1438,6 +1675,21 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
         let dt_ms = (now.wrapping_sub(last_tick_ms)).min(100) as u16;
 
         let menu_active = menu_controller.is_active() || calib_wizard.is_active();
+        #[cfg(feature = "multiswitch")]
+        {
+            dashboard.configure_pages(storage);
+            if ActiveBoard::HAS_TOUCH {
+                let context = if !menu_active && !rf::is_binding() && storage.radio.touch_disabled == 0
+                {
+                    dashboard
+                        .multiswitch_slot(storage)
+                        .map(|slot| (storage.radio.active_model, slot))
+                } else {
+                    None
+                };
+                crate::touch::nav::set_multiswitch_context(context);
+            }
+        }
         let keys = ActiveBoard::poll_keys(storage, menu_active);
 
         if dt_ms > 0 {

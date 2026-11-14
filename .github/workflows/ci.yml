@@ -40,23 +40,37 @@ jobs:
       - name: Run clippy (-D warnings)
         run: |
           cargo clippy -p ferrox-i6s --target thumbv6m-none-eabi -- -D warnings
+          cargo clippy -p ferrox-i6s --target thumbv6m-none-eabi --no-default-features --features stm32,multiswitch -- -D warnings
           cargo clippy -p ferrox-i6x --target thumbv6m-none-eabi -- -D warnings
+          cargo clippy -p ferrox-i6x --target thumbv6m-none-eabi --no-default-features --features stm32,multiswitch -- -D warnings
           cargo clippy -p ferrox-f4 --target thumbv7em-none-eabihf -- -D warnings
+          cargo clippy -p ferrox-f4 --target thumbv7em-none-eabihf --features multiswitch -- -D warnings
           cargo clippy -p ferrox-f4 --no-default-features --features zorro --target thumbv7em-none-eabihf -- -D warnings
+          cargo clippy -p ferrox-f4 --no-default-features --features zorro,multiswitch --target thumbv7em-none-eabihf -- -D warnings
 
       - name: Run host unit tests
         run: |
           cargo test-host-i6s
+          cargo test -p ferrox-core --lib --features board-i6s,touch,multiswitch --target x86_64-unknown-linux-gnu -- --test-threads=1
+          cargo test -p ferrox-core --lib --features board-i6x,multiswitch --target x86_64-unknown-linux-gnu -- --test-threads=1
           cargo test-host-i6x
           cargo test-host-pocket
           cargo test-host-gx12
+          for board in pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
+            cargo test -p ferrox-core --lib --features "board-$board,multiswitch" --target x86_64-unknown-linux-gnu -- --test-threads=1
+          done
 
       - name: Build release binaries
         run: |
           cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi
+          cargo build --release -p ferrox-i6s --target thumbv6m-none-eabi --no-default-features --features stm32,multiswitch
           cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi
+          cargo build --release -p ferrox-i6x --target thumbv6m-none-eabi --no-default-features --features stm32,multiswitch
           cargo build --release -p ferrox-f4 --target thumbv7em-none-eabihf
           cargo build --release -p ferrox-f4 --no-default-features --features zorro --target thumbv7em-none-eabihf
+          for board in pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
+            cargo build --release -p ferrox-f4 --target thumbv7em-none-eabihf --no-default-features --features "$board,multiswitch"
+          done
 
       - name: Install cargo-binutils
         run: cargo install cargo-binutils || true

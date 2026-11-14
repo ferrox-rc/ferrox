@@ -8,6 +8,13 @@ const RX_BUF_SIZE: usize = 256;
 static mut RX_DMA_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
 static mut RX_TAIL: usize = 0;
 
+#[cfg(feature = "multiswitch")]
+const TX_BUF_SIZE: usize = 64;
+#[cfg(feature = "multiswitch")]
+static mut TX_DMA_BUF: [u8; TX_BUF_SIZE] = [0; TX_BUF_SIZE];
+#[cfg(feature = "multiswitch")]
+const TX_DMA_FLAGS: u32 = 0x3D << 22;
+
 pub struct PocketSerialPort<H: Qx7HalDescriptor = PocketHal> {
     active: bool,
     _phantom: PhantomData<H>,
@@ -20,6 +27,29 @@ impl<H: Qx7HalDescriptor> PocketSerialPort<H> {
             _phantom: PhantomData,
         }
     }
+
+    #[cfg(feature = "multiswitch")]
+    fn stop_tx_dma() {
+        let dma2 = unsafe { &*pac::DMA2::ptr() };
+        let usart1 = unsafe { &*pac::USART1::ptr() };
+        let stream = &dma2.st[7];
+        unsafe {
+            stream.cr.modify(|r, w| w.bits(r.bits() & !1));
+        }
+        let mut timeout = 50_000;
+        while stream.cr.read().bits() & 1 != 0 && timeout > 0 {
+            timeout -= 1;
+        }
+        assert_eq!(
+            stream.cr.read().bits() & 1,
+            0,
+            "USART1 TX DMA stop timed out"
+        );
+        unsafe {
+            usart1.cr3.modify(|r, w| w.bits(r.bits() & !(1 << 7)));
+            dma2.hifcr.write(|w| w.bits(TX_DMA_FLAGS));
+        }
+    }
 }
 
 impl<H: Qx7HalDescriptor> Default for PocketSerialPort<H> {
@@ -29,6 +59,46 @@ impl<H: Qx7HalDescriptor> Default for PocketSerialPort<H> {
 }
 
 impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
+    #[cfg(feature = "multiswitch")]
+    fn try_write_bytes(&mut self, bytes: &[u8]) -> bool {
+        if !self.active || bytes.is_empty() || bytes.len() > TX_BUF_SIZE {
+            return false;
+        }
+        let dma2 = unsafe { &*pac::DMA2::ptr() };
+        let usart1 = unsafe { &*pac::USART1::ptr() };
+        let stream = &dma2.st[7];
+        if stream.cr.read().bits() & 1 != 0 || usart1.sr.read().bits() & (1 << 6) == 0 {
+            return false;
+        }
+        if dma2.hisr.read().bits() & (0x0D << 22) != 0 {
+            unsafe {
+                dma2.hifcr.write(|w| w.bits(TX_DMA_FLAGS));
+            }
+            return false;
+        }
+        // RM0090 Table 44: USART1 TX uses DMA2 Stream 7, Channel 4.
+        unsafe {
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Acquire);
+            let buffer = core::ptr::addr_of_mut!(TX_DMA_BUF).cast::<u8>();
+            core::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
+            dma2.hifcr.write(|w| w.bits(TX_DMA_FLAGS));
+            stream
+                .par
+                .write(|w| w.bits(core::ptr::addr_of!(usart1.dr) as u32));
+            stream.m0ar.write(|w| w.bits(buffer as u32));
+            stream.ndtr.write(|w| w.bits(bytes.len() as u32));
+            stream.fcr.write(|w| w.bits(0));
+            stream
+                .cr
+                .write(|w| w.bits((4 << 25) | (1 << 16) | (1 << 10) | (1 << 6)));
+            usart1.cr3.modify(|r, w| w.bits(r.bits() | (1 << 7)));
+            core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+            cortex_m::asm::dmb();
+            stream.cr.modify(|r, w| w.bits(r.bits() | 1));
+        }
+        true
+    }
+
     fn init(&mut self, _active_high: bool) {
         let rcc = unsafe { &*pac::RCC::ptr() };
         let gpiob = unsafe { &*pac::GPIOB::ptr() };
@@ -76,6 +146,9 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
     fn set_uart_enabled(&mut self, enabled: bool, baud_idx: u8, half_duplex: bool) {
         let usart1 = unsafe { &*pac::USART1::ptr() };
         let dma2 = unsafe { &*pac::DMA2::ptr() };
+
+        #[cfg(feature = "multiswitch")]
+        Self::stop_tx_dma();
 
         if !enabled {
             self.active = false;
@@ -161,6 +234,23 @@ impl<H: Qx7HalDescriptor> SerialPort for PocketSerialPort<H> {
 
     fn write_bytes(&mut self, bytes: &[u8]) {
         let usart1 = unsafe { &*pac::USART1::ptr() };
+
+        #[cfg(feature = "multiswitch")]
+        {
+            let dma2 = unsafe { &*pac::DMA2::ptr() };
+            let mut timeout = 50_000;
+            while (dma2.st[7].cr.read().bits() & 1 != 0 || usart1.sr.read().bits() & (1 << 6) == 0)
+                && timeout > 0
+            {
+                timeout -= 1;
+            }
+            if timeout == 0 {
+                panic!("USART1 TX DMA completion timed out");
+            }
+            unsafe {
+                usart1.cr3.modify(|r, w| w.bits(r.bits() & !(1 << 7)));
+            }
+        }
 
         for &b in bytes {
             // Wait for TXE (Transmit data register empty, bit 7 in SR)
