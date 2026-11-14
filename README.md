@@ -339,7 +339,7 @@ Compile-time Cargo features allow tailoring flash/RAM usage on 128 KB STM32F072 
 | `rf-cc2500` | **On** (MPM) | **On** (MPM / SPI) | CC2500 / Multi-Module protocols (FrSky D8/D16/LBT, SFHSS, Graupner HoTT) |
 | `rf-dsm` | **On** | **On** | Spektrum DSM2/DSMX satellite RX & MPM serial protocol |
 | `touch` | `i6s` **On**, `i6x` **Off** | **Off** | FT6236 capacitive touch screen driver |
-| `multiswitch` | `i6s` **Off** (opt-in) | N/A | Up to four CRSF Set4 dashboards with eight toggle/momentary functions each |
+| `multiswitch` | **Off** (opt-in) | **Off** (opt-in) | Up to four CRSF Set4 dashboards with eight toggle/momentary functions each; touch on i6S, keys/encoder on all other radios |
 | `edgetx-bootloader` | N/A | Optional | Relocates `.text` / `VTOR` to `0x08008000` with `.fwversiondata` header for EdgeTX SD dual-boot (`tools/build-sd-bin.*`) |
 | `stm32` / `apm32` | `stm32` (default) | N/A | Selects STM32F072 vs APM32F072 clone peripheral handling |
 
@@ -348,11 +348,16 @@ Compile-time Cargo features allow tailoring flash/RAM usage on 128 KB STM32F072 
 cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi --no-default-features --features stm32,rf-afhds2a,rf-crsf -- -O binary ferrox-i6x-slim.bin
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi --no-default-features --features stm32,touch,rf-crsf,soaring -- -O binary ferrox-i6s-soaring.bin
 
-# FS-i6S with MultiSwitch (omit soaring to stay within 128 KB flash):
+# FS-i6S / FS-i6X with MultiSwitch and only the required features:
 cargo build-i6s --no-default-features --features stm32,multiswitch
+cargo build-i6x --no-default-features --features stm32,multiswitch
+# F4 radios; add multiswitch to the selected board's normal build:
+cargo build-pocket --features multiswitch
+cargo build-boxer --features multiswitch
+cargo build-zorro --features multiswitch
 ```
 
-#### FS-i6S MultiSwitch
+#### MultiSwitch (all radios)
 
 Enable the optional `multiswitch` Cargo feature using the command above (use
 `apm32,multiswitch` instead for APM32 hardware). It is disabled in normal builds;
@@ -362,10 +367,24 @@ In **Settings Menu → MultiSwitch**, configure up to four addresses (`0..255`,
 or `OFF`) and eight functions per address. Each function has a six-character
 label and either `TOGGLE` or `MOMENTARY` behavior. Configured addresses create
 compact dashboard pages **P6–P9**; an active soaring dashboard follows them.
-Tap a function to toggle it, or hold a momentary function; lifting the finger,
-leaving its target, changing pages, or opening the menu releases it. Swipe to
-change pages, tap the status bar for the next page, and hold the footer to open
-settings. Transmission requires CRSF and is disabled in USB simulator mode.
+
+On **i6S**, tap a function to toggle it, or hold a momentary function; lifting
+the finger, leaving its target, changing pages, or opening the menu releases
+it. Swipe to change pages, tap the status bar for the next page, and hold the
+footer to open settings.
+
+On **all other radios**, **UP/DOWN** or the **rotary encoder** select the
+highlighted function. At the first/last function they switch to the
+previous/next dashboard page. A short **OK / encoder-button** press toggles
+a switch; a momentary function stays active only while **OK** is held.
+Changing the selection or leaving the page releases it; a fresh OK press is
+required to activate another function. Holding **OK** for 1.2 seconds on a
+toggle function opens settings without toggling it. On momentary functions,
+holding OK never opens the menu.
+Dedicated **PAGE** keys retain direct dashboard-page navigation, and
+board-specific settings keys retain their normal menu shortcuts.
+
+Transmission requires CRSF and is disabled in USB simulator mode.
 Set4 commands repeat every 100 ms per address and yield to RC channel frames.
 Existing EEPROM models migrate with all MultiSwitch addresses disabled.
 

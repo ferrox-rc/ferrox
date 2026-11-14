@@ -29,6 +29,8 @@ pub struct DashboardController {
     pub max_pages: usize,
     #[cfg(feature = "multiswitch")]
     pub multiswitch_states: [u8; 4],
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_selected: u8,
 }
 
 impl Default for DashboardController {
@@ -50,6 +52,8 @@ impl DashboardController {
             max_pages: 5,
             #[cfg(feature = "multiswitch")]
             multiswitch_states: [0; 4],
+            #[cfg(feature = "multiswitch")]
+            multiswitch_selected: 0,
         }
     }
 
@@ -57,9 +61,8 @@ impl DashboardController {
         self.max_pages = 5;
         #[cfg(feature = "multiswitch")]
         {
-            self.max_pages += crate::multiswitch::enabled_count(
-                &storage.active_model().multiswitch_addresses,
-            );
+            self.max_pages +=
+                crate::multiswitch::enabled_count(&storage.active_model().multiswitch_addresses);
         }
         #[cfg(any(feature = "soaring", test))]
         if storage.active_model().soaring.is_active() {
@@ -83,13 +86,18 @@ impl DashboardController {
     pub fn is_soaring_page(&self, storage: &RadioStorage) -> bool {
         let page = 5;
         #[cfg(feature = "multiswitch")]
-        let page = page + crate::multiswitch::enabled_count(&storage.active_model().multiswitch_addresses);
+        let page =
+            page + crate::multiswitch::enabled_count(&storage.active_model().multiswitch_addresses);
         storage.active_model().soaring.is_active() && self.page == page
     }
 
     /// Advance to the next dashboard page.
     pub fn next_page(&mut self, buzzer: &mut Buzzer) {
         self.page = (self.page + 1) % self.max_pages.max(1);
+        #[cfg(feature = "multiswitch")]
+        {
+            self.multiswitch_selected = 0;
+        }
         buzzer.play_tone(2200, 30);
     }
 
@@ -101,7 +109,47 @@ impl DashboardController {
         } else {
             self.page - 1
         };
+        #[cfg(feature = "multiswitch")]
+        {
+            self.multiswitch_selected = crate::multiswitch::SWITCH_COUNT - 1;
+        }
         buzzer.play_tone(2200, 30);
+    }
+
+    pub fn navigate(&mut self, forward: bool, storage: &RadioStorage, buzzer: &mut Buzzer) {
+        #[cfg(feature = "multiswitch")]
+        if !crate::board::ActiveBoard::HAS_TOUCH && self.multiswitch_slot(storage).is_some() {
+            if forward && self.multiswitch_selected + 1 < crate::multiswitch::SWITCH_COUNT {
+                self.multiswitch_selected += 1;
+                buzzer.click();
+                return;
+            }
+            if !forward && self.multiswitch_selected > 0 {
+                self.multiswitch_selected -= 1;
+                buzzer.click();
+                return;
+            }
+        }
+        #[cfg(not(feature = "multiswitch"))]
+        let _ = storage;
+        if forward {
+            self.next_page(buzzer);
+        } else {
+            self.prev_page(buzzer);
+        }
+    }
+
+    #[cfg(feature = "multiswitch")]
+    pub fn multiswitch_key_slot(&self, storage: &RadioStorage) -> Option<usize> {
+        if crate::board::ActiveBoard::HAS_TOUCH
+            || crate::usb::is_sim_mode()
+            || crate::board::ActiveBoard::resolve_protocol(storage.active_model().rf_protocol)
+                != crate::board::RfProtocol::Crsf
+        {
+            None
+        } else {
+            self.multiswitch_slot(storage)
+        }
     }
 
     /// Handle UP/DOWN key presses to cycle dashboard pages (0..3).
@@ -160,7 +208,13 @@ impl DashboardController {
         #[cfg(feature = "multiswitch")]
         if let Some(slot) = self.multiswitch_slot(storage) {
             pages::multiswitch::render(
-                lcd, storage, self.multiswitch_states[slot], slot, self.page, self.max_pages,
+                lcd,
+                storage,
+                self.multiswitch_states[slot],
+                slot,
+                self.page,
+                self.max_pages,
+                self.multiswitch_selected,
             );
             return;
         }
@@ -217,6 +271,33 @@ impl DashboardController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(feature = "multiswitch", not(feature = "board-i6s")))]
+    #[test]
+    fn keyboard_navigation_crosses_page_boundaries_without_skipping_functions() {
+        let mut dash = DashboardController::new();
+        let mut storage = RadioStorage::default_factory();
+        let mut buzzer = Buzzer::new();
+        storage.active_model.multiswitch_addresses = [0, -1, 2, -1];
+        dash.configure_pages(&storage);
+        dash.page = 4;
+        dash.navigate(true, &storage, &mut buzzer);
+        assert_eq!((dash.page, dash.multiswitch_selected), (5, 0));
+        for selected in 1..8 {
+            dash.navigate(true, &storage, &mut buzzer);
+            assert_eq!((dash.page, dash.multiswitch_selected), (5, selected));
+        }
+        dash.navigate(true, &storage, &mut buzzer);
+        assert_eq!((dash.page, dash.multiswitch_selected), (6, 0));
+        dash.navigate(false, &storage, &mut buzzer);
+        assert_eq!((dash.page, dash.multiswitch_selected), (5, 7));
+        for selected in (0..7).rev() {
+            dash.navigate(false, &storage, &mut buzzer);
+            assert_eq!((dash.page, dash.multiswitch_selected), (5, selected));
+        }
+        dash.navigate(false, &storage, &mut buzzer);
+        assert_eq!(dash.page, 4);
+    }
 
     #[cfg(feature = "multiswitch")]
     #[test]

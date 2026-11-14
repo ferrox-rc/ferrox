@@ -59,6 +59,63 @@ pub fn label_text<'a>(label: &[u8; 6], index: u8, buf: &'a mut [u8; 6]) -> &'a s
 
 pub use crate::crsf::protocol::build_set4;
 
+pub type KeyContext = (u8, usize, u8);
+
+#[derive(Default)]
+pub struct KeyInput {
+    previous_ok: bool,
+    pressed: Option<KeyContext>,
+    hold_ms: u16,
+    menu_opened: bool,
+}
+
+#[derive(Default)]
+pub struct KeyActions {
+    pub held: Option<u8>,
+    pub tapped: Option<u8>,
+    pub open_menu: bool,
+}
+
+impl KeyInput {
+    pub fn update(
+        &mut self,
+        context: Option<KeyContext>,
+        momentary: bool,
+        ok: bool,
+        dt_ms: u16,
+    ) -> KeyActions {
+        let mut actions = KeyActions::default();
+        if self.pressed != context {
+            self.pressed = None;
+            self.hold_ms = 0;
+        }
+        if ok && !self.previous_ok {
+            self.pressed = context;
+            self.hold_ms = 0;
+            self.menu_opened = false;
+        }
+        if self.pressed.is_some() && self.pressed == context {
+            let index = context.map(|(_, _, index)| index);
+            if ok {
+                self.hold_ms = self.hold_ms.saturating_add(dt_ms);
+                if momentary {
+                    actions.held = index;
+                } else if self.hold_ms >= 1200 && !self.menu_opened {
+                    actions.open_menu = true;
+                    self.menu_opened = true;
+                }
+            } else {
+                if self.previous_ok && !momentary && !self.menu_opened {
+                    actions.tapped = index;
+                }
+                self.pressed = None;
+            }
+        }
+        self.previous_ok = ok;
+        actions
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct State {
     pub switches: u8,
@@ -195,6 +252,36 @@ impl Pages {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyboard_toggle_and_long_press_menu_are_distinct() {
+        let mut input = KeyInput::default();
+        let context = Some((0, 0, 2));
+        assert_eq!(input.update(context, false, true, 20).tapped, None);
+        assert_eq!(input.update(context, false, true, 100).tapped, None);
+        assert_eq!(input.update(context, false, false, 20).tapped, Some(2));
+        assert!(input.update(context, false, true, 1200).open_menu);
+        assert!(!input.update(context, false, true, 20).open_menu);
+        assert_eq!(input.update(context, false, false, 20).tapped, None);
+    }
+
+    #[test]
+    fn keyboard_momentary_requires_a_fresh_press_after_context_changes() {
+        let mut input = KeyInput::default();
+        let context = Some((0, 0, 1));
+        assert_eq!(input.update(context, true, true, 20).held, Some(1));
+        let held = input.update(context, true, true, 2000);
+        assert_eq!(held.held, Some(1));
+        assert!(!held.open_menu);
+        assert_eq!(input.update(Some((0, 0, 2)), true, true, 20).held, None);
+        assert_eq!(input.update(context, true, true, 20).held, None);
+        assert_eq!(input.update(context, true, false, 20).tapped, None);
+        assert_eq!(input.update(context, true, true, 20).held, Some(1));
+        assert_eq!(input.update(Some((1, 0, 1)), true, true, 20).held, None);
+        input.update(None, true, false, 20);
+        input.update(None, true, true, 20);
+        assert_eq!(input.update(context, true, true, 20).held, None);
+    }
 
     #[test]
     fn touch_releases_momentary_but_preserves_toggles() {

@@ -118,12 +118,14 @@ impl BoardIdleHook for Qx7IdleState {
         frame_keys
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_board_keys(
         &mut self,
         dt_ms: u16,
         keys: u16,
         edgetx_keys: u8,
         menu_active: bool,
+        storage: &RadioStorage,
         dashboard: &mut crate::ui::dashboard::DashboardController,
         menu_controller: &mut crate::ui::menu::MenuController,
         buzzer: &mut Buzzer,
@@ -146,9 +148,9 @@ impl BoardIdleHook for Qx7IdleState {
 
         if !menu_active {
             if up_pressed {
-                dashboard.prev_page(buzzer);
+                dashboard.navigate(false, storage, buzzer);
             } else if down_pressed {
-                dashboard.next_page(buzzer);
+                dashboard.navigate(true, storage, buzzer);
             }
         }
 
@@ -231,7 +233,12 @@ impl BoardIdleHook for Qx7IdleState {
             }
         }
 
-        if self.enter.update((keys & (1 << 10)) != 0, dt_ms) == PressEvent::Long && !menu_active {
+        let enter = self.enter.update((keys & (1 << 10)) != 0, dt_ms);
+        #[cfg(not(feature = "multiswitch"))]
+        let enter_opens_menu = true;
+        #[cfg(feature = "multiswitch")]
+        let enter_opens_menu = dashboard.multiswitch_key_slot(storage).is_none();
+        if enter == PressEvent::Long && !menu_active && enter_opens_menu {
             menu_controller.open_at(MenuState::MainMenu, buzzer);
         }
 
@@ -337,6 +344,8 @@ macro_rules! impl_qx7_board_profile {
                 MainMenuItem::DualRateExpo,
                 MainMenuItem::ThrottleCurve,
                 MainMenuItem::WingMixer,
+                #[cfg(feature = "multiswitch")]
+                MainMenuItem::MultiSwitch,
                 MainMenuItem::AuxChannels,
                 MainMenuItem::ChannelReverse,
                 MainMenuItem::RadioSetup,
@@ -670,7 +679,51 @@ mod tests {
         buzzer: &mut Buzzer,
     ) {
         let menu_active = menu.is_active();
-        assert!(idle.handle_board_keys(dt_ms, keys, edgetx_keys, menu_active, dash, menu, buzzer));
+        assert!(idle.handle_board_keys(
+            dt_ms,
+            keys,
+            edgetx_keys,
+            menu_active,
+            &RadioStorage::default_factory(),
+            dash,
+            menu,
+            buzzer,
+        ));
+    }
+
+    #[cfg(all(feature = "multiswitch", not(feature = "board-i6s")))]
+    #[test]
+    fn multiswitch_encoder_and_page_keys_have_distinct_navigation() {
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.rf_protocol = RfProtocol::Crsf as u8;
+        storage.active_model.multiswitch_addresses = [42, 43, -1, -1];
+        let mut idle = Qx7IdleState::new();
+        let mut dash = DashboardController::new();
+        dash.configure_pages(&storage);
+        dash.page = 5;
+        let mut menu = MenuController::new();
+        let mut buzzer = Buzzer::new();
+        let mut step = |keys, edgetx_keys, dt_ms| {
+            assert!(idle.handle_board_keys(
+                dt_ms,
+                keys,
+                edgetx_keys,
+                menu.is_active(),
+                &storage,
+                &mut dash,
+                &mut menu,
+                &mut buzzer,
+            ));
+            (dash.page, dash.multiswitch_selected, menu.is_active())
+        };
+        assert_eq!(step(1 << 8, 0, 20), (5, 1, false));
+        assert_eq!(step(1 << 10, 0, 1200), (5, 1, false));
+        step(0, 0, 20);
+        step(0, EDGETX_KEY_PAGE_NEXT, 60);
+        assert_eq!(step(0, 0, 20), (6, 0, false));
+        assert_eq!(step(1 << 9, 0, 20), (5, 7, false));
+        step(0, EDGETX_KEY_SYS, 60);
+        assert_eq!(step(0, 0, 20), (5, 7, true));
     }
 
     #[test]

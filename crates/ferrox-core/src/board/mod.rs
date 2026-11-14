@@ -435,6 +435,7 @@ pub trait BoardIdleHook: Default + 'static {
         _keys: u16,
         _edgetx_keys: u8,
         _menu_active: bool,
+        _storage: &RadioStorage,
         _dashboard: &mut crate::ui::dashboard::DashboardController,
         _menu_controller: &mut crate::ui::menu::MenuController,
         _buzzer: &mut Buzzer,
