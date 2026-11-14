@@ -248,6 +248,17 @@ pub trait Qx7HalDescriptor: 'static {
     const SW_SG: SwitchDef = SwitchDef::None;
     const SW_SH: SwitchDef = SwitchDef::None;
 
+    /// Soft-power latch output pin (`PD0` on Q X7/Pocket/Zorro, `PD1` on GX12).
+    const PWR_ON_PIN: PinDef = PinDef::new(Port::D, 0);
+    /// Soft-power button input pin (`PD1` on Q X7/Pocket/Zorro, `PD0` on GX12).
+    const PWR_SWITCH_PIN: PinDef = PinDef::new(Port::D, 1);
+
+    /// True if display controller is a 128x64 SSD1309 SPI OLED (GX12) instead of ST7567 LCD.
+    const IS_OLED_SSD1309: bool = false;
+
+    /// True if switches SA..SH are attached to PCA9555/TCA9539 I2C2 expanders on PB10/PB11 (GX12).
+    const HAS_PCA9555_SWITCHES: bool = false;
+
     /// Status LED pin.
     const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::E, 2));
 
@@ -495,10 +506,237 @@ impl Qx7HalDescriptor for Gx12Hal {
     const S2_INVERT: bool = true;
     const LCD_VERT_INVERT: bool = false;
     const LCD_HORIZ_INVERT: bool = false;
+    const IS_OLED_SSD1309: bool = true;
+    const HAS_PCA9555_SWITCHES: bool = true;
+    const PWR_ON_PIN: PinDef = PinDef::new(Port::D, 1);
+    const PWR_SWITCH_PIN: PinDef = PinDef::new(Port::D, 0);
+    const INT_RF_PWR: PinDef = PinDef::new(Port::E, 0);
     const KEY_ENTER: PinDef = PinDef::new(Port::A, 10);
-    const SW_SE: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 14));
-    const SW_SF: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 1));
-    const SW_SG: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::E, 7));
-    const SW_SH: SwitchDef = SwitchDef::TwoPos(PinDef::new(Port::D, 14));
+    const SW_SA: SwitchDef = SwitchDef::None;
+    const SW_SB: SwitchDef = SwitchDef::None;
+    const SW_SC: SwitchDef = SwitchDef::None;
+    const SW_SD: SwitchDef = SwitchDef::None;
+    const SW_SE: SwitchDef = SwitchDef::None;
+    const SW_SF: SwitchDef = SwitchDef::None;
+    const SW_SG: SwitchDef = SwitchDef::None;
+    const SW_SH: SwitchDef = SwitchDef::None;
     const LED_STATUS: Option<PinDef> = Some(PinDef::new(Port::A, 7));
+}
+
+/// PCA9555 / TCA9539 I2C2 (PB10 SCL, PB11 SDA) 16-bit GPIO switch expander driver for GX12.
+pub mod pca9555 {
+    use super::*;
+
+    const PCA9555_ADDR_PRIMARY: u8 = 0x74;
+    const PCA9555_ADDR_ALT: u8 = 0x75;
+    const I2C_TIMEOUT: u32 = 15_000;
+
+    static mut CACHED_PORTS: u16 = 0xFFFF;
+    static mut DETECTED_ADDR: u8 = 0;
+
+    /// Initialize I2C2 on PB10 (SCL, AF4) and PB11 (SDA, AF4) at 400 kHz Fast Mode (APB1 = 42 MHz).
+    pub fn init() {
+        unsafe {
+            let rcc = &*pac::RCC::ptr();
+            let gpiob = &*pac::GPIOB::ptr();
+            let i2c2 = &*pac::I2C2::ptr();
+
+            // 1. Enable GPIOB (bit 1) and I2C2 (APB1 bit 22) clocks with read-back (ES0182 2.1.13)
+            rcc.ahb1enr.modify(|r, w| w.bits(r.bits() | (1 << 1)));
+            let _ = rcc.ahb1enr.read().bits();
+            rcc.apb1enr.modify(|r, w| w.bits(r.bits() | (1 << 22)));
+            let _ = rcc.apb1enr.read().bits();
+
+            // 2. Configure PB10 (SCL) and PB11 (SDA): AF4, Open-Drain, Pull-Up, Very High Speed
+            gpiob
+                .otyper
+                .modify(|r, w| w.bits(r.bits() | (1 << 10) | (1 << 11)));
+            gpiob
+                .ospeedr
+                .modify(|r, w| w.bits(r.bits() | (0x03 << 20) | (0x03 << 22)));
+            gpiob.pupdr.modify(|r, w| {
+                w.bits((r.bits() & !((0x03 << 20) | (0x03 << 22))) | (0x01 << 20) | (0x01 << 22))
+            });
+            gpiob.afrh.modify(|r, w| {
+                let mask = (0x0F << 8) | (0x0F << 12);
+                let af4 = (0x04 << 8) | (0x04 << 12);
+                w.bits((r.bits() & !mask) | af4)
+            });
+            gpiob.moder.modify(|r, w| {
+                w.bits((r.bits() & !((0x03 << 20) | (0x03 << 22))) | (0x02 << 20) | (0x02 << 22))
+            });
+
+            // 3. Reset and configure I2C2 for 400 kHz Fast Mode (42 MHz APB1)
+            i2c2.cr1.write(|w| w.bits(1 << 15)); // SWRST = 1
+            i2c2.cr1.write(|w| w.bits(0));
+            i2c2.cr2.write(|w| w.bits(42)); // FREQ = 42 MHz
+            i2c2.ccr.write(|w| w.bits((1 << 15) | 35)); // F/S = 1, CCR = 35 (400 kHz)
+            i2c2.trise.write(|w| w.bits(13));
+            i2c2.cr1.write(|w| w.bits(1 << 0)); // PE = 1
+
+            // Probe primary (0x74) or secondary (0x75) expander
+            if let Some(val) = read_ports_raw(PCA9555_ADDR_PRIMARY) {
+                DETECTED_ADDR = PCA9555_ADDR_PRIMARY;
+                CACHED_PORTS = val;
+            } else if let Some(val) = read_ports_raw(PCA9555_ADDR_ALT) {
+                DETECTED_ADDR = PCA9555_ADDR_ALT;
+                CACHED_PORTS = val;
+            }
+        }
+    }
+
+    /// Perform RM0090 27.3.3 2-byte POS=1 Master Receiver read of Input Port 0 & 1 (`cmd = 0x00`).
+    fn read_ports_raw(addr7: u8) -> Option<u16> {
+        let i2c2 = unsafe { &*pac::I2C2::ptr() };
+        unsafe {
+            // Clear any sticky error flags (BERR, ARLO, AF, OVR)
+            i2c2.sr1.write(|w| w.bits(0));
+
+            // 1. Generate START
+            i2c2.cr1.modify(|r, w| w.bits(r.bits() | (1 << 8)));
+            let mut t = I2C_TIMEOUT;
+            while (i2c2.sr1.read().bits() & (1 << 0)) == 0 {
+                t -= 1;
+                if t == 0 {
+                    return None;
+                }
+            }
+
+            // 2. Send slave address + Write
+            i2c2.dr.write(|w| w.bits((addr7 as u32) << 1));
+            t = I2C_TIMEOUT;
+            while (i2c2.sr1.read().bits() & (1 << 1)) == 0 {
+                if (i2c2.sr1.read().bits() & (1 << 10)) != 0 {
+                    // AF (NACK)
+                    i2c2.sr1.write(|w| w.bits(0));
+                    i2c2.cr1.modify(|r, w| w.bits(r.bits() | (1 << 9)));
+                    return None;
+                }
+                t -= 1;
+                if t == 0 {
+                    return None;
+                }
+            }
+            let _ = i2c2.sr1.read().bits();
+            let _ = i2c2.sr2.read().bits();
+
+            // 3. Write command byte 0x00 (Input Port 0)
+            i2c2.dr.write(|w| w.bits(0x00));
+            t = I2C_TIMEOUT;
+            while (i2c2.sr1.read().bits() & (1 << 2)) == 0 {
+                t -= 1;
+                if t == 0 {
+                    return None;
+                }
+            }
+
+            // 4. Generate Repeated START
+            i2c2.cr1.modify(|r, w| w.bits(r.bits() | (1 << 8)));
+            t = I2C_TIMEOUT;
+            while (i2c2.sr1.read().bits() & (1 << 0)) == 0 {
+                t -= 1;
+                if t == 0 {
+                    return None;
+                }
+            }
+
+            // 5. Send slave address + Read
+            i2c2.dr.write(|w| w.bits(((addr7 as u32) << 1) | 1));
+            t = I2C_TIMEOUT;
+            while (i2c2.sr1.read().bits() & (1 << 1)) == 0 {
+                t -= 1;
+                if t == 0 {
+                    return None;
+                }
+            }
+
+            // 6. RM0090 27.3.3 2-byte reception: POS=1, clear ADDR, clear ACK, wait BTF, STOP, read 2 bytes
+            i2c2.cr1
+                .modify(|r, w| w.bits(r.bits() | (1 << 11) | (1 << 10)));
+            cortex_m::interrupt::free(|_| {
+                let _ = i2c2.sr1.read().bits();
+                let _ = i2c2.sr2.read().bits();
+                i2c2.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 10))); // ACK = 0
+            });
+
+            t = I2C_TIMEOUT;
+            while (i2c2.sr1.read().bits() & (1 << 2)) == 0 {
+                t -= 1;
+                if t == 0 {
+                    i2c2.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 11)));
+                    return None;
+                }
+            }
+
+            i2c2.cr1.modify(|r, w| w.bits(r.bits() | (1 << 9))); // STOP = 1
+            let port0 = (i2c2.dr.read().bits() & 0xFF) as u16;
+            let port1 = (i2c2.dr.read().bits() & 0xFF) as u16;
+            i2c2.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 11))); // POS = 0
+
+            Some(port0 | (port1 << 8))
+        }
+    }
+
+    /// Refresh cached 16-bit switch port state and return `(SA_adc, SB_adc, SC_adc, SD_adc)`.
+    pub fn poll_primary_virtual_adc() -> (u16, u16, u16, u16) {
+        let ports = unsafe {
+            let addr = if DETECTED_ADDR != 0 {
+                DETECTED_ADDR
+            } else {
+                PCA9555_ADDR_PRIMARY
+            };
+            if let Some(val) = read_ports_raw(addr) {
+                CACHED_PORTS = val;
+            }
+            CACHED_PORTS
+        };
+
+        let is_low = |bit: u8| ((ports >> bit) & 1) == 0;
+        let two_pos_adc = |bit: u8| if is_low(bit) { 4000 } else { 100 };
+        let three_pos_adc = |high_bit: u8, low_bit: u8| {
+            if is_low(high_bit) {
+                100
+            } else if is_low(low_bit) {
+                4000
+            } else {
+                2048
+            }
+        };
+
+        (
+            two_pos_adc(0),      // SA (Port 0 bit 0)
+            three_pos_adc(1, 2), // SB (Port 0 bits 1, 2)
+            three_pos_adc(3, 4), // SC (Port 0 bits 3, 4)
+            two_pos_adc(5),      // SD (Port 0 bit 5)
+        )
+    }
+
+    /// Return decoded `(SE, SF, SG, SH)` from cached PCA9555 Port 1 state.
+    pub fn read_ext_switches() -> (SwitchPos, SwitchPos, SwitchPos, SwitchPos) {
+        let ports = unsafe { CACHED_PORTS };
+        let is_low = |bit: u8| ((ports >> bit) & 1) == 0;
+        let two_pos = |bit: u8| {
+            if is_low(bit) {
+                SwitchPos::Down
+            } else {
+                SwitchPos::Up
+            }
+        };
+        let three_pos = |high_bit: u8, low_bit: u8| {
+            if is_low(high_bit) {
+                SwitchPos::Up
+            } else if is_low(low_bit) {
+                SwitchPos::Down
+            } else {
+                SwitchPos::Mid
+            }
+        };
+
+        (
+            three_pos(8, 9),   // SE (Port 1 bits 0, 1)
+            three_pos(10, 11), // SF (Port 1 bits 2, 3)
+            two_pos(12),       // SG (Port 1 bit 4)
+            two_pos(13),       // SH (Port 1 bit 5)
+        )
+    }
 }

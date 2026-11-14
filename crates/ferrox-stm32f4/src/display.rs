@@ -207,29 +207,66 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
             self.delay_cycles(168_000 * 150); // ~150ms
         }
 
-        // 9. ST7567 Controller Initialization Sequence
-        let seg_cmd = if H::LCD_HORIZ_INVERT { 0xA1 } else { 0xA0 };
-        let com_cmd = if H::LCD_VERT_INVERT { 0xC8 } else { 0xC0 };
-        let contrast_val = (0x25 as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 0x3F) as u8;
+        if H::IS_OLED_SSD1309 {
+            // 9a. SSD1309 128x64 SPI OLED Controller Initialization Sequence (GX12)
+            let seg_cmd = if H::LCD_HORIZ_INVERT { 0xA0 } else { 0xA1 };
+            let com_cmd = if H::LCD_VERT_INVERT { 0xC0 } else { 0xC8 };
 
-        self.write_cmd(0xE2); // Soft reset
-        self.delay_cycles(168_000 * 10);
-        self.write_cmd(seg_cmd);
-        self.write_cmd(com_cmd);
-        self.write_cmd(0xF8); // Set booster ratio
-        self.write_cmd(0x00); // 5x
-        self.write_cmd(0xA3); // Bias = 1/6
-        self.write_cmd(0x22); // Rb/Ra = 5.0
-        self.write_cmd(0x2F); // Power circuits ON
-        self.write_cmd(0x81); // Set contrast command
-        self.write_cmd(contrast_val);
-        self.write_cmd(0xA6); // Normal display (not inverse)
-        self.write_cmd(0xAF); // Display ON
-        self.delay_cycles(168_000 * 20); // 20ms for internal DC-DC converter startup
+            self.write_cmd(0xAE); // Display OFF
+            self.write_cmd(0xFD); // Set Command Lock
+            self.write_cmd(0x12); // Unlock OLED driver IC
+            self.write_cmd(0xD5); // Set Display Clock Divide Ratio / Oscillator Frequency
+            self.write_cmd(0xA0);
+            self.write_cmd(0xA8); // Set Multiplex Ratio
+            self.write_cmd(0x3F); // 1/64 duty (64MUX)
+            self.write_cmd(0xD3); // Set Display Offset
+            self.write_cmd(0x00);
+            self.write_cmd(0x40); // Set Display Start Line = 0
+            self.write_cmd(0x20); // Set Memory Addressing Mode
+            self.write_cmd(0x02); // Page Addressing Mode (0xB0..0xB7)
+            self.write_cmd(seg_cmd);
+            self.write_cmd(com_cmd);
+            self.write_cmd(0xDA); // Set COM Pins Hardware Configuration
+            self.write_cmd(0x12);
+            self.write_cmd(0x81); // Set Contrast Control
+            self.write_cmd(0xCF);
+            self.write_cmd(0xD9); // Set Pre-Charge Period
+            self.write_cmd(0x25);
+            self.write_cmd(0xDB); // Set VCOMH Deselect Level
+            self.write_cmd(0x34);
+            self.write_cmd(0xA4); // Entire Display ON from RAM
+            self.write_cmd(0xA6); // Normal Display (not inverse)
+            self.write_cmd(0xAF); // Display ON
+            self.delay_cycles(168_000 * 20);
+        } else {
+            // 9b. ST7567 Controller Initialization Sequence
+            let seg_cmd = if H::LCD_HORIZ_INVERT { 0xA1 } else { 0xA0 };
+            let com_cmd = if H::LCD_VERT_INVERT { 0xC8 } else { 0xC0 };
+            let contrast_val = (0x25 as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 0x3F) as u8;
+
+            self.write_cmd(0xE2); // Soft reset
+            self.delay_cycles(168_000 * 10);
+            self.write_cmd(seg_cmd);
+            self.write_cmd(com_cmd);
+            self.write_cmd(0xF8); // Set booster ratio
+            self.write_cmd(0x00); // 5x
+            self.write_cmd(0xA3); // Bias = 1/6
+            self.write_cmd(0x22); // Rb/Ra = 5.0
+            self.write_cmd(0x2F); // Power circuits ON
+            self.write_cmd(0x81); // Set contrast command
+            self.write_cmd(contrast_val);
+            self.write_cmd(0xA6); // Normal display (not inverse)
+            self.write_cmd(0xAF); // Display ON
+            self.delay_cycles(168_000 * 20); // 20ms for internal DC-DC converter startup
+        }
     }
 
     fn flush(&mut self, framebuffer: &[u8]) {
-        let col_offset: u8 = if H::LCD_HORIZ_INVERT { 4 } else { 0 };
+        let col_offset: u8 = if !H::IS_OLED_SSD1309 && H::LCD_HORIZ_INVERT {
+            4
+        } else {
+            0
+        };
         let cols_per_page = framebuffer.len() / 8;
 
         for page in 0..8 {
@@ -243,12 +280,28 @@ impl<H: Qx7HalDescriptor> DisplayBus for St7567SpiBus<H> {
     }
 
     fn set_contrast(&mut self, contrast: u8) {
-        let val = (contrast.min(63) as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 63) as u8;
-        self.write_cmd(0x81);
-        self.write_cmd(val);
+        if H::IS_OLED_SSD1309 {
+            let scaled = ((contrast.clamp(15, 55) as u16 - 15) * 239 / 40 + 16).min(255) as u8;
+            self.write_cmd(0x81);
+            self.write_cmd(scaled);
+        } else {
+            let val = (contrast.min(63) as i16 + H::LCD_CONTRAST_OFFSET as i16).clamp(0, 63) as u8;
+            self.write_cmd(0x81);
+            self.write_cmd(val);
+        }
     }
 
     fn set_backlight_level(&mut self, pct: u8) {
+        if H::IS_OLED_SSD1309 {
+            if pct == 0 {
+                self.write_cmd(0xAE); // OLED sleep when backlight timeout expires
+            } else {
+                self.write_cmd(0xAF);
+                let val = ((pct.min(100) as u16 * 239) / 100 + 16).min(255) as u8;
+                self.write_cmd(0x81);
+                self.write_cmd(val);
+            }
+        }
         let duty = (pct.min(100) as u32 * 999) / 100;
         let tim4 = unsafe { &*pac::TIM4::ptr() };
         tim4.ccr2().write(|w| unsafe { w.bits(duty) });

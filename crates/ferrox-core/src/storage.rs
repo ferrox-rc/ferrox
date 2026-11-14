@@ -45,6 +45,11 @@ pub fn read_raw_sd_sector(lba: u32, buf: &mut [u8; 512]) -> Result<(), ()> {
     }
 }
 
+/// Execute a closure with mutable access to the registered `StorageBus`, if present.
+pub fn with_storage_bus<R>(f: impl FnOnce(&mut dyn StorageBus) -> R) -> Option<R> {
+    unsafe { STORAGE_BUS.as_mut().map(|bus| f(*bus)) }
+}
+
 pub const FLASH_MAGIC: u32 = 0x4653_4B59; // "FSKY"
 pub const CONFIG_VERSION: u32 = 5;
 pub const NUM_MODELS: usize = 20;

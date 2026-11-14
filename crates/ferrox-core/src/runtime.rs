@@ -401,6 +401,8 @@ pub struct BackgroundIdleManager {
     pub trim_dirty: bool,
     pub trim_save_cooldown_ms: u16,
     pub prev_instant_trim_active: bool,
+    pub telemetry_logger: crate::telemetry_log::TelemetryLogger,
+    pub last_telem_log_ms: u32,
     #[cfg(feature = "voice-audio")]
     pub audio_callouts: crate::audio::CalloutScheduler,
     pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
@@ -458,6 +460,8 @@ impl BackgroundIdleManager {
             trim_dirty: false,
             trim_save_cooldown_ms: 0,
             prev_instant_trim_active: false,
+            telemetry_logger: crate::telemetry_log::TelemetryLogger::new(),
+            last_telem_log_ms: 0,
             #[cfg(feature = "voice-audio")]
             audio_callouts: crate::audio::CalloutScheduler::new(),
             board_idle: ActiveBoard::create_idle_state(),
@@ -838,12 +842,14 @@ impl BackgroundIdleManager {
         }
 
         // Evaluate timer triggers and update all 4 timers
-        let is_armed_or_unassigned =
-            if model.arm_switch > 0 && model.arm_switch <= ActiveBoard::MAX_MIX_SWITCH {
-                flight.is_armed
-            } else {
-                true
-            };
+        let is_armed_or_unassigned = if model.arm_switch > 0
+            && (model.arm_switch <= ActiveBoard::MAX_MIX_SWITCH
+                || (29..=44).contains(&model.arm_switch))
+        {
+            flight.is_armed
+        } else {
+            true
+        };
         let stick_mode = StickMode::from_u8(storage.radio.stick_mode);
         let controls = flight.state.flight_controls(stick_mode);
 
@@ -859,8 +865,54 @@ impl BackgroundIdleManager {
         );
 
         #[cfg(any(feature = "soaring", test))]
+        let was_landed = self.f5j.landed;
+        #[cfg(any(feature = "soaring", test))]
         self.f5j
             .update(now, &flight.rf_chs, &flight.telem, &model.soaring, buzzer);
+
+        // 8d. Periodic 512-byte sector CSV telemetry logging to SD card
+        if flight.just_armed {
+            self.telemetry_logger.reset();
+            self.last_telem_log_ms = now;
+        } else if flight.just_disarmed {
+            let logger = &mut self.telemetry_logger;
+            let _ = crate::storage::with_storage_bus(|bus| logger.flush(bus));
+        } else {
+            #[cfg(any(feature = "soaring", test))]
+            if !was_landed && self.f5j.landed && model.soaring.auto_log_enabled() {
+                let logger = &mut self.telemetry_logger;
+                let _ = crate::storage::with_storage_bus(|bus| logger.flush(bus));
+            }
+            if is_armed_or_unassigned
+                && flight.telem.connected
+                && model.soaring.auto_log_enabled()
+                && now.wrapping_sub(self.last_telem_log_ms) >= 500
+            {
+                self.last_telem_log_ms = now;
+                let frame = crate::telemetry_log::FlightLogFrame {
+                    time_ms: now,
+                    rqly: flight.telem.rssi,
+                    rssi_dbm: 0,
+                    snr_db: 0,
+                    tx_pwr: model.rf_power,
+                    rx_vbat_mv: flight.telem.rx_voltage_mv,
+                    curr_ma: 0,
+                    mah: 0,
+                    lat: 0,
+                    lon: 0,
+                    alt_m: flight.telem.alt_m,
+                    spd_kt: 0,
+                    sats: 0,
+                    vspd_cms: flight.telem.vspeed_cms,
+                    ch1: flight.rf_chs[0],
+                    ch2: flight.rf_chs[1],
+                    ch3: flight.rf_chs[2],
+                    ch4: flight.rf_chs[3],
+                };
+                let logger = &mut self.telemetry_logger;
+                let _ = crate::storage::with_storage_bus(|bus| logger.log_frame(&frame, bus));
+            }
+        }
 
         // Keep legacy Timer 1 scalar fields in sync for telemetry/logging
         self.timer_remaining_secs = self.timers.timers[0].remaining_secs;

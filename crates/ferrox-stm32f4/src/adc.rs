@@ -53,11 +53,15 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
             // PC0 Analog
             gpioc.moder.modify(|r, w| w.bits(r.bits() | 0x03));
 
-            // 3. Configure Digital Switch Pins for virtual ADC conversion (Input with Pull-Up)
-            H::SW_SA.init();
-            H::SW_SB.init();
-            H::SW_SC.init();
-            H::SW_SD.init();
+            // 3. Configure Digital Switch Pins for virtual ADC conversion (Input with Pull-Up or PCA9555 I2C2)
+            if H::HAS_PCA9555_SWITCHES {
+                crate::descriptor::pca9555::init();
+            } else {
+                H::SW_SA.init();
+                H::SW_SB.init();
+                H::SW_SC.init();
+                H::SW_SD.init();
+            }
 
             // 4. Configure DMA2 Stream 4 (Channel 0): Circular, 16-bit, Memory increment
             let stream4 = &dma2.st[4];
@@ -162,9 +166,20 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
                 raw_lh
             };
 
+            let (sa_adc, sb_adc, sc_adc, sd_adc) = if H::HAS_PCA9555_SWITCHES {
+                crate::descriptor::pca9555::poll_primary_virtual_adc()
+            } else {
+                (
+                    H::SW_SA.read_virtual_adc(),
+                    H::SW_SB.read_virtual_adc(),
+                    H::SW_SC.read_virtual_adc(),
+                    H::SW_SD.read_virtual_adc(),
+                )
+            };
+
             // Switches synthesized as virtual ADC voltages:
-            dest[4] = H::SW_SA.read_virtual_adc();
-            dest[5] = H::SW_SB.read_virtual_adc();
+            dest[4] = sa_adc;
+            dest[5] = sb_adc;
 
             // S1 Pot (dest[6])
             dest[6] = if H::S1_INVERT { 4095 - raw_s1 } else { raw_s1 };
@@ -181,8 +196,8 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
             };
 
             // SC and SD switches
-            dest[8] = H::SW_SC.read_virtual_adc();
-            dest[9] = H::SW_SD.read_virtual_adc();
+            dest[8] = sc_adc;
+            dest[9] = sd_adc;
 
             // VBAT (dest[10])
             dest[10] = raw_vbat;

@@ -1,6 +1,5 @@
 use core::marker::PhantomData;
 use ferrox_core::hal::PowerDriver;
-use stm32f4::stm32f407 as pac;
 
 use crate::descriptor::{PocketHal, Qx7HalDescriptor};
 
@@ -24,65 +23,38 @@ impl<H: Qx7HalDescriptor> Default for Stm32f4PowerDriver<H> {
 
 impl<H: Qx7HalDescriptor> PowerDriver for Stm32f4PowerDriver<H> {
     fn init(&mut self) {
-        unsafe {
-            let rcc = &*pac::RCC::ptr();
-            let gpiod = &*pac::GPIOD::ptr();
+        // Latch power ON immediately (PD0 on Q X7/Pocket/Zorro, PD1 on GX12)
+        H::PWR_ON_PIN.enable_clock_and_output(true);
 
-            // Enable GPIOD (bit 3) in RCC_AHB1ENR
-            rcc.ahb1enr.modify(|r, w| w.bits(r.bits() | (1 << 3)));
+        // Configure power switch input with pull-up (PD1 on Q X7/Pocket/Zorro, PD0 on GX12)
+        H::PWR_SWITCH_PIN.enable_clock_and_input_pullup();
 
-            // Configure PD0 (PWR_ON) as push-pull output (MODER bits 1:0 = 0b01)
-            gpiod.moder.modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
-            // Latch power ON immediately
-            gpiod.bsrr.write(|w| w.bits(1 << 0));
-
-            // Configure PD1 (PWR_SWITCH) as input (MODER bits 3:2 = 0b00) with pull-up (PUPDR bits 3:2 = 0b01)
-            gpiod.moder.modify(|r, w| w.bits(r.bits() & !(0x03 << 2)));
-            gpiod
-                .pupdr
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 2)) | (0x01 << 2)));
-
-            // Configure Status LED and turn it on to indicate power-on
-            if let Some(led) = H::LED_STATUS {
-                led.enable_clock_and_output(true);
-            }
+        // Configure Status LED and turn it on to indicate power-on
+        if let Some(led) = H::LED_STATUS {
+            led.enable_clock_and_output(true);
         }
     }
 
     fn latch_on(&mut self) {
-        unsafe {
-            let rcc = &*pac::RCC::ptr();
-            let gpiod = &*pac::GPIOD::ptr();
-
-            rcc.ahb1enr.modify(|r, w| w.bits(r.bits() | (1 << 3)));
-            gpiod.moder.modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
-            gpiod.bsrr.write(|w| w.bits(1 << 0));
-        }
+        H::PWR_ON_PIN.enable_clock_and_output(true);
     }
 
     fn latch_off(&mut self) {
-        unsafe {
-            let gpiod = &*pac::GPIOD::ptr();
+        // Turn off status LED
+        if let Some(led) = H::LED_STATUS {
+            led.set_low();
+        }
 
-            // Turn off status LED
-            if let Some(led) = H::LED_STATUS {
-                led.set_low();
-            }
-
-            // Release PD0 power latch
-            gpiod.bsrr.write(|w| w.bits(1 << (0 + 16)));
-            loop {
-                cortex_m::asm::wfi();
-            }
+        // Release power latch
+        H::PWR_ON_PIN.set_low();
+        loop {
+            cortex_m::asm::wfi();
         }
     }
 
     fn is_power_key_pressed(&mut self) -> bool {
-        unsafe {
-            let gpiod = &*pac::GPIOD::ptr();
-            // PD1 is active LOW
-            (gpiod.idr.read().bits() & (1 << 1)) == 0
-        }
+        // Power switch is active LOW
+        H::PWR_SWITCH_PIN.is_low()
     }
 
     fn set_leds(&mut self, on: bool) {

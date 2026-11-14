@@ -188,11 +188,15 @@ impl<H: Qx7HalDescriptor> KeyDriver for Qx7KeyDriver<H> {
     }
 
     fn read_ext_switches(&mut self) -> (SwitchPos, SwitchPos, SwitchPos, SwitchPos) {
-        let se = H::SW_SE.read_switch_pos();
-        let sf = H::SW_SF.read_switch_pos();
-        let sg = H::SW_SG.read_switch_pos();
-        let sh = H::SW_SH.read_switch_pos();
-        (se, sf, sg, sh)
+        if H::HAS_PCA9555_SWITCHES {
+            crate::descriptor::pca9555::read_ext_switches()
+        } else {
+            let se = H::SW_SE.read_switch_pos();
+            let sf = H::SW_SF.read_switch_pos();
+            let sg = H::SW_SG.read_switch_pos();
+            let sh = H::SW_SH.read_switch_pos();
+            (se, sf, sg, sh)
+        }
     }
 }
 
