@@ -73,14 +73,14 @@ impl PinDef {
                 .modify(|r, w| w.bits(r.bits() | self.rcc_ahb1_bit()));
             let _ = rcc.ahb1enr.read().bits();
             let gpio = &*self.gpio_ptr();
-            let shift = self.pin * 2;
-            gpio.moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << shift)) | (0x01 << shift)));
             if default_high {
                 gpio.bsrr.write(|w| w.bits(1 << self.pin));
             } else {
                 gpio.bsrr.write(|w| w.bits(1 << (self.pin + 16)));
             }
+            let shift = self.pin * 2;
+            gpio.moder
+                .modify(|r, w| w.bits((r.bits() & !(0x03 << shift)) | (0x01 << shift)));
         }
     }
 
@@ -571,7 +571,7 @@ pub mod pca9555 {
             i2c2.cr1.write(|w| w.bits(0));
             i2c2.cr2.write(|w| w.bits(42)); // FREQ = 42 MHz
             i2c2.ccr.write(|w| w.bits((1 << 15) | 35)); // F/S = 1, CCR = 35 (400 kHz)
-            i2c2.trise.write(|w| w.bits(13));
+            i2c2.trise.write(|w| w.bits(14));
             i2c2.cr1.write(|w| w.bits(1 << 0)); // PE = 1
 
             // Probe primary (0x74) or secondary (0x75) expander
@@ -583,6 +583,13 @@ pub mod pca9555 {
                 CACHED_PORTS = val;
             }
         }
+    }
+
+    #[inline]
+    unsafe fn abort_i2c2(i2c2: &pac::i2c1::RegisterBlock) {
+        i2c2.sr1.write(|w| w.bits(0));
+        i2c2.cr1
+            .modify(|r, w| w.bits((r.bits() & !(1 << 11)) | (1 << 9))); // POS = 0, STOP = 1
     }
 
     /// Perform RM0090 27.3.3 2-byte POS=1 Master Receiver read of Input Port 0 & 1 (`cmd = 0x00`).
@@ -598,6 +605,7 @@ pub mod pca9555 {
             while (i2c2.sr1.read().bits() & (1 << 0)) == 0 {
                 t -= 1;
                 if t == 0 {
+                    abort_i2c2(i2c2);
                     return None;
                 }
             }
@@ -607,13 +615,12 @@ pub mod pca9555 {
             t = I2C_TIMEOUT;
             while (i2c2.sr1.read().bits() & (1 << 1)) == 0 {
                 if (i2c2.sr1.read().bits() & (1 << 10)) != 0 {
-                    // AF (NACK)
-                    i2c2.sr1.write(|w| w.bits(0));
-                    i2c2.cr1.modify(|r, w| w.bits(r.bits() | (1 << 9)));
+                    abort_i2c2(i2c2);
                     return None;
                 }
                 t -= 1;
                 if t == 0 {
+                    abort_i2c2(i2c2);
                     return None;
                 }
             }
@@ -624,8 +631,13 @@ pub mod pca9555 {
             i2c2.dr.write(|w| w.bits(0x00));
             t = I2C_TIMEOUT;
             while (i2c2.sr1.read().bits() & (1 << 2)) == 0 {
+                if (i2c2.sr1.read().bits() & (1 << 10)) != 0 {
+                    abort_i2c2(i2c2);
+                    return None;
+                }
                 t -= 1;
                 if t == 0 {
+                    abort_i2c2(i2c2);
                     return None;
                 }
             }
@@ -636,6 +648,7 @@ pub mod pca9555 {
             while (i2c2.sr1.read().bits() & (1 << 0)) == 0 {
                 t -= 1;
                 if t == 0 {
+                    abort_i2c2(i2c2);
                     return None;
                 }
             }
@@ -644,8 +657,13 @@ pub mod pca9555 {
             i2c2.dr.write(|w| w.bits(((addr7 as u32) << 1) | 1));
             t = I2C_TIMEOUT;
             while (i2c2.sr1.read().bits() & (1 << 1)) == 0 {
+                if (i2c2.sr1.read().bits() & (1 << 10)) != 0 {
+                    abort_i2c2(i2c2);
+                    return None;
+                }
                 t -= 1;
                 if t == 0 {
+                    abort_i2c2(i2c2);
                     return None;
                 }
             }
@@ -663,7 +681,7 @@ pub mod pca9555 {
             while (i2c2.sr1.read().bits() & (1 << 2)) == 0 {
                 t -= 1;
                 if t == 0 {
-                    i2c2.cr1.modify(|r, w| w.bits(r.bits() & !(1 << 11)));
+                    abort_i2c2(i2c2);
                     return None;
                 }
             }
