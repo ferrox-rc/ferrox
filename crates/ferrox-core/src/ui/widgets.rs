@@ -18,7 +18,12 @@ pub fn draw_header(lcd: &mut St7567, title: &str) {
 pub fn draw_footer(lcd: &mut St7567, text: &str) {
     let screen_w = crate::display::st7567::WIDTH as i32;
     lcd.draw_hline(0, 55, screen_w as u32, true);
-    lcd.draw_str_4x6(2, 57, text, false);
+    if text.starts_with("[ESC]") {
+        let right_x = (screen_w - 2 - text.len() as i32 * 4).max(2);
+        lcd.draw_str_4x6(right_x, 57, text, false);
+    } else {
+        lcd.draw_str_4x6(2, 57, text, false);
+    }
 }
 
 /// Draw a standardized bottom footer with left-aligned and right-aligned text (4x6)

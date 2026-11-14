@@ -128,7 +128,7 @@ impl MainMenuItem {
             Self::DualRateExpo => "Dual Rate/Expo",
             Self::ThrottleCurve => "Throttle Curve",
             Self::WingMixer => "Wing / Mixer",
-            Self::AuxChannels => "Aux Channels",
+            Self::AuxChannels => "Channels",
             Self::ChannelReverse => "Channel Reverse",
             Self::RadioSetup => "Radio Setup",
             Self::ChannelMonitor => "Channel Monitor",

@@ -97,7 +97,7 @@ pub fn update_aux_channels(
     let header_title = if is_freeform {
         "CHANNELS (1..18)"
     } else {
-        "AUX CHANNELS"
+        "CHANNELS"
     };
     widgets::draw_header(lcd, header_title);
 
