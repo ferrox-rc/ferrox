@@ -46,6 +46,15 @@ pub fn is_half_duplex() -> bool {
     HALF_DUPLEX_ACTIVE.load(Ordering::Relaxed)
 }
 
+#[cfg(feature = "multiswitch")]
+pub fn tx_error_count() -> u32 {
+    if let Some(p) = unsafe { SERIAL_PORT.as_ref() } {
+        p.tx_error_count()
+    } else {
+        0
+    }
+}
+
 /// Baud rate index for MULTI-Module DSM (100,000 baud 8E2).
 pub const BAUD_IDX_MULTI_100K_8E2: u8 = 5;
 /// Baud rate index for Spektrum Satellite Trainer (115,200 baud 8N1).

@@ -59,6 +59,7 @@ jobs:
           cargo test-host-i6x
           cargo test-host-pocket
           cargo test-host-gx12
+          cargo test -p ferrox-stm32f4 --lib --features multiswitch --target x86_64-unknown-linux-gnu -- --test-threads=1
           for board in pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
             cargo test -p ferrox-core --lib --features "board-$board,multiswitch" --target x86_64-unknown-linux-gnu -- --test-threads=1
           done

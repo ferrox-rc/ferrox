@@ -167,6 +167,12 @@ pub trait SerialPort {
         false
     }
 
+    /// Failed TX waits or DMA transfers since startup.
+    #[cfg(feature = "multiswitch")]
+    fn tx_error_count(&self) -> u32 {
+        0
+    }
+
     /// Read a single byte from the receive buffer, if available.
     fn read_byte(&mut self) -> Option<u8>;
 

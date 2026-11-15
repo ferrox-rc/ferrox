@@ -196,6 +196,9 @@ Transmission requires CRSF and is disabled in USB simulator mode.
 Set4 commands repeat every 100 ms per address and yield to RC channel frames.
 Existing EEPROM models migrate with all MultiSwitch addresses disabled.
 
+On STM32F4, UART TX timeouts abort the frame instead of panicking. Failures
+appear as `UART TX errors` in **System Info**; RX DMA is left intact.
+
 ---
 
 ## 📚 Documentation Index
