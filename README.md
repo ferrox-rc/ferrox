@@ -343,8 +343,11 @@ Compile-time Cargo features allow tailoring flash/RAM usage on 128 KB STM32F072 
 | `stm32` / `apm32` | `stm32` (default) | N/A | Selects STM32F072 vs APM32F072 clone peripheral handling |
 
 ```bash
-# Custom FS-i6X / FS-i6S release build with individually selected features:
-cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi --no-default-features --features stm32,rf-afhds2a,rf-crsf -- -O binary ferrox-i6x-slim.bin
+# Custom FS-i6X ELF build (the `build-i6x` alias already sets `--release --no-default-features`):
+cargo build-i6x --features "stm32,rf-afhds2a,logical-switches"
+
+# Custom FS-i6X / FS-i6S `.bin` build (`objcopy-i6x` already sets `--release --no-default-features`):
+cargo objcopy-i6x --features "stm32,rf-afhds2a,rf-crsf" -- -O binary ferrox-i6x-slim.bin
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi --no-default-features --features stm32,touch,rf-crsf,soaring -- -O binary ferrox-i6s-soaring.bin
 ```
 

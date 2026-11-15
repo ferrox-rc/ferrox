@@ -595,7 +595,7 @@ If building from source instead of using a pre-built release `.bin`, note that `
 # RadioMaster Pocket (Direct DFU):
 cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --target thumbv7em-none-eabihf -- -O binary ferrox-pocket.bin
 
-# FlySky FS-i6X / FS-i6S:
+# FlySky FS-i6X / FS-i6S (for custom FS-i6X features, use `cargo objcopy-i6x --features "<features>" -- -O binary ferrox-i6x.bin`):
 cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --target thumbv6m-none-eabi -- -O binary ferrox-i6x.bin
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi -- -O binary ferrox-i6s.bin
 

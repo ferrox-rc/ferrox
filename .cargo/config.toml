@@ -15,7 +15,8 @@ rustflags = [
 
 [alias]
 build-i6s = "build --release -p ferrox-i6s"
-build-i6x = "build --release -p ferrox-i6x"
+build-i6x = "build --release -p ferrox-i6x --no-default-features"
+objcopy-i6x = "objcopy --release -p ferrox-i6x --bin ferrox-i6x --no-default-features"
 build-pocket = "build --release -p ferrox-f4 --target thumbv7em-none-eabihf"
 build-pocket-sd = "build --release -p ferrox-f4 --features edgetx-bootloader --target thumbv7em-none-eabihf"
 build-boxer = "build --release -p ferrox-f4 --no-default-features --features boxer --target thumbv7em-none-eabihf"
