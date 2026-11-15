@@ -183,7 +183,7 @@ impl TankState {
 }
 
 pub struct PreparedChannels {
-    pub sticks: [i16; 4],
+    pub sticks: [i16; 5], // Roll, Pitch, raw THR, Yaw, curved THC
     pub channels: [i32; NUM_CHANNELS],
     pub switches: Switches,
 }
@@ -368,7 +368,7 @@ pub fn is_timer_active(
 /// Evaluate a source identifier to a normalized value (-1000..+1000).
 pub fn evaluate_source(
     src: u8,
-    cond_sticks: &[i16; 4],
+    cond_sticks: &[i16; 5],
     pots: &[i16],
     switches: &Switches,
     channels: &[i32; NUM_CHANNELS],
@@ -472,6 +472,7 @@ pub fn evaluate_source(
                 MIXER_MIN as i32
             }
         }
+        58 => cond_sticks[4] as i32, // THC: throttle curve output
         _ => MIXER_CENTER as i32,
     }
 }
@@ -479,7 +480,7 @@ pub fn evaluate_source(
 /// Evaluate the raw boolean condition of a single `LogicalSwitch` (`L1..L8`).
 pub fn evaluate_logical_switch_raw(
     ls: &crate::storage::LogicalSwitch,
-    cond_sticks: &[i16; 4],
+    cond_sticks: &[i16; 5],
     pots: &[i16],
     switches: &Switches,
     channels: &[i32; NUM_CHANNELS],
@@ -574,7 +575,7 @@ impl LogicalSwitchBank {
     pub fn update(
         &mut self,
         dt_ms: u16,
-        cond_sticks: &[i16; 4],
+        cond_sticks: &[i16; 5],
         pots: &[i16],
         switches: &mut Switches,
         channels: &[i32; NUM_CHANNELS],
@@ -639,12 +640,23 @@ impl LogicalSwitchBank {
     }
 }
 
+pub fn throttle_curve_source(raw_throttle: i16, model: &ModelConfig) -> i16 {
+    let input = ((raw_throttle as i32 + MIXER_MAX as i32) / 2).clamp(0, MIXER_MAX as i32) as u16;
+    let curved = crate::curve::evaluate_curve(
+        input,
+        model.thr_curve_pts,
+        model.thr_curve_smooth != 0,
+        &model.thr_curve,
+    );
+    (curved as i32 * 2 - MIXER_MAX as i32).clamp(MIXER_MIN as i32, MIXER_MAX as i32) as i16
+}
+
 /// Condition sources and populate template/auxiliary channels before matrix mixes.
 #[allow(clippy::too_many_arguments)]
 pub fn prepare_channels(
     raw_roll: i16,
     raw_pitch: i16,
-    curved_throttle: u16, // 0..1000 from throttle curve engine
+    throttle: u16, // Raw throttle stick normalized to 0..1000
     raw_yaw: i16,
     pots: &[i16],
     switches_in: &Switches,
@@ -669,11 +681,11 @@ pub fn prepare_channels(
     let cond_roll = apply_dr_expo(raw_roll, rates[0], expos[0]);
     let cond_pitch = apply_dr_expo(raw_pitch, rates[1], expos[1]);
     let cond_yaw = apply_dr_expo(raw_yaw, rates[2], expos[2]);
-    // Throttle input is normalized to MIXER_MIN..MIXER_MAX from curved_throttle (0..MIXER_MAX)
-    let cond_thr = (curved_throttle as i32 * 2 - MIXER_MAX as i32)
+    let cond_thr = (throttle as i32 * 2 - MIXER_MAX as i32)
         .clamp(MIXER_MIN as i32, MIXER_MAX as i32) as i16;
+    let cond_thc = throttle_curve_source(cond_thr, model);
 
-    let cond_sticks = [cond_roll, cond_pitch, cond_thr, cond_yaw];
+    let cond_sticks = [cond_roll, cond_pitch, cond_thr, cond_yaw, cond_thc];
 
     // Stage 3: Initialize channels (MIXER_MIN..MIXER_MAX)
     let mut ch_vals = [0i32; NUM_CHANNELS];
@@ -703,7 +715,7 @@ pub fn prepare_channels(
         WingTailTemplate::Normal => {
             ch_vals[0] = cond_roll as i32;
             ch_vals[1] = cond_pitch as i32;
-            ch_vals[2] = cond_thr as i32;
+            ch_vals[2] = cond_thc as i32;
             ch_vals[3] = cond_yaw as i32;
         }
         WingTailTemplate::Elevon => {
@@ -715,7 +727,7 @@ pub fn prepare_channels(
             let right_r = apply_differential(r, model.template_diff);
             ch_vals[0] = ((p + left_r) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
             ch_vals[1] = ((p + right_r) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
-            ch_vals[2] = cond_thr as i32;
+            ch_vals[2] = cond_thc as i32;
             ch_vals[3] = cond_yaw as i32;
         }
         WingTailTemplate::VTail => {
@@ -724,7 +736,7 @@ pub fn prepare_channels(
             let y = cond_yaw as i32;
             ch_vals[0] = cond_roll as i32;
             ch_vals[1] = ((p + y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
-            ch_vals[2] = cond_thr as i32;
+            ch_vals[2] = cond_thc as i32;
             ch_vals[3] = ((p - y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
         }
         WingTailTemplate::Flaperon => {
@@ -742,7 +754,7 @@ pub fn prepare_channels(
             );
             ch_vals[0] = (left_r + flap / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
             ch_vals[1] = cond_pitch as i32;
-            ch_vals[2] = cond_thr as i32;
+            ch_vals[2] = cond_thc as i32;
             ch_vals[3] = cond_yaw as i32;
             ch_vals[5] = (right_r + flap / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
         }
@@ -751,11 +763,11 @@ pub fn prepare_channels(
             // Twin-motor differential steering for bait boats:
             // Left Motor (CH1) = (Throttle + Steering) / 2
             // Right Motor (CH2) = (Throttle - Steering) / 2
-            let t = cond_thr as i32;
+            let t = cond_thc as i32;
             let y = cond_yaw as i32;
             ch_vals[0] = ((t + y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
             ch_vals[1] = ((t - y) / 2).clamp(MIXER_MIN as i32, MIXER_MAX as i32);
-            ch_vals[2] = cond_thr as i32;
+            ch_vals[2] = cond_thc as i32;
             ch_vals[3] = cond_yaw as i32;
         }
         WingTailTemplate::Freeform | WingTailTemplate::Tank => {
@@ -825,7 +837,7 @@ pub fn evaluate_tank_sources(
 pub fn compute_channels(
     raw_roll: i16,
     raw_pitch: i16,
-    curved_throttle: u16,
+    throttle: u16,
     raw_yaw: i16,
     pots: &[i16],
     switches_in: &Switches,
@@ -841,7 +853,7 @@ pub fn compute_channels(
     let prepared = prepare_channels(
         raw_roll,
         raw_pitch,
-        curved_throttle,
+        throttle,
         raw_yaw,
         pots,
         switches_in,
@@ -870,7 +882,7 @@ pub fn compute_channels(
         prepared
     };
     let cond_sticks = prepared.sticks;
-    let [cond_roll, cond_pitch, _, cond_yaw] = cond_sticks;
+    let [cond_roll, cond_pitch, _, cond_yaw, _] = cond_sticks;
     let mut ch_vals = prepared.channels;
     let switches = &prepared.switches;
     let template = WingTailTemplate::from_u8(model.wing_tail_mix);
@@ -1062,6 +1074,63 @@ mod tests {
             throttle_trim_mode,
             &mut TankState::default(),
         )
+    }
+
+    #[test]
+    fn raw_and_curved_throttle_sources_in_templates_channels_mixes_and_logic() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.thr_curve.fill(25);
+        model.aux_channels[..3].copy_from_slice(&[3, 58, 30]);
+        model.mixes[0].target_ch = 8;
+        model.mixes[0].source = 58;
+        model.mixes[0].weight = 100;
+        model.mixes[0].mode = 2;
+        model.logical_switches[0].func = 9;
+        model.logical_switches[0].v1 = 3;
+        model.logical_switches[0].v2 = 58;
+        let switches = Switches::new();
+        let prepared = prepare_channels(0, 0, 750, 0, &[], &switches, &model);
+        assert_eq!(prepared.switches.logical & 1, 1);
+        let channels =
+            compute_channels(0, 0, 750, 0, &[], &switches, &model, &TrimController::new(), 0);
+        assert_eq!(channels[2], 1244);
+        assert_eq!(&channels[4..8], &[1756, 1244, 1884, 1244]);
+
+        model.wing_tail_mix = WingTailTemplate::Freeform as u8;
+        model.set_channel_source(0, 3);
+        model.set_channel_source(1, 58);
+        let channels =
+            compute_channels(0, 0, 750, 0, &[], &switches, &model, &TrimController::new(), 0);
+        assert_eq!(&channels[..2], &[1756, 1244]);
+
+        model.logical_switches[0].func = 2;
+        model.logical_switches[0].v1 = 58;
+        model.logical_switches[0].v2 = 0;
+        model.logical_switches[0].delay_tenths = 1;
+        let mut bank = LogicalSwitchBank::new();
+        let mut switches = Switches::new();
+        assert_eq!(
+            bank.update(
+                50,
+                &prepared.sticks,
+                &[],
+                &mut switches,
+                &prepared.channels,
+                &model,
+            ),
+            0
+        );
+        assert_eq!(
+            bank.update(
+                50,
+                &prepared.sticks,
+                &[],
+                &mut switches,
+                &prepared.channels,
+                &model,
+            ),
+            1
+        );
     }
 
     #[cfg(not(feature = "tank-mix"))]
@@ -1488,7 +1557,7 @@ mod tests {
             duration_tenths: 3,
         };
 
-        let mut sticks = [0i16; 4];
+        let mut sticks = [0i16; 5];
         let pots = [0i16; 7];
         let mut switches = Switches::DEFAULT;
         switches.sa = SwitchPos::Up;
@@ -1568,7 +1637,7 @@ mod tests {
 
     #[test]
     fn test_mixer_sources_se_sf_and_vrc_vrg() {
-        let cond_sticks = [0i16; 4];
+        let cond_sticks = [0i16; 5];
         let pots = [100i16, 200i16, -500i16, 750i16, -1000i16, 1000i16, 333i16];
         let channels = [0i32; NUM_CHANNELS];
 
@@ -1769,14 +1838,14 @@ mod tests {
         let switches = Switches::default();
         let pots = [0i16, 0i16];
 
-        // At zero throttle (curved_throttle = 0): Thr+ evaluates to 0 -> zero elevator compensation!
+        // At zero throttle: Thr+ evaluates to 0 -> zero elevator compensation!
         let chs_idle = compute_channels(0, 0, 0, 0, &pots, &switches, &model, &trims, 0);
         assert_eq!(
             chs_idle[1], CHANNEL_CENTER_US,
             "CH2 Elevator must stay neutral at idle throttle"
         );
 
-        // At 100% throttle (curved_throttle = 1000): Thr+ is 1000 -> -20% weight gives -200 offset (-102 µs)
+        // At 100% throttle: Thr+ is 1000 -> -20% weight gives -200 offset (-102 µs)
         let chs_full = compute_channels(0, 0, 1000, 0, &pots, &switches, &model, &trims, 0);
         assert_eq!(
             chs_full[1], 1398,
@@ -2247,7 +2316,7 @@ mod tests {
 
     #[test]
     fn test_switch_evaluation_3pos() {
-        let cond_sticks = [0i16; 4];
+        let cond_sticks = [0i16; 5];
         let pots = [0i16; 6];
         let channels = [0i32; NUM_CHANNELS];
         let gvars = [0i16; 5];

@@ -147,8 +147,8 @@ Choose `TANK`, then `Tank Setup` to configure:
 
 | Setting | Default | Range |
 | :--- | :--- | :--- |
-| Drive Src | Thr (3) | Existing mix sources 0..57 |
-| Steer Src | Yaw (4) | Existing mix sources 0..57 |
+| Drive Src | Thr (3) | Existing mix sources 0..58 |
+| Steer Src | Yaw (4) | Existing mix sources 0..58 |
 | Left Out | CH1 | CH1..CH18 |
 | Right Out | CH2 | CH1..CH18, distinct from Left Out |
 | Steer Wt | +100 | -100..+100, one-percent steps |
@@ -156,6 +156,10 @@ Choose `TANK`, then `Tank Setup` to configure:
 Source stepping and moved-pot selection skip unavailable physical inputs.
 GV1..GV5 (45..49) and the existing logical sources L1..L8 (50..57) remain
 selectable. Channel sources use the existing mixer channel snapshot.
+`Thr` (3) is the raw throttle stick, without the throttle curve; `THC` (58)
+is the output of the configured throttle curve. Both are selectable in Tank
+Setup, channel assignments, free mixes and logical switches. The Tank startup
+neutral check evaluates the selected source with the same curve as the mixer.
 Selected motor outputs are labelled `L.MOT` and `R.MOT` in the channel
 monitor and count as configured even without an auxiliary assignment.
 The channel assignment menu excludes these two motor outputs and offers all
@@ -194,7 +198,8 @@ All 14 auxiliary channels (CH5 through CH18) can be independently assigned to an
 | **0** | `None` | Neutral output (no input source) | 1500 µs |
 | **1** | `Roll` | Conditioned Aileron stick input | 988..2012 µs |
 | **2** | `Pitch`| Conditioned Elevator stick input | 988..2012 µs |
-| **3** | `Thr`  | Spline-curved Throttle stick input | 988..2012 µs |
+| **3** | `Thr`  | Raw Throttle stick input, without throttle curve | 988..2012 µs |
+| **58** | `THC` | Throttle curve output (linear or spline) | 988..2012 µs |
 | **4** | `Yaw`  | Conditioned Rudder stick input | 988..2012 µs |
 | **5** | `VRA`  | Left rotary dial potentiometer | 988..2012 µs |
 | **6** | `VRB`  | Right rotary dial potentiometer | 988..2012 µs |
@@ -203,6 +208,11 @@ All 14 auxiliary channels (CH5 through CH18) can be independently assigned to an
 | **33..34**| `SG..SH` | Header `J4` tactile buttons `PA13`/`PA14` (when `J4 Mode` = `SG/SH BTN`) | UP: 988 µs / DN: 2012 µs |
 | **37..41**| `VRC..VRG`| Extended analog pots on `PC1..PC5` (when `Ext ADC (PC)` enabled) | 988..2012 µs |
 | **42..44**| `SWK..SWM`| Extended switches on `PC3..PC5` (when configured in switch mode) | 988 / 1500 / 2012 µs |
+
+Existing explicit `Thr` and `Thr+` assignments now bypass the throttle curve.
+Select `THC` to apply it. The implicit throttle output of the standard aircraft
+templates still uses the curve. Existing source IDs and the EEPROM layout
+are unchanged; THC appends source ID 58.
 
 ### Factory Default Auxiliary Mapping
 - `CH5`: **SA** (Arming switch / Flight mode)

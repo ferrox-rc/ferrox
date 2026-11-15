@@ -130,7 +130,7 @@ impl BoardProfile for I6sSpec {
         &["A", "B", "C", "D", "1", "2", "I", "J", "K", "L", "M"];
 
     const AUX_SOURCES: &'static [u8] = &[
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
+        0, 1, 2, 3, 58, 4, 5, 6, 7, 8, 9, 10, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
     ];
 
     const SUPPORTED_PROTOCOLS: &'static [RfProtocol] = &[
@@ -165,7 +165,7 @@ impl BoardProfile for I6sSpec {
 
     fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
         match src {
-            0..=4 => true,                       // None, Roll, Pitch, Thr, Yaw
+            0..=4 | 58 => true,                  // None, Roll, Pitch, THR, Yaw, THC
             5 => radio.get_adc_mode(4).is_pot(), // VRA
             6 => radio.get_adc_mode(5).is_pot(), // VRB
             7 => matches!(

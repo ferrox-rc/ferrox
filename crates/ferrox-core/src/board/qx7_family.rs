@@ -436,7 +436,7 @@ macro_rules! impl_qx7_board_profile {
 
             fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
                 match src {
-                    0..=4 => true,                       // None, Roll, Pitch, Thr, Yaw
+                    0..=4 | 58 => true,                  // None, Roll, Pitch, THR, Yaw, THC
                     5 => radio.get_adc_mode(4).is_pot(), // S1
                     6 => <$spec as Qx7FamilyProfile>::HAS_S2_POT && radio.get_adc_mode(5).is_pot(), // S2
                     7 => matches!(

@@ -405,6 +405,43 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "tank-mix")]
+    #[test]
+    fn tank_preflight_distinguishes_raw_and_curved_throttle_sources() {
+        let mut model = crate::storage::ModelConfig::default_for_index(0);
+        model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        model.set_channel_source(2, 58);
+        let state = crate::input::InputState {
+            gimbals: crate::input::Gimbals::default(),
+            pots: crate::input::Pots::default(),
+            switches: crate::input::Switches::new(),
+            battery_mv: 5000,
+            aux_pots: [0; 11],
+            raw: [0; crate::adc::NUM_CHANNELS],
+        };
+        for (drive, steer) in [(58, 0), (0, 58), (14, 0)] {
+            model.tank.drive_source = drive;
+            model.tank.steer_source = steer;
+            model.thr_curve.fill(75);
+            assert_eq!(
+                check_tank_preflight(&state, StickMode::Mode2, &model),
+                Err(PreflightError::TankNotCentered)
+            );
+            model.thr_curve.fill(50);
+            assert_eq!(
+                check_tank_preflight(&state, StickMode::Mode2, &model),
+                Ok(())
+            );
+        }
+        model.tank.drive_source = 3;
+        model.tank.steer_source = 0;
+        model.thr_curve.fill(75);
+        assert_eq!(
+            check_tank_preflight(&state, StickMode::Mode2, &model),
+            Ok(())
+        );
+    }
+
     #[test]
     fn test_stick_mode_channel_mapping() {
         // Mode 2 and Mode 4 have Throttle on LeftVertical (PA2 / index 2)

@@ -123,7 +123,9 @@ impl BoardProfile for I6xSpec {
     const ADAPTIVE_CH_NAMES: &'static [&'static str] =
         &["A", "B", "C", "D", "1", "2", "3", "4", "5", "6"];
 
-    const AUX_SOURCES: &'static [u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 31, 32, 35, 36, 37, 38];
+    const AUX_SOURCES: &'static [u8] = &[
+        0, 1, 2, 3, 58, 4, 5, 6, 7, 8, 9, 10, 31, 32, 35, 36, 37, 38,
+    ];
 
     const SUPPORTED_PROTOCOLS: &'static [RfProtocol] = &[
         #[cfg(feature = "rf-afhds2a")]
@@ -155,7 +157,7 @@ impl BoardProfile for I6xSpec {
 
     fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
         match src {
-            0..=4 => true,                       // None, Roll, Pitch, Thr, Yaw
+            0..=4 | 58 => true,                  // None, Roll, Pitch, THR, Yaw, THC
             5 => radio.get_adc_mode(4).is_pot(), // VRA
             6 => radio.get_adc_mode(5).is_pot(), // VRB
             7 => matches!(

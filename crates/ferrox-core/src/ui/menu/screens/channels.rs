@@ -508,6 +508,28 @@ mod tests {
     }
 
     #[test]
+    fn channel_assignment_can_select_curved_throttle() {
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.aux_channels[0] = 3;
+        let mut ctrl = MenuController::new();
+        ctrl.editing = true;
+        let mut lcd = St7567::new();
+        let mut buzzer = Buzzer::new();
+        let keys = NavKeys {
+            ok: false,
+            cancel: false,
+            up: true,
+            down: false,
+            bind: false,
+            sw_change: None,
+            dr_change: None,
+            pot_change: None,
+        };
+        update_aux_channels(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.aux_channels[0], 58);
+    }
+
+    #[test]
     fn test_aux_channels_screen_freeform_vs_normal() {
         let mut ctrl = MenuController::new();
         let mut buzzer = Buzzer::new();

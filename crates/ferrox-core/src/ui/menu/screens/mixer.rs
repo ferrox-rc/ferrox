@@ -560,6 +560,9 @@ mod tank_tests {
         assert!(edit_tank_field(&mut storage, 1, &nav));
         assert_eq!(storage.active_model.tank.steer_source, 57);
         nav.pot_change = Some(58);
+        assert!(edit_tank_field(&mut storage, 0, &nav));
+        assert_eq!(storage.active_model.tank.drive_source, 58);
+        nav.pot_change = Some(59);
         assert!(!edit_tank_field(&mut storage, 0, &nav));
         storage.radio.adc_modes[4] = storage::AdcInputMode::Off as u8;
         nav.pot_change = Some(5);
@@ -638,7 +641,7 @@ const TANK_LABELS: [&str; 5] = [
 #[cfg(feature = "tank-mix")]
 fn tank_source_available(storage: &RadioStorage, source: u8) -> bool {
     (source as usize) < SOURCE_NAMES.len()
-        && ((45..=57).contains(&source)
+        && ((45..=58).contains(&source)
             || ActiveBoard::is_source_available(&storage.radio, &storage.active_model, source))
 }
 

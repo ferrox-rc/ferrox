@@ -600,9 +600,9 @@ pub struct LogicalSwitch {
     /// 0: OFF, 1: a>x, 2: a<x, 3: |a|>x, 4: |a|<x,
     /// 5: AND, 6: OR, 7: XOR, 8: a=b, 9: a>b, 10: a<b
     pub func: u8,
-    /// Primary source index (`0..=57` for value functions) or switch condition (`0..=44` for boolean functions)
+    /// Primary source index (`0..=58` for value functions) or switch condition (`0..=44` for boolean functions)
     pub v1: u8,
-    /// Threshold (`-100..=100%` for `1..=4`) or secondary source/switch index (`0..=57`/`0..=44` for `5..=10`)
+    /// Threshold (`-100..=100%` for `1..=4`) or secondary source/switch index (`0..=58`/`0..=44` for `5..=10`)
     pub v2: i8,
     /// Optional secondary AND switch condition (`0` = None, `1..=44` = switch condition)
     pub and_sw: u8,
@@ -659,10 +659,10 @@ impl TankConfig {
     }
 
     pub fn sanitize(&mut self) {
-        if self.drive_source > 57 {
+        if self.drive_source > 58 {
             self.drive_source = 3;
         }
-        if self.steer_source > 57 {
+        if self.steer_source > 58 {
             self.steer_source = 4;
         }
         if self.left_channel == 0 || self.left_channel > 18 {
@@ -982,7 +982,7 @@ impl RadioStorage {
         &mut self.active_model
     }
 
-    /// Check if a mix source ID (0..57, matching `SOURCE_NAMES`) is available on this radio.
+    /// Check if a mix source ID (0..58, matching `SOURCE_NAMES`) is available on this radio.
     /// Filters out unconfigured switches, potentiometers, and unmapped channels.
     #[inline]
     pub fn is_source_available(&self, src: u8) -> bool {
@@ -1217,6 +1217,7 @@ impl RadioStorage {
                     )
             } // SWM
             50..=57 => true, // L1..L8 Logical Switches
+            58 => true, // THC
             _ => false,
         }
     }
@@ -1464,18 +1465,18 @@ impl RadioStorage {
             m.failsafe_thr = 1000;
         }
         for src in m.aux_channels.iter_mut() {
-            if *src > 57 {
+            if *src > 58 {
                 *src = 0;
             }
         }
         for src in m.freeform_ch1_4.iter_mut() {
-            if *src > 57 {
+            if *src > 58 {
                 *src = 0;
             }
         }
         for mix in m.mixes.iter_mut() {
             if mix.target_ch > 18
-                || mix.source > 57
+                || mix.source > 58
                 || mix.weight_src > 41
                 || mix.mode > 2
                 || mix.switch > 44
@@ -1579,11 +1580,11 @@ impl RadioStorage {
                     ls.v2 = 0;
                 }
             } else {
-                if ls.v1 > 57 {
+                if ls.v1 > 58 {
                     ls.v1 = 0;
                 }
                 if ls.is_dual_source_func() {
-                    if ls.v2 < 0 || ls.v2 > 57 {
+                    if ls.v2 < 0 || ls.v2 > 58 {
                         ls.v2 = 0;
                     }
                 } else {
@@ -2646,7 +2647,7 @@ mod tests {
         assert_eq!(storage.active_model.tank, TankConfig::default_factory());
         storage.active_model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
         storage.active_model.tank = TankConfig {
-            drive_source: 58, steer_source: 255, left_channel: 0,
+            drive_source: 59, steer_source: 255, left_channel: 0,
             right_channel: 19, steer_weight: -128, reserved: [0; 3],
         };
         storage.sanitize();
@@ -2655,7 +2656,7 @@ mod tests {
             crate::mixer::WingTailTemplate::Tank as u8
         );
         assert_eq!(storage.active_model.tank, TankConfig::default_factory());
-        for source in 0..=57 {
+        for source in 0..=58 {
             storage.active_model.tank.drive_source = source;
             storage.active_model.tank.steer_source = source;
             storage.active_model.tank.left_channel = 2;
@@ -3266,20 +3267,27 @@ mod tests {
     #[test]
     fn test_sanitize_extended_bounds() {
         let mut storage = RadioStorage::default_factory();
-        storage.active_model.aux_channels[0] = 57;
-        storage.active_model.aux_channels[1] = 58;
-        storage.active_model.freeform_ch1_4[0] = 57;
-        storage.active_model.freeform_ch1_4[1] = 58;
+        storage.active_model.aux_channels[0] = 58;
+        storage.active_model.aux_channels[1] = 59;
+        storage.active_model.freeform_ch1_4[0] = 58;
+        storage.active_model.freeform_ch1_4[1] = 59;
+        storage.active_model.mixes[0].source = 58;
+        storage.active_model.logical_switches[0].func = 8;
+        storage.active_model.logical_switches[0].v1 = 58;
+        storage.active_model.logical_switches[0].v2 = 58;
         storage.active_model.mixes[0].switch = 44;
         storage.active_model.mixes[1].switch = 45;
 
         storage.sanitize();
 
-        assert_eq!(storage.active_model.aux_channels[0], 57);
+        assert_eq!(storage.active_model.aux_channels[0], 58);
         assert_eq!(storage.active_model.aux_channels[1], 0);
-        assert_eq!(storage.active_model.freeform_ch1_4[0], 57);
+        assert_eq!(storage.active_model.freeform_ch1_4[0], 58);
         assert_eq!(storage.active_model.freeform_ch1_4[1], 0);
         assert_eq!(storage.active_model.mixes[0].switch, 44);
+        assert_eq!(storage.active_model.mixes[0].source, 58);
+        assert_eq!(storage.active_model.logical_switches[0].v1, 58);
+        assert_eq!(storage.active_model.logical_switches[0].v2, 58);
         assert_eq!(storage.active_model.mixes[1].switch, 0);
     }
 }

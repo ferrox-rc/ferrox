@@ -10,7 +10,6 @@ use crate::board::{ActiveBoard, BoardIdleHook, BoardProfile};
 use crate::buzzer::Buzzer;
 use crate::calib::CalibWizard;
 use crate::crsf;
-use crate::curve;
 use crate::display::St7567;
 #[cfg(feature = "rf-dsm")]
 use crate::dsm;
@@ -95,6 +94,49 @@ mod tank_tests {
         assert_eq!(channels[2], mixer::CHANNEL_MIN_US);
         assert!(!tank_state.reverse);
     }
+
+    #[test]
+    fn tank_throttle_curve_applies_to_motor_sources_and_channel_assignments() {
+        let mut storage = RadioStorage::default_factory();
+        storage.radio.stick_mode = StickMode::Mode2 as u8;
+        let model = &mut storage.active_model;
+        model.wing_tail_mix = mixer::WingTailTemplate::Tank as u8;
+        model.tank.steer_source = 0;
+        model.set_channel_source(2, 58);
+        model.set_channel_source(3, 3);
+        model.gvars[0] = 250;
+        let state = InputState {
+            gimbals: input::Gimbals {
+                lv: 500,
+                ..Default::default()
+            },
+            pots: input::Pots::default(),
+            switches: input::Switches::new(),
+            battery_mv: 5000,
+            aux_pots: [0; 11],
+            raw: [0; crate::adc::NUM_CHANNELS],
+        };
+        let trims = TrimController::new();
+        let mut tank_state = mixer::TankState::default();
+        for (curve, expected) in [
+            ([100, 75, 50, 25, 0, 0, 0, 0, 0], 1244),
+            ([50; 9], 1500),
+            ([75; 9], 1756),
+        ] {
+            storage.active_model.thr_curve[..9].copy_from_slice(&curve);
+            for source in [3, 58, 14, 45] {
+                storage.active_model.tank.drive_source = source;
+                let channels = mix_model_channels(&state, &storage, &trims, &mut tank_state);
+                let motor = match source {
+                    3 => 1756,
+                    45 => 1628,
+                    _ => expected,
+                };
+                assert_eq!(&channels[..3], &[motor, motor, expected]);
+                assert_eq!(channels[3], 1756);
+            }
+        }
+    }
 }
 
 fn mix_model_channels(
@@ -106,20 +148,10 @@ fn mix_model_channels(
     let model = storage.active_model();
     let controls = state.flight_controls(StickMode::from_u8(storage.radio.stick_mode));
     let thr_input = ((controls.throttle + mixer::MIXER_MAX) / 2).clamp(0, mixer::MIXER_MAX) as u16;
-    let throttle = if mixer::is_tank(model) {
-        thr_input
-    } else {
-        curve::evaluate_curve(
-            thr_input,
-            model.thr_curve_pts,
-            model.thr_curve_smooth != 0,
-            &model.thr_curve,
-        )
-    };
     mixer::compute_channels(
         controls.aileron,
         controls.elevator,
-        throttle,
+        thr_input,
         controls.rudder,
         &state.aux_pots[4..],
         &state.switches,
@@ -207,6 +239,7 @@ impl FlightPipeline {
                 controls.elevator,
                 controls.throttle,
                 controls.rudder,
+                mixer::throttle_curve_source(controls.throttle, active_model),
             ];
             let dummy_chs = [0i32; mixer::NUM_CHANNELS];
             self.logical_bank.update(
