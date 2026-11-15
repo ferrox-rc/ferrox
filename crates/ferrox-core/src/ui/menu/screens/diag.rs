@@ -217,19 +217,7 @@ pub fn update_diag_anas(
     widgets::draw_footer(lcd, "[UP/DN/OK] Page  [ESC] Back");
 }
 
-const fn enabled_features_buf() -> ([u8; 32], usize) {
-    let mut buf = [0u8; 32];
-    let prefix: &[u8] = if cfg!(feature = "tank-mix") {
-        b"Feat:"
-    } else {
-        b"Feat: "
-    };
-    let mut len = 0usize;
-    while len < prefix.len() {
-        buf[len] = prefix[len];
-        len += 1;
-    }
-
+const fn enabled_features_buf() -> ([u8; 48], usize) {
     let tags: [(&[u8], bool); 11] = [
         (b"A2", cfg!(feature = "rf-afhds2a")),
         (b"CR", cfg!(feature = "rf-crsf")),
@@ -243,18 +231,52 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         (b"SD", cfg!(feature = "sd-logging")),
         (b"TC", cfg!(feature = "touch")),
     ];
+    format_enabled_features(&tags)
+}
 
-    let mut first = true;
+const fn format_enabled_features(tags: &[(&[u8], bool)]) -> ([u8; 48], usize) {
+    let mut count = 0usize;
+    let mut label_len = 0usize;
     let mut i = 0;
     while i < tags.len() {
         if tags[i].1 {
-            if !first && len < buf.len() {
+            count += 1;
+            label_len += tags[i].0.len();
+        }
+        i += 1;
+    }
+    let content_len = if count == 0 { 4 } else { label_len + count - 1 };
+    // At x=4, only 31 four-pixel characters fit on the 128-pixel display.
+    let prefix: &[u8] = if content_len + 6 <= 31 {
+        b"Feat: "
+    } else if content_len + 5 <= 31 {
+        b"Feat:"
+    } else {
+        b"F:"
+    };
+    let spaces = prefix.len() + content_len <= 31;
+    assert!(
+        prefix.len() + label_len <= 31,
+        "feature labels exceed display width"
+    );
+    let mut buf = [0u8; 48];
+    let mut len = 0usize;
+    while len < prefix.len() {
+        buf[len] = prefix[len];
+        len += 1;
+    }
+
+    let mut first = true;
+    i = 0;
+    while i < tags.len() {
+        if tags[i].1 {
+            if !first && spaces {
                 buf[len] = b' ';
                 len += 1;
             }
             let tag = tags[i].0;
             let mut j = 0;
-            while j < tag.len() && len < buf.len() {
+            while j < tag.len() {
                 buf[len] = tag[j];
                 len += 1;
                 j += 1;
@@ -331,7 +353,7 @@ pub fn update_system_info(
 
     lcd.draw_str_4x6(4, 42, "Profiles: 20 Models (16KB)", false);
 
-    const FEAT_INFO: ([u8; 32], usize) = enabled_features_buf();
+    const FEAT_INFO: ([u8; 48], usize) = enabled_features_buf();
     let feat_str = ascii_as_str(&FEAT_INFO.0[..FEAT_INFO.1]);
     lcd.draw_str_4x6(4, 49, feat_str, false);
 
@@ -360,4 +382,51 @@ pub fn update_system_info(
     }
 
     widgets::draw_footer(lcd, "[OK] DFU Mode  [ESC] Back");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_line_keeps_sd_ms_and_tm_visible_on_full_f4() {
+        let tags: &[(&[u8], bool)] = &[
+            (b"A2", false),
+            (b"CR", true),
+            (b"CC", true),
+            (b"DS", true),
+            (b"FP", true),
+            (b"SR", true),
+            (b"LS", true),
+            (b"MS", true),
+            (b"TM", true),
+            (b"VX", true),
+            (b"SD", true),
+            (b"TC", false),
+        ];
+        let (buf, len) = format_enabled_features(tags);
+        assert_eq!(&buf[..len], b"F:CR CC DS FP SR LS MS TM VX SD");
+        assert!(len <= 31);
+    }
+
+    #[test]
+    fn feature_line_omits_separators_rather_than_losing_tags() {
+        let tags: &[(&[u8], bool)] = &[
+            (b"A2", true),
+            (b"CR", true),
+            (b"CC", true),
+            (b"DS", true),
+            (b"FP", true),
+            (b"SR", true),
+            (b"LS", true),
+            (b"MS", true),
+            (b"TM", true),
+            (b"VX", true),
+            (b"SD", true),
+            (b"TC", true),
+        ];
+        let (buf, len) = format_enabled_features(tags);
+        assert_eq!(&buf[..len], b"F:A2CRCCDSFPSRLSMSTMVXSDTC");
+        assert!(len <= 31);
+    }
 }

@@ -126,8 +126,11 @@ CH6 (Right Aileron) = -Roll + (Flap / 2)
 
 ### Freeform and Tank
 
-Tank is available only with the opt-in Cargo feature **`tank-mix`**. For build
-commands, see the [feature matrix](../README.md#feature-selection-matrix).
+Tank is controlled by the Cargo feature **`tank-mix`**, enabled by default
+on i6S and by all F4 board profiles (including `--no-default-features` builds).
+i6X keeps it opt-in because its full standard feature set plus Tank exceeds
+128 KB flash. For build commands, see the
+[Tank Mixer section](../README.md#tank-mixer).
 
 **Freeform** retains stored template ID **4**, including direct CH1..CH4
 assignments and all 32 free mixes. **Tank** uses ID **6**; ID **5** remains

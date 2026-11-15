@@ -47,9 +47,6 @@ jobs:
           cargo clippy -p ferrox-f4 --target thumbv7em-none-eabihf -- -D warnings
           cargo clippy -p ferrox-f4 --no-default-features --features zorro,full --target thumbv7em-none-eabihf -- -D warnings
           cargo clippy -p ferrox-i6x --no-default-features --features stm32,rf-afhds2a,rf-crsf,logical-switches,tank-mix --target thumbv6m-none-eabi -- -D warnings
-          cargo clippy -p ferrox-i6s --features tank-mix --target thumbv6m-none-eabi -- -D warnings
-          cargo clippy -p ferrox-f4 --features tank-mix --target thumbv7em-none-eabihf -- -D warnings
-          cargo clippy -p ferrox-f4 --no-default-features --features zorro,full,tank-mix --target thumbv7em-none-eabihf -- -D warnings
 
       - name: Run host unit tests
         run: |
@@ -57,18 +54,15 @@ jobs:
           cargo test-host-i6x
           cargo test-host-pocket
           cargo test-host-gx12
-          for board in i6s i6x pocket gx12; do
+          for board in i6s i6x pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
             cargo test -p ferrox-core --lib --features "board-$board,tank-mix" --target x86_64-unknown-linux-gnu -- --test-threads=1
           done
           cargo test -p ferrox-core --lib --features board-i6x,baitboat --target x86_64-unknown-linux-gnu -- --test-threads=1
           cargo test -p ferrox-core --lib --features board-i6x,baitboat,tank-mix --target x86_64-unknown-linux-gnu -- --test-threads=1
 
-      - name: Build Tank-Mixer release binaries
+      - name: Build optional i6X Tank-Mixer release binary
         run: |
           cargo build --release -p ferrox-i6x --no-default-features --features stm32,rf-afhds2a,rf-crsf,logical-switches,tank-mix --target thumbv6m-none-eabi
-          cargo build --release -p ferrox-i6s --features tank-mix --target thumbv6m-none-eabi
-          cargo build --release -p ferrox-f4 --features tank-mix --target thumbv7em-none-eabihf
-          cargo build --release -p ferrox-f4 --no-default-features --features zorro,full,tank-mix --target thumbv7em-none-eabihf
 
       - name: Install cargo-binutils
         run: cargo install cargo-binutils || true

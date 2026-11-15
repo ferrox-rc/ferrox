@@ -33,6 +33,7 @@ default = [
     "rf-dsm",
     "dsm-fwd-prog",
     "logical-switches",
+    "tank-mix",
 ]
 stm32 = ["ferrox-core/stm32", "ferrox-stm32f0/stm32"]
 apm32 = ["ferrox-core/apm32", "ferrox-stm32f0/apm32"]
