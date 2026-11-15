@@ -221,3 +221,10 @@ This document tracks the phased implementation, historical milestones, and ongoi
 - [x] Configurable EdgeTX voice pack language folder (`/SOUNDS/<lang>/`), voice volume, callout interval, and F5J/timer voice cues.
 - [x] RadioMaster GX12 PCA9555/SSD1309/power drivers, SD `TelemetryLogger`, and individual selectable Cargo features on `ferrox-i6s` / `ferrox-i6x`.
 
+### Phase 37: Native Betaflight Configuration Tool (MSP-over-CRSF) (PLANNED)
+- [ ] **CRSF MSP Encapsulation (`crates/ferrox-core/src/crsf/protocol.rs`)**: Add `CRSF_FRAMETYPE_MSP_REQ` (`0x7A`), `CRSF_FRAMETYPE_MSP_RESP` (`0x7B`), and `CRSF_FRAMETYPE_MSP_WRITE` (`0x7C`) with multi-packet chunking and sequence-number reassembly over the ~58–60 byte CRSF payload window.
+- [ ] **Zero-Heap MSP Engine**: `no_std` MSPv1/MSPv2 request/response state machine with command queue, timeouts/retries, and `MSP_API_VERSION` / `MSP_FC_VARIANT` / `MSP_FC_VERSION` negotiation to handle Betaflight struct layout differences across firmware versions.
+- [ ] **MVP Tuning UI (`crates/ferrox-core/src/ui/menu/`)**: On-radio editors for PIDs (`MSP_PID` / `MSP_SET_PID`), Rates (`MSP_RC_TUNING` / `MSP_SET_RC_TUNING`), Filters (`MSP_FILTER_CONFIG` / `MSP_SET_FILTER_CONFIG`), VTX (`MSP_VTX_CONFIG` / `MSP_SET_VTX_CONFIG`), and persistent save (`MSP_EEPROM_WRITE`).
+- [ ] **Feature Gating**: Gate behind a dedicated Cargo feature flag (e.g., `betaflight-msp`) so STM32F072 targets (`ferrox-i6s` / `ferrox-i6x`) preserve flash headroom while STM32F4 targets can enable it by default.
+- [ ] **Future Parity Extensions**: VTX tables, profile/rateprofile switching, OSD, GPS rescue, Blackbox, and failsafe configuration.
+

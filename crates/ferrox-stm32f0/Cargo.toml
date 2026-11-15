@@ -11,7 +11,7 @@ cortex-m = "0.7"
 cortex-m-rt = "0.7"
 stm32f0xx-hal = { version = "0.18.0", features = ["stm32f072"] }
 embedded-graphics = "0.8.1"
-ferrox-core = { path = "../ferrox-core" }
+ferrox-core = { path = "../ferrox-core", default-features = false }
 
 [features]
 default = ["stm32"]

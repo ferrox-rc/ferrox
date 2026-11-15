@@ -351,7 +351,7 @@ cargo objcopy-i6x --features "stm32,rf-afhds2a,rf-crsf" -- -O binary ferrox-i6x-
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-eabi --no-default-features --features stm32,touch,rf-crsf,soaring -- -O binary ferrox-i6s-soaring.bin
 ```
 
-Flash the extracted `.bin` file via USB DFU:
+Flash via the **[Ferrox-RC Web Flasher](https://ferroxrc.com/flasher)** (WebUSB DFU directly in your browser, no CLI required) or flash the extracted `.bin` file via `dfu-util`:
 ```bash
 # Flash RadioMaster Pocket:
 dfu-util -a 0 -s 0x08000000:leave -D ferrox-pocket.bin
