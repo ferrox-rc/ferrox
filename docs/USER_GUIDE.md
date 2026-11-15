@@ -13,15 +13,15 @@ A comprehensive guide to operating the `ferrox` firmware across all supported tr
 
 Depending on your transmitter hardware, Ferrox provides dedicated, responsive input drivers:
 
-### 1.1 Touchscreen Navigation (FlySky FS-i6S)
+### 1.1 Touchscreen Navigation & Optical Jog Wheel (FlySky FS-i6S)
 - **Swipe Gestures**: Swipe UP / DOWN on the flight dashboard to cycle pages (`1/5` through `5/5`). Swipe LEFT / RIGHT to switch sub-pages or telemetry sensors.
 - **Center Screen Tap**: Tapping the center of any flight dashboard page opens the **Settings Menu**.
 - **Virtual Trims**: Touch targets on the left, right, and bottom screen perimeters adjust elevator, throttle, rudder, and aileron digital trims.
+- **Optical Jog Wheel**: Turn clockwise to increment values or scroll down; turn counter-clockwise to decrement or scroll up.
 - **Front Buttons**: Left front (`PA9`) serves as `[CANCEL]`; right front (`PA10`) serves as `[OK]`.
 
-### 1.2 Matrix Keypad & Optical Jog Wheel (FlySky FS-i6X)
+### 1.2 Matrix Keypad (FlySky FS-i6X)
 - **`[UP]`** / **`[DOWN]`**: Cycle dashboard pages and menu items. Auto-repeats every 70 ms after holding >= 300 ms.
-- **Optical Jog Wheel**: Turn clockwise to increment values or scroll down; turn counter-clockwise to decrement or scroll up.
 - **`[OK]`**: Confirm selection or enter submenus. Hold for 1.2s on flight dashboard to open the **Settings Menu**.
 - **`[CANCEL]`**: Exit submenu, cancel editing, or hold >= 1.0s on flight screen to reset flight timer.
 
@@ -804,4 +804,3 @@ Whenever **`Mode:`** is set to **`F5J`**, an extra 6th dashboard page becomes av
 5. **Motor Restart & Reset:**
    - Restarting the motor during `WIN`, `GLD`, or `LND` immediately begins a new flight trace and marks the flight with `!` (restart = 0 contest score under FAI rules).
    - Holding **`[CANCEL]` (`[ESC]`) for >= 1.0 second** (or toggling an assigned timer reset switch) clears the graph and returns the engine cleanly to **`RDY`** for the next round.
-
