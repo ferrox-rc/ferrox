@@ -230,7 +230,7 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         len += 1;
     }
 
-    let tags: [(&[u8], bool); 10] = [
+    let tags: [(&[u8], bool); 11] = [
         (b"A2", cfg!(feature = "rf-afhds2a")),
         (b"CR", cfg!(feature = "rf-crsf")),
         (b"CC", cfg!(feature = "rf-cc2500")),
