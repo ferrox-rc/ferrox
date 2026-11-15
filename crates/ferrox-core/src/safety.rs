@@ -390,6 +390,7 @@ mod tests {
         );
         model.tank.drive_source = 3;
         model.tank.steer_source = 15;
+        model.set_channel_source(3, 4);
         model.dr_high[2] = 50;
         state.gimbals.lv = 0;
         state.gimbals.lh = 40;

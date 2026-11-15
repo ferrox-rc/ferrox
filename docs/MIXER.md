@@ -158,6 +158,12 @@ GV1..GV5 (45..49) and the existing logical sources L1..L8 (50..57) remain
 selectable. Channel sources use the existing mixer channel snapshot.
 Selected motor outputs are labelled `L.MOT` and `R.MOT` in the channel
 monitor and count as configured even without an auxiliary assignment.
+The channel assignment menu excludes these two motor outputs and offers all
+remaining channels, including CH1..CH4. As in Freeform, unassigned channels
+are neutral rather than automatically following a stick, and primary-channel
+digital trims are not applied. For motors on CH1/CH2, CH3..CH18 can therefore
+be assigned freely. Direct CH1..CH4 assignments share the existing Freeform
+settings; no EEPROM layout change is required.
 GVars and the 32 free mixes remain accessible below `Tank Setup`; returning
 from an editor restores the corresponding row.
 

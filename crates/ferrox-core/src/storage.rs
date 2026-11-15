@@ -854,14 +854,14 @@ impl ModelConfig {
     }
 
     /// Read source assigned to a logical channel (0..17 for CH1..CH18).
-    /// In Freeform mode, CH1..CH4 use `freeform_ch1_4[0..4]`.
+    /// In Freeform and Tank modes, CH1..CH4 use `freeform_ch1_4[0..4]`.
     /// In standard wing modes, CH1..CH4 default to their stick sources (1: Roll, 2: Pitch, 3: Thr, 4: Yaw).
     /// CH5..CH18 use `aux_channels[0..13]`.
     #[inline]
     pub fn channel_source(&self, ch_idx: usize) -> u8 {
         match ch_idx {
             0..=3 => {
-                if self.wing_tail_mix == 4 {
+                if self.wing_tail_mix == 4 || crate::mixer::is_tank(self) {
                     self.freeform_ch1_4[ch_idx]
                 } else {
                     (ch_idx + 1) as u8 // 1: Roll, 2: Pitch, 3: Thr, 4: Yaw
@@ -873,13 +873,13 @@ impl ModelConfig {
     }
 
     /// Set source assigned to a logical channel (0..17 for CH1..CH18).
-    /// In Freeform mode, CH1..CH4 update `freeform_ch1_4[0..4]`.
+    /// In Freeform and Tank modes, CH1..CH4 update `freeform_ch1_4[0..4]`.
     /// CH5..CH18 update `aux_channels[0..13]`.
     #[inline]
     pub fn set_channel_source(&mut self, ch_idx: usize, src: u8) {
         match ch_idx {
             0..=3 => {
-                if self.wing_tail_mix == 4 {
+                if self.wing_tail_mix == 4 || crate::mixer::is_tank(self) {
                     self.freeform_ch1_4[ch_idx] = src;
                 }
             }
@@ -1006,7 +1006,7 @@ impl RadioStorage {
         if ch == 0 || ch > 18 {
             return false;
         }
-        if ch <= 4 {
+        if ch <= 4 && !crate::mixer::is_tank(&self.active_model) {
             return true; // CH1..CH4 primary controls
         }
         if crate::mixer::is_tank(&self.active_model)
@@ -1015,12 +1015,11 @@ impl RadioStorage {
         {
             return true;
         }
-        let ch_idx = (ch - 1) as usize; // 4..17
-        let aux_idx = ch_idx - 4; // 0..13
+        let ch_idx = (ch - 1) as usize;
         if self.active_model.wing_tail_mix == 3 && ch == 6 {
             return true; // Flaperon right aileron
         }
-        if self.active_model.aux_channels[aux_idx] != 0 {
+        if self.active_model.channel_source(ch_idx) != 0 {
             return true;
         }
         self.active_model.mixes.iter().any(|m| m.target_ch == ch)

@@ -700,7 +700,7 @@ pub fn prepare_channels(
     // Apply Wing/Tail templates to primary channels
     let template = WingTailTemplate::from_u8(model.wing_tail_mix);
     match template {
-        WingTailTemplate::Normal | WingTailTemplate::Tank => {
+        WingTailTemplate::Normal => {
             ch_vals[0] = cond_roll as i32;
             ch_vals[1] = cond_pitch as i32;
             ch_vals[2] = cond_thr as i32;
@@ -758,8 +758,8 @@ pub fn prepare_channels(
             ch_vals[2] = cond_thr as i32;
             ch_vals[3] = cond_yaw as i32;
         }
-        WingTailTemplate::Freeform => {
-            // Freeform (released gimbals):
+        WingTailTemplate::Freeform | WingTailTemplate::Tank => {
+            // Freeform/Tank (released gimbals):
             // Primary channels CH1..CH4 are decoupled from physical sticks
             // and initialize to their direct source assignments (or neutral 0 if unassigned).
             // They can also be further modulated by matrix mixer lines.
@@ -980,24 +980,13 @@ pub fn compute_channels(
             .clamp(CHANNEL_MIN_US as i32, CHANNEL_MAX_US as i32) as u16;
     }
 
-    // Apply digital trims to primary flight channels if not in Freeform mode
-    if template != WingTailTemplate::Freeform {
-        if !is_tank_motor(0, model) {
-            rf_chs[0] = TrimController::apply(rf_chs[0], trims.values.roll);
-        }
-        if !is_tank_motor(1, model) {
-            rf_chs[1] = TrimController::apply(rf_chs[1], trims.values.pitch);
-        }
-        if !is_tank_motor(2, model) {
-            rf_chs[2] = TrimController::apply_throttle(
-                rf_chs[2],
-                trims.values.throttle,
-                throttle_trim_mode,
-            );
-        }
-        if !is_tank_motor(3, model) {
-            rf_chs[3] = TrimController::apply(rf_chs[3], trims.values.yaw);
-        }
+    // Freeform and Tank outputs have no fixed relationship to the primary sticks.
+    if template != WingTailTemplate::Freeform && template != WingTailTemplate::Tank {
+        rf_chs[0] = TrimController::apply(rf_chs[0], trims.values.roll);
+        rf_chs[1] = TrimController::apply(rf_chs[1], trims.values.pitch);
+        rf_chs[2] =
+            TrimController::apply_throttle(rf_chs[2], trims.values.throttle, throttle_trim_mode);
+        rf_chs[3] = TrimController::apply(rf_chs[3], trims.values.yaw);
     }
 
     // Safety Interlocks & Throttle Lockout:
@@ -1170,11 +1159,68 @@ mod tests {
 
     #[cfg(feature = "tank-mix")]
     #[test]
+    fn tank_unassigned_channels_are_neutral_and_direct_assignments_are_untrimmed() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = WingTailTemplate::Tank as u8;
+        let mut trims = TrimController::new();
+        trims.values.roll = 25;
+        trims.values.pitch = -25;
+        trims.values.throttle = 25;
+        trims.values.yaw = -25;
+        for (left, right) in [(1, 2), (3, 18), (17, 18)] {
+            model.tank.left_channel = left;
+            model.tank.right_channel = right;
+            model.freeform_ch1_4.fill(0);
+            model.aux_channels.fill(0);
+            let channels = compute_channels(
+                1000,
+                -1000,
+                1000,
+                1000,
+                &[500],
+                &Switches::new(),
+                &model,
+                &trims,
+                2,
+            );
+            for (idx, &pulse) in channels.iter().enumerate() {
+                if !is_tank_motor(idx, &model) {
+                    assert_eq!(pulse, CHANNEL_CENTER_US, "CH{}", idx + 1);
+                }
+            }
+            for ch in 0..NUM_CHANNELS {
+                if !is_tank_motor(ch, &model) {
+                    model.set_channel_source(ch, 5);
+                }
+            }
+            let channels = compute_channels(
+                1000,
+                -1000,
+                1000,
+                1000,
+                &[500],
+                &Switches::new(),
+                &model,
+                &trims,
+                2,
+            );
+            for (idx, &pulse) in channels.iter().enumerate() {
+                if !is_tank_motor(idx, &model) {
+                    assert_eq!(pulse, 1756, "CH{}", idx + 1);
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "tank-mix")]
+    #[test]
     fn tank_channel_sources_are_read_before_motor_outputs_and_free_mixes() {
         let mut model = ModelConfig::default_for_index(0);
         model.wing_tail_mix = WingTailTemplate::Tank as u8;
         model.tank.drive_source = 12;
         model.tank.steer_source = 13;
+        model.set_channel_source(0, 1);
+        model.set_channel_source(1, 2);
         let mut trims = TrimController::new();
         trims.values.throttle = 25;
         let mut state = TankState::default();

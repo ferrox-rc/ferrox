@@ -39,7 +39,15 @@ pub fn update_aux_channels(
     buzzer: &mut Buzzer,
 ) {
     let is_freeform = storage.active_model.wing_tail_mix == 4;
-    let ch_count = if is_freeform { 18 } else { 14 };
+    let is_tank = crate::mixer::is_tank(&storage.active_model);
+    let mut channels = [0; 18];
+    let mut ch_count = 0;
+    for ch in (if is_freeform || is_tank { 0 } else { 4 })..18 {
+        if !crate::mixer::is_tank_motor(ch, &storage.active_model) {
+            channels[ch_count] = ch;
+            ch_count += 1;
+        }
+    }
 
     if keys.cancel {
         if ctrl.editing {
@@ -67,11 +75,7 @@ pub fn update_aux_channels(
             buzzer.click();
         }
     } else {
-        let ch_idx = if is_freeform {
-            ctrl.selected_item
-        } else {
-            4 + ctrl.selected_item
-        };
+        let ch_idx = channels[ctrl.selected_item];
         let aux_sources = crate::board::ActiveBoard::AUX_SOURCES;
         if let Some(pot) = keys.pot_change {
             storage.active_model.set_channel_source(ch_idx, pot);
@@ -108,7 +112,7 @@ pub fn update_aux_channels(
         }
         let is_sel = list_idx == ctrl.selected_item;
 
-        let ch_idx = if is_freeform { list_idx } else { 4 + list_idx };
+        let ch_idx = channels[list_idx];
         let ch_num = 1 + ch_idx;
         let mut ch_buf = *b"CH00: ";
         if ch_num >= 10 {
@@ -205,7 +209,7 @@ pub fn format_channel_label<'a>(
         0 => match model.wing_tail_mix {
             1 => "L.ELV",
             3 => "L.AIL",
-            4 => {
+            4 | 6 => {
                 let direct_src = model.freeform_ch1_4[0] as usize;
                 if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
                     SOURCE_NAMES[direct_src]
@@ -225,7 +229,7 @@ pub fn format_channel_label<'a>(
         1 => match model.wing_tail_mix {
             1 => "R.ELV",
             2 => "L.VTL",
-            4 => {
+            4 | 6 => {
                 let direct_src = model.freeform_ch1_4[1] as usize;
                 if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
                     SOURCE_NAMES[direct_src]
@@ -243,7 +247,7 @@ pub fn format_channel_label<'a>(
             _ => "ELE",
         },
         2 => match model.wing_tail_mix {
-            4 => {
+            4 | 6 => {
                 let direct_src = model.freeform_ch1_4[2] as usize;
                 if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
                     SOURCE_NAMES[direct_src]
@@ -262,7 +266,7 @@ pub fn format_channel_label<'a>(
         },
         3 => match model.wing_tail_mix {
             2 => "R.VTL",
-            4 => {
+            4 | 6 => {
                 let direct_src = model.freeform_ch1_4[3] as usize;
                 if direct_src != 0 && direct_src < SOURCE_NAMES.len() {
                     SOURCE_NAMES[direct_src]
@@ -404,7 +408,59 @@ mod tests {
         model.tank.right_channel = 18;
         assert_eq!(format_channel_label(16, &model, &mut buf), "17:L.MOT");
         assert_eq!(format_channel_label(17, &model, &mut buf), "18:R.MOT");
-        assert_eq!(format_channel_label(0, &model, &mut buf), "1:AIL");
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:None");
+        model.set_channel_source(0, 7);
+        assert_eq!(format_channel_label(0, &model, &mut buf), "1:SA");
+    }
+
+    #[test]
+    fn tank_channel_assignments_skip_only_motor_outputs() {
+        for (left, right) in [(1, 2), (18, 3), (17, 18)] {
+            let mut storage = RadioStorage::default_factory();
+            storage.active_model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+            storage.active_model.tank.left_channel = left;
+            storage.active_model.tank.right_channel = right;
+            storage.active_model.freeform_ch1_4.fill(0);
+            storage.active_model.aux_channels.fill(0);
+            let mut ctrl = MenuController::new();
+            let mut lcd = St7567::new();
+            let mut buzzer = Buzzer::new();
+            let mut keys = NavKeys {
+                ok: false,
+                cancel: false,
+                up: false,
+                down: false,
+                bind: false,
+                sw_change: None,
+                dr_change: None,
+                pot_change: None,
+            };
+            for ch in 1..=18 {
+                if ch == left || ch == right {
+                    continue;
+                }
+                assert!(!storage.is_channel_configured(ch));
+                keys.down = false;
+                keys.ok = true;
+                update_aux_channels(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+                keys.ok = false;
+                keys.pot_change = Some(5);
+                update_aux_channels(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+                keys.pot_change = None;
+                assert_eq!(storage.active_model.channel_source(ch as usize - 1), 5);
+                assert!(storage.is_channel_configured(ch));
+                keys.ok = true;
+                update_aux_channels(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+                keys.ok = false;
+                keys.down = true;
+                update_aux_channels(&mut ctrl, &mut lcd, &keys, &mut storage, &mut buzzer);
+            }
+            assert_eq!(ctrl.selected_item, 0);
+            for ch in [left, right] {
+                assert_eq!(storage.active_model.channel_source(ch as usize - 1), 0);
+                assert!(storage.is_channel_configured(ch));
+            }
+        }
     }
 
     #[test]
