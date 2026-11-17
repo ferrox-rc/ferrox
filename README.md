@@ -19,7 +19,7 @@ Ferrox delivers memory-safe, deterministic, sub-millisecond latency firmware for
 
 ---
 
-## ⚡ Quick Getting Started
+## ⚡ Quick Start Guide
 
 ### 1. Flash via Browser (Easiest & Recommended)
 Use the **[Ferrox-RC Web Flasher](https://ferroxrc.com/flasher)** to flash firmware directly from Chrome, Edge, or Opera via WebUSB DFU — **no CLI tools or driver installation required**:
@@ -29,7 +29,7 @@ Use the **[Ferrox-RC Web Flasher](https://ferroxrc.com/flasher)** to flash firmw
 
 ---
 
-### 2. Alternative: EdgeTX SD Bootloader (No PC Tools)
+### 2. Alternative: EdgeTX SD Bootloader (No CLI Tools)
 If your radio runs EdgeTX (RadioMaster Pocket, GX12, Boxer, Zorro, TX12, Jumper T12, FrSky X9E):
 1. Download or build the `ferrox-<board>-sd.bin` firmware image for your radio from [Releases](https://github.com/ferrox-rc/ferrox/releases).
 2. Copy `ferrox-<board>-sd.bin` into the `/FIRMWARE/` folder on your microSD card.
@@ -55,8 +55,8 @@ Ferrox supports a growing ecosystem of transmitters via modular compile-time boa
 
 | Transmitter Target | Architecture | Display | RF Protocol Support | Storage |
 | :--- | :--- | :--- | :--- | :--- |
-| **FlySky FS-i6X** | STM32F072 (Cortex-M0 @ 48 MHz) | 128×64 Mono LCD + Jog Wheel | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **DSM** | 16 KB External EEPROM |
-| **FlySky FS-i6S** | STM32F072 (Cortex-M0 @ 48 MHz) | 128×64 Touchscreen | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **DSM** | 16 KB External EEPROM |
+| **FlySky FS-i6X** | STM32F072 (Cortex-M0 @ 48 MHz) | 128×64 Mono LCD | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **DSM** | 16 KB External EEPROM |
+| **FlySky FS-i6S** | STM32F072 (Cortex-M0 @ 48 MHz) | 128×64 Touchscreen + Jog Wheel | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **DSM** | 16 KB External EEPROM |
 | **RadioMaster Pocket** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS (CRSF)** / **CC2500** + Nano Module Bay | Hybrid EEPROM + MicroSD SPI |
 | **RadioMaster GX12** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono OLED + Roller | Internal **ELRS Gemini** + External JR Bay | Hybrid EEPROM + MicroSD SPI |
 | **RadioMaster Boxer** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** + External JR Bay | Hybrid EEPROM + MicroSD SPI |
@@ -76,7 +76,7 @@ Ferrox supports a growing ecosystem of transmitters via modular compile-time boa
 ### 🎛️ Flight Control & Mixing Pipeline
 - **18-Channel Freeform Matrix Mixer**: 32 mix lines supporting differential mixes, curves, trim inclusion, multiplex modes (Add, Multiply, Replace), and flight phases.
 - **Aircraft Templates**: Quick presets for Elevon / Delta Wing, V-Tail, Flaperons, and twin-motor Differential Thrust (Bait Boat).
-- **Precision Expo & Curves**: Integer cubic exponential curves and 5-point Catmull-Rom spline curves with smooth interpolation.
+- **Precision Expo & Curves**: Integer cubic exponential curves and 5,7,9-point Catmull-Rom spline curves with smooth interpolation.
 - **Flight Modes & Trims**: Stick Modes 1, 2, 3, and 4; 3-axis Instant Trim; digital cross-trims with audible center and limit chimes.
 - **Pre-Flight Safety Interlocks**: Throttle warning, switch position checks, failsafe verification, and acoustic battery alarms before takeoff.
 - **Soaring & F5J Contest Suite**: Motor run timer, competition window timer, altitude launch logging, and dedicated gliding mixes (crow/airbrakes, camber, reflex).
@@ -98,7 +98,7 @@ Ferrox supports a growing ecosystem of transmitters via modular compile-time boa
 ### 🖥️ Display & Navigation
 - **Responsive Multi-Page Dashboard**: Fast 30 Hz rendering with dedicated pages for live gimbals/switches, channels 1..10, auxiliary channels 11..18, model telemetry link, and configurable 4-tile sensor dashboards.
 - **Multi-Display Architecture**: Optimized 1-bit monochome rendering for 128×64 and 212×64 displays, plus a zero-heap 4-bit indexed 320×240 color canvas for color radios.
-- **Intuitive Controls**: Native support for capacitive touchscreens (FS-i6S), optical jog wheels and 4x4 matrix keypads (FS-i6X), and rotary scroll wheels.
+- **Intuitive Controls**: Native support for optical jog wheels and capacitive touchscreens (FS-i6S), 4x4 matrix keypads (FS-i6X), and rotary scroll wheels.
 
 ---
 
