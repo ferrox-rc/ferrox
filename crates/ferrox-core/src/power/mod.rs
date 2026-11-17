@@ -101,6 +101,10 @@ pub struct PowerManager {
     hold_duration_ms: u16,
     /// True once shutdown sequence has been initiated.
     is_shutting_down: bool,
+    /// True once button press accepted only if flight.telem.connected and flight.is_armed.
+    shutdown_pending: bool,
+    /// True once user confirms safe to shutdown
+    confirm_ready: bool,
 }
 
 impl Default for PowerManager {
@@ -115,7 +119,13 @@ impl PowerManager {
             boot_release_detected: false,
             hold_duration_ms: 0,
             is_shutting_down: false,
+            shutdown_pending: false,
+            confirm_ready: false,
         }
+    }
+
+    pub fn shutdown_pending(&self) -> bool {
+        self.shutdown_pending
     }
 
     /// True if the shutdown sequence has completed or is in progress.
@@ -133,7 +143,13 @@ impl PowerManager {
     }
 
     /// Update shutdown monitoring.
-    pub fn update(&mut self, dt_ms: u16, storage: &mut RadioStorage, buzzer: &mut Buzzer) {
+    pub fn update(
+        &mut self,
+        dt_ms: u16,
+        storage: &mut RadioStorage,
+        buzzer: &mut Buzzer,
+        shutdown_ok: bool,
+    ) {
         if self.is_shutting_down {
             return;
         }
@@ -148,26 +164,43 @@ impl PowerManager {
             return;
         }
 
-        // 2. Accumulate hold duration
-        if pressed {
-            self.hold_duration_ms = self.hold_duration_ms.saturating_add(dt_ms);
+        // In update(), after the boot-release check:
+        let pressed = is_power_button_pressed();
 
-            // 3. Trigger graceful shutdown once hold threshold is reached
-            if self.hold_duration_ms >= SHUTDOWN_HOLD_MS {
-                self.is_shutting_down = true;
-
-                // Play power-down tones
-                buzzer.play_tone_pattern(1800, 80, 40, 2);
-
-                // Commit model and radio settings safely to flash
-                storage::save_storage(storage);
-
-                // Turn off power latch
-                power_off();
-            }
-        } else {
+        if !pressed {
             self.hold_duration_ms = 0;
+            if self.shutdown_pending {
+                self.confirm_ready = true;
+            }
+            return;
         }
+
+        // A pending request cannot be confirmed until the original press is released.
+        if self.shutdown_pending && !self.confirm_ready {
+            self.hold_duration_ms = 0;
+            return;
+        }
+
+        self.hold_duration_ms = self.hold_duration_ms.saturating_add(dt_ms);
+        if self.hold_duration_ms < SHUTDOWN_HOLD_MS {
+            return;
+        }
+
+        if !self.shutdown_pending && !shutdown_ok {
+            // First hold requested shutdown, but the safety condition requires confirmation.
+            self.shutdown_pending = true;
+            self.confirm_ready = false;
+            self.hold_duration_ms = 0;
+            buzzer.warn_shutdown_link_active();
+            return;
+        }
+
+        // Either shutdown was allowed on the first hold, or this is a fresh
+        // confirmation hold after release.
+        self.is_shutting_down = true;
+        buzzer.play_tone_pattern(1800, 80, 40, 2);
+        storage::save_storage(storage);
+        power_off();
     }
 }
 
@@ -189,6 +222,7 @@ pub fn test_is_leds_on() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::{assert, assert_eq};
 
     #[test]
     fn test_power_init_and_latch() {
@@ -204,26 +238,32 @@ mod tests {
         let mut storage = RadioStorage::empty();
         let mut buzzer = Buzzer::new();
 
+        // Simulate RF connected
+        test_set_power_button_pressed(true);
+        pm.update(2000, &mut storage, &mut buzzer, false);
+        assert!(!pm.is_shutting_down);
+        assert_eq!(pm.shutdown_progress_pct(), 0);
+
         // Simulate held at boot
         test_set_power_button_pressed(true);
-        pm.update(2000, &mut storage, &mut buzzer);
+        pm.update(2000, &mut storage, &mut buzzer, true);
         assert!(!pm.is_shutting_down);
         assert_eq!(pm.shutdown_progress_pct(), 0);
 
         // Release button
         test_set_power_button_pressed(false);
-        pm.update(50, &mut storage, &mut buzzer);
+        pm.update(50, &mut storage, &mut buzzer, true);
         assert!(pm.boot_release_detected);
 
         // Press and hold for partial duration
         test_set_power_button_pressed(true);
-        pm.update(750, &mut storage, &mut buzzer);
+        pm.update(750, &mut storage, &mut buzzer, true);
         assert!(!pm.is_shutting_down);
         assert!(pm.shutdown_progress_pct() >= 49);
 
         // Release early: resets hold timer
         test_set_power_button_pressed(false);
-        pm.update(50, &mut storage, &mut buzzer);
+        pm.update(50, &mut storage, &mut buzzer, true);
         assert_eq!(pm.shutdown_progress_pct(), 0);
     }
 }

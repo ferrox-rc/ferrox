@@ -417,6 +417,7 @@ pub trait BoardIdleHook: Default + 'static {
         menu_active: bool,
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
+        shutdown_ok: bool,
     ) -> (bool, bool, bool);
 
     /// Clear menu-open hold state when menu is opened or released.
@@ -458,6 +459,26 @@ pub fn draw_switch_slot_i6x(
     crate::ui::glyphs::draw_switch_arrow(lcd, val_x, 46, pos);
 }
 
+pub(crate) fn draw_shutdown_overlay(lcd: &mut St7567, shutdown_pending: bool, progress_pct: u8) {
+    if shutdown_pending {
+        lcd.fill_rect(5, 13, 118, 38, false);
+        lcd.draw_rect(5, 13, 118, 38, true);
+        lcd.draw_str_6x10(31, 16, "LINK ACTIVE", false);
+        lcd.draw_str_6x10(10, 28, "RELEASE, THEN HOLD", false);
+        lcd.draw_str_6x10(34, 39, "TO CONFIRM", false);
+    } else if progress_pct > 0 {
+        lcd.fill_rect(18, 19, 92, 26, false);
+        lcd.draw_rect(18, 19, 92, 26, true);
+        lcd.draw_str_6x10(28, 21, "SHUTDOWN...", false);
+        lcd.draw_rect(27, 33, 74, 6, true);
+
+        let fill_w = ((progress_pct as u32 * 70) / 100).min(70);
+        if fill_w > 0 {
+            lcd.fill_rect(29, 35, fill_w, 2, true);
+        }
+    }
+}
+
 /// Default/standard background idle state (FS-i6X and RM-Pocket).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct DefaultIdleState;
@@ -472,6 +493,7 @@ impl BoardIdleHook for DefaultIdleState {
         menu_active: bool,
         _storage: &mut RadioStorage,
         _buzzer: &mut Buzzer,
+        _shutdown_ok: bool,
     ) -> (bool, bool, bool) {
         let ok_held = !menu_active && (keys & (1 << 10)) != 0;
         (ok_held, false, false)

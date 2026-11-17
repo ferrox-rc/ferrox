@@ -503,9 +503,11 @@ impl BackgroundIdleManager {
     ) {
         let menu_active = menu_controller.is_active() || calib_wizard.is_active();
 
+        let shutdown_ok = !flight.telem.connected && !flight.is_armed;
+
         let (ok_held, timer_reset_clicked, instant_trim_clicked) =
             self.board_idle
-                .update(now, dt_ms, keys, menu_active, storage, buzzer);
+                .update(now, dt_ms, keys, menu_active, storage, buzzer, shutdown_ok);
 
         // 1. Resynchronize arm tracking when exiting settings menu
         if self.menu_was_active && !menu_active {

@@ -571,8 +571,10 @@ impl BoardIdleHook for I6sIdleState {
         menu_active: bool,
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
+        shutdown_ok: bool,
     ) -> (bool, bool, bool) {
-        self.power_manager.update(dt_ms, storage, buzzer);
+        self.power_manager
+            .update(dt_ms, storage, buzzer, shutdown_ok);
         self.latched_keys |= keys;
 
         // Front Button LED Backlight Handling
@@ -631,16 +633,10 @@ impl BoardIdleHook for I6sIdleState {
     }
 
     fn render_overlay(&self, lcd: &mut St7567) {
-        let progress_pct = self.power_manager.shutdown_progress_pct();
-        if progress_pct > 0 {
-            lcd.fill_rect(18, 19, 92, 26, false);
-            lcd.draw_rect(18, 19, 92, 26, true);
-            lcd.draw_str_6x10(28, 21, "SHUTDOWN...", false);
-            lcd.draw_rect(27, 33, 74, 6, true);
-            let fill_w = ((progress_pct as u32 * 70) / 100).min(70);
-            if fill_w > 0 {
-                lcd.fill_rect(29, 35, fill_w, 2, true);
-            }
-        }
+        super::draw_shutdown_overlay(
+            lcd,
+            self.power_manager.shutdown_pending(),
+            self.power_manager.shutdown_progress_pct(),
+        );
     }
 }

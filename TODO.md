@@ -8,7 +8,7 @@ This roadmap tracks unresolved issues, safety fixes, and feature requests report
 
 These issues directly affect flight safety or hardware operation and must be resolved in a release candidate before declaring a production `v1.0.0`.
 
-- [ ] **Power-Off Warning with Active Telemetry / Connected RX**
+- [X] **Power-Off Warning with Active Telemetry / Connected RX**
   - *Reported by:* Johan Lindell ([Post #35](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100#post55249545))
   - *Issue:* Radios with soft power switches (Zorro, Pocket, TX12v2) allow immediate shutdown without warning while a model is still bound and communicating.
   - *Focus Files & Functions:*

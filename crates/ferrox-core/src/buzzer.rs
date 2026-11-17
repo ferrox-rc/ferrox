@@ -356,6 +356,17 @@ impl Buzzer {
         }
     }
 
+    /// Shutdown requested while the receiver link or model arm state is active.
+    pub fn warn_shutdown_link_active(&mut self) {
+        static MELODY: [Note; 4] = [
+            Note::new(2600, 65, 45),
+            Note::new(2600, 65, 180),
+            Note::new(2600, 65, 45),
+            Note::new(2600, 90, 0),
+        ];
+        self.play_sequence(&MELODY);
+    }
+
     /// Arming confirmation: crisp 2-note rising chirp.
     pub fn chime_armed(&mut self) {
         if self.tone_style == ToneStyle::Rich {
