@@ -32,6 +32,5 @@ build-gx12 = "build --release -p ferrox-f4 --no-default-features --features gx12
 test-host-i6s = "test -p ferrox-core --features board-i6s --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 test-host-i6x = "test -p ferrox-core --features board-i6x --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 test-host-pocket = "test -p ferrox-core --features board-pocket --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
+test-host-zorro = "test -p ferrox-core --features board-zorro --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
 test-host-gx12 = "test -p ferrox-core --features board-gx12 --lib --target x86_64-unknown-linux-gnu -- --test-threads=1"
-test-host = "test-host-i6s"
-test-all = "test-host-i6s"
