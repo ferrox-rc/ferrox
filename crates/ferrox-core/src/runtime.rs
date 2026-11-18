@@ -411,6 +411,9 @@ pub struct BackgroundIdleManager {
     pub trim_dirty: bool,
     pub trim_save_cooldown_ms: u16,
     pub prev_instant_trim_active: bool,
+    pub prev_telem_connected: bool,
+    pub telem_was_seen: bool,
+    pub vbat_alarm_timer_ms: u32,
     #[cfg(any(feature = "voice-audio", test))]
     pub telemetry_logger: crate::telemetry_log::TelemetryLogger,
     #[cfg(any(feature = "voice-audio", test))]
@@ -472,6 +475,9 @@ impl BackgroundIdleManager {
             trim_dirty: false,
             trim_save_cooldown_ms: 0,
             prev_instant_trim_active: false,
+            prev_telem_connected: false,
+            telem_was_seen: false,
+            vbat_alarm_timer_ms: 0,
             #[cfg(any(feature = "voice-audio", test))]
             telemetry_logger: crate::telemetry_log::TelemetryLogger::new(),
             #[cfg(any(feature = "voice-audio", test))]
@@ -607,6 +613,35 @@ impl BackgroundIdleManager {
                     self.inactivity_beep_timer += dt_ms as u32;
                 }
             }
+        }
+
+        // 4b. Telemetry Lost Edge Detection & Alarm
+        if flight.telem.connected {
+            self.telem_was_seen = true;
+        } else if self.prev_telem_connected && self.telem_was_seen && !flight.is_binding && rf_ok {
+            buzzer.warn_telemetry_lost();
+            #[cfg(feature = "voice-audio")]
+            if storage.radio.audio_enabled != 0 {
+                crate::audio::play_alert(crate::audio::TelemetryCallout::TelemetryLost);
+            }
+        }
+        self.prev_telem_connected = flight.telem.connected;
+
+        // 4c. Transmitter Low Battery Alarm (checked on all screens)
+        let vbat_warn_mv = (storage.radio.vbat_warn_deci as u16) * 100;
+        if flight.state.battery_mv < vbat_warn_mv {
+            if self.vbat_alarm_timer_ms >= 8000 {
+                self.vbat_alarm_timer_ms = 0;
+                buzzer.warn_battery();
+                #[cfg(feature = "voice-audio")]
+                if storage.radio.audio_enabled != 0 {
+                    crate::audio::play_alert(crate::audio::TelemetryCallout::LowBattery);
+                }
+            } else {
+                self.vbat_alarm_timer_ms += dt_ms as u32;
+            }
+        } else {
+            self.vbat_alarm_timer_ms = 7000;
         }
 
         // 5. Keys handling (Bind, Cancel, Up, Down)

@@ -57,6 +57,8 @@ pub enum TelemetryCallout {
     LinkQuality,
     RxBat,
     TxBat,
+    TelemetryLost,
+    LowBattery,
 }
 
 impl TelemetryCallout {
@@ -67,6 +69,8 @@ impl TelemetryCallout {
             Self::Rssi | Self::LinkQuality => "rssi.wav",
             Self::RxBat => "rxbat.wav",
             Self::TxBat => "txbat.wav",
+            Self::TelemetryLost => "telem_lost.wav",
+            Self::LowBattery => "lowbatt.wav",
         }
     }
 }
@@ -228,6 +232,7 @@ impl AudioPlayer {
             TelemetryCallout::Rssi => Some(VoiceUnit::Decibels),
             TelemetryCallout::LinkQuality => Some(VoiceUnit::Percent),
             TelemetryCallout::RxBat | TelemetryCallout::TxBat => Some(VoiceUnit::Volts),
+            TelemetryCallout::TelemetryLost | TelemetryCallout::LowBattery => None,
         };
         self.speak_number(value, unit);
     }
@@ -530,6 +535,16 @@ pub fn announce_telemetry(kind: TelemetryCallout, value: i32) {
     }
     unsafe {
         PLAYER.announce_telemetry(kind, value);
+    }
+}
+
+/// Queue an alert voice clip (e.g. TelemetryLost, LowBattery) for immediate playback.
+pub fn play_alert(kind: TelemetryCallout) {
+    if !has_audio_output() {
+        return;
+    }
+    unsafe {
+        PLAYER.push_item(QueuedClip::Label(kind));
     }
 }
 

@@ -116,7 +116,7 @@ impl AudioOutput for Stm32f4AudioDriver {
         let dma1 = unsafe { &*pac::DMA1::ptr() };
 
         unsafe {
-            // Stop TIM5 tone buzzer if running, switch PA4 to Analog (MODER = 0b11) for DAC_OUT1
+            // Stop TIM5 tone timer if running, ensure PA4 is Analog (MODER = 0b11) for DAC_OUT1
             tim5.cr1.modify(|r, w| w.bits(r.bits() & !0x01));
             gpioa
                 .moder
@@ -190,13 +190,13 @@ impl AudioOutput for Stm32f4AudioDriver {
             dac.cr.write(|w| w.bits(0));
             dma1.st[5].cr.modify(|r, w| w.bits(r.bits() & !1));
 
-            // Restore PA4 to AF2 (TIM5_CH1) so DacToneBuzzer can use it again
+            // Reset DAC channel 1 to midpoint (2048) and leave PA4 in Analog mode (0b11)
+            // so DacToneBuzzer can cleanly output sine wave tones via DAC1.
+            dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
+            dac.cr.write(|w| w.bits(1 << 0)); // EN1 only (no trigger, holding midpoint)
             gpioa
                 .moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 8)) | (0x02 << 8)));
-            gpioa
-                .afrl
-                .modify(|r, w| w.bits((r.bits() & !(0x0F << 16)) | (0x02 << 16)));
+                .modify(|r, w| w.bits((r.bits() & !(0x03 << 8)) | (0x03 << 8)));
         }
 
         self.active = false;

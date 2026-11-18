@@ -491,6 +491,20 @@ impl Buzzer {
         }
     }
 
+    /// Telemetry lost warning alert (recurring alarm when RF telemetry connection drops).
+    pub fn warn_telemetry_lost(&mut self) {
+        if self.tone_style == ToneStyle::Rich {
+            static MELODY: [Note; 3] = [
+                Note::new(2200, 70, 30),
+                Note::new(1700, 70, 30),
+                Note::new(1300, 110, 0),
+            ];
+            self.play_sequence(&MELODY);
+        } else {
+            self.play_tone_pattern(1800, 80, 50, 2);
+        }
+    }
+
     /// Calibration wizard start confirmation chirp.
     pub fn chime_calib_start(&mut self) {
         if self.tone_style == ToneStyle::Rich {

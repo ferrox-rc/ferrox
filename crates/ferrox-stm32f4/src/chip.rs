@@ -304,16 +304,31 @@ unsafe fn rcc_deinit() {
     // Reset CIR
     rcc.cir.write(|w| w.bits(0x0000_0000));
 
-    // Reset AHB1/AHB2/AHB3 & APB1/APB2 peripherals
+    // Reset PLLCFGR to default reset value (0x2400_3010)
+    rcc.pllcfgr.write(|w| w.bits(0x2400_3010));
+
+    // Reset AHB2 peripherals (USB OTG FS on PA11/PA12/PA9) so USB hardware is cleanly unmounted
+    rcc.ahb2rstr.write(|w| w.bits(0xFFFF_FFFF));
+    rcc.ahb2rstr.write(|w| w.bits(0x0000_0000));
+
+    // Reset APB1/APB2 peripherals
     rcc.apb2rstr.write(|w| w.bits(0xFFFF_FFFF));
     rcc.apb2rstr.write(|w| w.bits(0x0000_0000));
     rcc.apb1rstr.write(|w| w.bits(0xFFFF_FFFF));
     rcc.apb1rstr.write(|w| w.bits(0x0000_0000));
 
-    // Keep GPIOD/GPIOE clocks enabled so PD0 power latch & backlight don't glitch
+    // Reset GPIOA, GPIOB, GPIOC via AHB1RSTR (bits 0, 1, 2)
+    // Intentionally keep GPIOD (bit 3) and GPIOE (bit 4) untouched so the PD0 power latch
+    // remains held HIGH and the power rails never drop during ROM bootloader handover!
+    rcc.ahb1rstr.write(|w| w.bits((1 << 0) | (1 << 1) | (1 << 2)));
+    rcc.ahb1rstr.write(|w| w.bits(0x0000_0000));
+
+    // Ensure GPIOD/GPIOE and SYSCFG clocks remain enabled
     rcc.ahb1enr.write(|w| w.bits((1 << 3) | (1 << 4))); // GPIODEN | GPIOEEN
     rcc.apb2enr.write(|w| w.bits(1 << 14)); // SYSCFGEN
     rcc.apb1enr.write(|w| w.bits(0x0000_0000));
+    let _ = rcc.ahb1enr.read().bits();
+    let _ = rcc.apb2enr.read().bits();
 }
 
 pub fn enter_dfu_bootloader() -> ! {

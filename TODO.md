@@ -16,7 +16,7 @@ These issues directly affect flight safety or hardware operation and must be res
     - [`crates/ferrox-core/src/board/qx7_family.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/qx7_family.rs#L107): Location where `power_manager.update()` is called during board loop.
     - [`crates/ferrox-core/src/runtime.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/runtime.rs#L270-L335): Telemetry connection status (`telem.connected`). Pass connection state to power manager to trigger an alert/confirmation modal before cutting power.
 
-- [ ] **Audible Telemetry Lost Alarm**
+- [X] **Audible Telemetry Lost Alarm**
   - *Reported by:* Johan Lindell ([Post #35](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100#post55249545))
   - *Issue:* No beeps, tones, or voice alert when telemetry link is lost.
   - *Focus Files & Functions:*
@@ -24,7 +24,7 @@ These issues directly affect flight safety or hardware operation and must be res
     - [`crates/ferrox-core/src/buzzer.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/buzzer.rs#L18-L80) (`Buzzer::play_tone_pattern`): Trigger distinctive recurring alarm tone sequence.
     - [`crates/ferrox-core/src/audio/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/audio/mod.rs): Enqueue `telem_lost.wav` ("Telemetry Lost") voice callout.
 
-- [ ] **STM32F4 Tone / Buzzer Driver & Variometer Fix**
+- [X] **STM32F4 Tone / Buzzer Driver & Variometer Fix**
   - *Reported by:* Johan Lindell ([Post #35](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100#post55249545)), WimH ([Post #34](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100#post55249519))
   - *Issue:* No variometer tones through speaker, no startup chime, no button beeps, and no trim beeps on STM32F4 radios (TX12v2, Zorro), even though WAV voice playback works.
   - *Focus Files & Functions:*
@@ -33,14 +33,14 @@ These issues directly affect flight safety or hardware operation and must be res
     - [`crates/ferrox-core/src/trim.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/trim.rs#L100-L140): Trim step and center click tone generation.
     - [`crates/ferrox-core/src/vario.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/vario.rs#L120-L170) (`VarioState::update`): Verify vario pitch/pulse modulation feeds into active buzzer.
 
-- [ ] **Audible / Voice Low Battery Warning**
+- [X] **Audible / Voice Low Battery Warning**
   - *Reported by:* WimH ([Post #34](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100#post55249519))
   - *Issue:* Low battery state only flashes on-screen voltage; no beeper tone or voice warning is played.
   - *Focus Files & Functions:*
     - [`crates/ferrox-core/src/runtime.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/runtime.rs#L860-L920): Battery monitoring loop. Check transmitter voltage against configured threshold and trigger audible warning.
     - [`crates/ferrox-core/src/ui/dashboard/status_bar.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/dashboard/status_bar.rs#L30-L70): Currently handles visual blinking; pair with `buzzer.play_tone(...)` or audio alert callout.
 
-- [ ] **TX12v2 DFU / Boot Mode Freeze Bug**
+- [X] **TX12v2 DFU / Boot Mode Freeze Bug**
   - *Reported by:* Johan Lindell ([Post #35](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100#post55249545))
   - *Issue:* Manually entering DFU/boot mode causes radio to lock up over USB, requiring battery removal.
   - *Focus Files & Functions:*

@@ -86,13 +86,6 @@ pub fn render(
     let vbat_is_low = battery_mv < vbat_warn_mv;
 
     if vbat_is_low {
-        if *vbat_alarm_timer >= 8000 {
-            *vbat_alarm_timer = 0;
-            buzzer.warn_battery();
-        } else {
-            *vbat_alarm_timer += 33;
-        }
-
         if (blink_phase & 0x10) != 0 {
             lcd.fill_rect(92, 1, 22, 8, true);
             lcd.draw_str_4x6(93, 3, vbat_str, true);

@@ -69,7 +69,7 @@ macro_rules! define_qx7_context {
                 "PlatformContext initialized more than once"
             );
             static mut SYSTEM_DRIVER: $crate::Stm32f4SystemDriver = $crate::Stm32f4SystemDriver;
-            static mut BUZZER: $crate::DacToneBuzzer = $crate::DacToneBuzzer;
+            static mut BUZZER: $crate::DacToneBuzzer = $crate::DacToneBuzzer::new();
             static mut DISPLAY: $crate::St7567SpiBus<$hal> = $crate::St7567SpiBus::new();
             static mut STORAGE: $crate::PocketEepromI2cBus<$hal> =
                 $crate::PocketEepromI2cBus::new();
