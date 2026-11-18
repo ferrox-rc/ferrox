@@ -93,12 +93,12 @@ jobs:
           path: ci-artifacts/
           retention-days: 7
 
-      - name: Publish rolling nightly pre-release
+      - name: Publish rolling pre-release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref == 'refs/heads/main' && 'nightly' || 'dev-nightly' }}
-          name: ${{ github.ref == 'refs/heads/main' && 'Nightly (main)' || 'Nightly (dev)' }}
+          tag_name: ${{ github.ref == 'refs/heads/main' && 'latest' || 'dev-latest' }}
+          name: ${{ github.ref == 'refs/heads/main' && 'Latest (main)' || 'Latest (dev)' }}
           prerelease: true
           make_latest: false
           body: |
