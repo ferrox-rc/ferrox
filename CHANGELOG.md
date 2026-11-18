@@ -5,6 +5,16 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc9] - 2026-11-18
+
+### Added
+- **Dual-Module UART Hardware Routing (`crates/ferrox-stm32f4/src/uart.rs`, `descriptor.rs`)**: Implemented dynamic hardware UART and DMA multiplexing between internal RF modules (`USART1` on `PB6`/`PB7` via `DMA2 Stream 2 Channel 4`, energized by `INT_RF_PWR` on `PC4`) and external module bays (`USART6` on `PC6`/`PC7` via `DMA2 Stream 1 Channel 5`, energized by `EXT_RF_PWR` on `PD8`).
+- **Module Route Selection in Model Setup (`crates/ferrox-core/src/ui/menu/screens/setup.rs`, `storage.rs`)**: Exposed dynamic `"Module: Internal"` vs. `"Module: External (Bay)"` route selection for boards equipped with external bays (`HAS_EXTERNAL_MODULE_BAY = true` on `qx7_family`), persisting to bit 6 of model configuration header without EEPROM layout migration.
+- **Runtime Route Synchronization (`crates/ferrox-core/src/runtime.rs`, `hal.rs`, `uart.rs`)**: Added `SerialPort::set_port_route()` abstraction invoked during flight execution loop to automatically select baud rate, duplex mode, and active UART hardware transceiver per model.
+
+### Changed
+- **CI / Release Workflow (`.github/workflows/ci.yml`)**: Renamed rolling pre-release tag from `dev-nightly` to `dev-latest` to avoid misleading temporal implications on continuous builds.
+
 ## [1.0.0-rc6] - 2026-11-14
 
 ### Fixed
