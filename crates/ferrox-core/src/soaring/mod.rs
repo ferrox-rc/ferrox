@@ -171,10 +171,10 @@ impl SoaringConfig {
         if self.confirm_secs == 0 || self.confirm_secs > 15 {
             self.confirm_secs = 3;
         }
-        if self.arm_switch > 28 {
+        if self.arm_switch > 44 {
             self.arm_switch = 0;
         }
-        if self.crow_switch > 28 {
+        if self.crow_switch > 44 {
             self.crow_switch = 0;
         }
         if self.tail_type > 2 {

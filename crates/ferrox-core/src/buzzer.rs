@@ -390,7 +390,7 @@ impl Buzzer {
     /// Trim position adjustment step. Pitch scales with trim value (-25..+25).
     pub fn trim_step(&mut self, step: i8) {
         let freq = (2000i32 + (step as i32 * 20)).clamp(1500, 2500) as u16;
-        self.play_tone(freq, 25);
+        self.play_tone(freq, 45);
     }
 
     /// Trim center reference confirmed. Higher pitch distinct tone.

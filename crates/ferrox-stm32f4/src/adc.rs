@@ -107,9 +107,10 @@ impl<H: Qx7HalDescriptor> AdcDriver for Stm32f4AdcDriver<H> {
             // SQR2: SQ7=IN10 (PC0 VBAT)
             adc1.sqr2.write(|w| w.bits(10 << 0));
 
-            // Sample time: 56 cycles (SMPR = 0b011)
+            // Sample time: 56 cycles (SMPR = 0b011) for low-Z sticks/pots,
+            // 480 cycles (0b111) for IN10 (PC0 VBAT, 499k/160k high-Z divider)
             adc1.smpr2.write(|w| w.bits(0o33333333));
-            adc1.smpr1.write(|w| w.bits(0o33333333));
+            adc1.smpr1.write(|w| w.bits(0o33333337));
 
             // CR1: SCAN mode
             adc1.cr1.write(|w| w.bits(1 << 8));

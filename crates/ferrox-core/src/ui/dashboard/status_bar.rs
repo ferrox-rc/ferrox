@@ -102,7 +102,7 @@ pub fn render(
         }
     } else {
         *vbat_alarm_timer = 7000;
-        let vbat_max_mv = 6000u16.max(vbat_warn_mv.saturating_add(800));
+        let vbat_max_mv = 6000u16.max(vbat_warn_mv.saturating_add(1600));
         draw_battery_gauge(lcd, 116, 2, battery_mv, vbat_warn_mv, vbat_max_mv);
         lcd.draw_str_4x6(93, 3, vbat_str, false);
     }

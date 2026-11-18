@@ -818,16 +818,21 @@ pub fn compute_channels(
     let is_heli_hold =
         model.model_type() == crate::safety::ModelType::Heli && switches.sa == SwitchPos::Down;
     let is_disarmed = model.arm_switch > 0
-        && model.arm_switch <= 28
+        && model.arm_switch <= 44
         && !eval_arm_switch(model.arm_switch, switches);
 
-    if (is_heli_hold || is_disarmed) && template != WingTailTemplate::Freeform {
-        rf_chs[2] = CHANNEL_MIN_US;
+    if is_heli_hold || is_disarmed {
+        let motor_ch = if model.soaring.is_active() {
+            (model.soaring.motor_ch as usize).min(NUM_CHANNELS - 1)
+        } else {
+            2
+        };
+        rf_chs[motor_ch] = CHANNEL_MIN_US;
     }
 
     if model.soaring.is_active()
         && model.soaring.arm_switch > 0
-        && model.soaring.arm_switch <= 28
+        && model.soaring.arm_switch <= 44
         && !is_switch_active(model.soaring.arm_switch, switches)
     {
         let m_ch = (model.soaring.motor_ch as usize).min(NUM_CHANNELS - 1);
@@ -1639,6 +1644,52 @@ mod tests {
         assert_eq!(
             out_armed[2], CHANNEL_MAX_US,
             "Armed model must allow normal throttle output"
+        );
+    }
+
+    #[test]
+    fn test_freeform_arm_switch_throttle_lockout() {
+        let mut model = ModelConfig::default_for_index(0);
+        model.wing_tail_mix = WingTailTemplate::Freeform as u8;
+        model.freeform_ch1_4[2] = MixSource::Throttle as u8; // CH3 assigned to Throttle
+        model.arm_switch = 1; // SA Up = Armed, SA Down = Disarmed
+
+        let trims = TrimController::default();
+        let pots = [0i16; 2];
+
+        // 1. Disarmed (SA Down) in Freeform mode: CH3 must still be locked to CHANNEL_MIN_US
+        let sw_disarmed = Switches {
+            sa: SwitchPos::Down,
+            ..Default::default()
+        };
+        let out_disarmed = compute_channels(0, 0, 1000, 0, &pots, &sw_disarmed, &model, &trims, 0);
+        assert_eq!(
+            out_disarmed[2], CHANNEL_MIN_US,
+            "Freeform template disarmed model must lock CH3 to minimum idle pulse"
+        );
+
+        // 2. Armed (SA Up) in Freeform mode: CH3 outputs normal throttle
+        let sw_armed = Switches {
+            sa: SwitchPos::Up,
+            ..Default::default()
+        };
+        let out_armed = compute_channels(0, 0, 1000, 0, &pots, &sw_armed, &model, &trims, 0);
+        assert_eq!(
+            out_armed[2], CHANNEL_MAX_US,
+            "Freeform template armed model must allow normal throttle output"
+        );
+
+        // 3. Soaring mode with custom motor channel (e.g. CH5 / index 4)
+        model.soaring.discipline = crate::soaring::SoaringDiscipline::F5j as u8;
+        model.soaring.motor_ch = 4; // CH5
+        model.aux_channels[0] = MixSource::Vra as u8; // CH5 driven by VRA
+        let pots_high = [1000i16, 0i16]; // VRA full
+
+        let out_soaring_disarmed =
+            compute_channels(0, 0, 1000, 0, &pots_high, &sw_disarmed, &model, &trims, 0);
+        assert_eq!(
+            out_soaring_disarmed[4], CHANNEL_MIN_US,
+            "Disarmed soaring model must lock configured soaring motor_ch to minimum idle pulse"
         );
     }
 

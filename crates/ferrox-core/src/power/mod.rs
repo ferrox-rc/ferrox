@@ -103,6 +103,10 @@ pub struct PowerManager {
     is_shutting_down: bool,
     /// True once button press accepted only if flight.telem.connected and flight.is_armed.
     shutdown_pending: bool,
+    /// Bitmask of safety interlocks preventing direct shutdown:
+    /// Bit 0: Link active (telem connected)
+    /// Bit 1: Model armed
+    shutdown_guard: u8,
     /// True once user confirms safe to shutdown
     confirm_ready: bool,
 }
@@ -120,12 +124,18 @@ impl PowerManager {
             hold_duration_ms: 0,
             is_shutting_down: false,
             shutdown_pending: false,
+            shutdown_guard: 0,
             confirm_ready: false,
         }
     }
 
     pub fn shutdown_pending(&self) -> bool {
         self.shutdown_pending
+    }
+
+    /// Return the active shutdown guard bitmask (Bit 0: Link active, Bit 1: Model armed).
+    pub fn shutdown_guard(&self) -> u8 {
+        self.shutdown_guard
     }
 
     /// True if the shutdown sequence has completed or is in progress.
@@ -149,6 +159,7 @@ impl PowerManager {
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
         shutdown_ok: bool,
+        guard_reasons: u8,
     ) {
         if self.is_shutting_down {
             return;
@@ -189,6 +200,7 @@ impl PowerManager {
         if !self.shutdown_pending && !shutdown_ok {
             // First hold requested shutdown, but the safety condition requires confirmation.
             self.shutdown_pending = true;
+            self.shutdown_guard = guard_reasons;
             self.confirm_ready = false;
             self.hold_duration_ms = 0;
             buzzer.warn_shutdown_link_active();
@@ -238,32 +250,46 @@ mod tests {
         let mut storage = RadioStorage::empty();
         let mut buzzer = Buzzer::new();
 
-        // Simulate RF connected
-        test_set_power_button_pressed(true);
-        pm.update(2000, &mut storage, &mut buzzer, false);
-        assert!(!pm.is_shutting_down);
-        assert_eq!(pm.shutdown_progress_pct(), 0);
-
         // Simulate held at boot
         test_set_power_button_pressed(true);
-        pm.update(2000, &mut storage, &mut buzzer, true);
+        pm.update(2000, &mut storage, &mut buzzer, true, 0);
         assert!(!pm.is_shutting_down);
         assert_eq!(pm.shutdown_progress_pct(), 0);
 
         // Release button
         test_set_power_button_pressed(false);
-        pm.update(50, &mut storage, &mut buzzer, true);
+        pm.update(50, &mut storage, &mut buzzer, true, 0);
         assert!(pm.boot_release_detected);
 
         // Press and hold for partial duration
         test_set_power_button_pressed(true);
-        pm.update(750, &mut storage, &mut buzzer, true);
+        pm.update(750, &mut storage, &mut buzzer, true, 0);
         assert!(!pm.is_shutting_down);
         assert!(pm.shutdown_progress_pct() >= 49);
 
         // Release early: resets hold timer
         test_set_power_button_pressed(false);
-        pm.update(50, &mut storage, &mut buzzer, true);
+        pm.update(50, &mut storage, &mut buzzer, true, 0);
         assert_eq!(pm.shutdown_progress_pct(), 0);
+    }
+
+    #[test]
+    fn test_power_manager_shutdown_guard_reasons() {
+        init();
+        let mut pm = PowerManager::new();
+        let mut storage = RadioStorage::empty();
+        let mut buzzer = Buzzer::new();
+
+        // Boot release
+        test_set_power_button_pressed(false);
+        pm.update(50, &mut storage, &mut buzzer, true, 0);
+        assert!(pm.boot_release_detected);
+
+        // Hold power button while link active & model armed (reasons: 0x03)
+        test_set_power_button_pressed(true);
+        pm.update(1600, &mut storage, &mut buzzer, false, 0x03);
+        assert!(pm.shutdown_pending());
+        assert_eq!(pm.shutdown_guard(), 0x03);
+        assert!(!pm.is_shutting_down());
     }
 }

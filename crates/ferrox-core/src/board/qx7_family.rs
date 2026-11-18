@@ -104,9 +104,10 @@ impl BoardIdleHook for Qx7IdleState {
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
         shutdown_ok: bool,
+        guard_reasons: u8,
     ) -> (bool, bool, bool) {
         self.power_manager
-            .update(dt_ms, storage, buzzer, shutdown_ok);
+            .update(dt_ms, storage, buzzer, shutdown_ok, guard_reasons);
         (false, false, false)
     }
 
@@ -248,6 +249,7 @@ impl BoardIdleHook for Qx7IdleState {
         super::draw_shutdown_overlay(
             lcd,
             self.power_manager.shutdown_pending(),
+            self.power_manager.shutdown_guard(),
             self.power_manager.shutdown_progress_pct(),
         );
     }

@@ -572,9 +572,10 @@ impl BoardIdleHook for I6sIdleState {
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
         shutdown_ok: bool,
+        guard_reasons: u8,
     ) -> (bool, bool, bool) {
         self.power_manager
-            .update(dt_ms, storage, buzzer, shutdown_ok);
+            .update(dt_ms, storage, buzzer, shutdown_ok, guard_reasons);
         self.latched_keys |= keys;
 
         // Front Button LED Backlight Handling
@@ -636,6 +637,7 @@ impl BoardIdleHook for I6sIdleState {
         super::draw_shutdown_overlay(
             lcd,
             self.power_manager.shutdown_pending(),
+            self.power_manager.shutdown_guard(),
             self.power_manager.shutdown_progress_pct(),
         );
     }

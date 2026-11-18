@@ -419,6 +419,7 @@ pub trait BoardIdleHook: Default + 'static {
         storage: &mut RadioStorage,
         buzzer: &mut Buzzer,
         shutdown_ok: bool,
+        guard_reasons: u8,
     ) -> (bool, bool, bool);
 
     /// Clear menu-open hold state when menu is opened or released.
@@ -460,11 +461,27 @@ pub fn draw_switch_slot_i6x(
     crate::ui::glyphs::draw_switch_arrow(lcd, val_x, 46, pos);
 }
 
-pub(crate) fn draw_shutdown_overlay(lcd: &mut St7567, shutdown_pending: bool, progress_pct: u8) {
+pub(crate) fn draw_shutdown_overlay(
+    lcd: &mut St7567,
+    shutdown_pending: bool,
+    shutdown_guard: u8,
+    progress_pct: u8,
+) {
     if shutdown_pending {
         lcd.fill_rect(5, 13, 118, 38, false);
         lcd.draw_rect(5, 13, 118, 38, true);
-        lcd.draw_str_6x10(31, 16, "LINK ACTIVE", false);
+
+        let is_link = (shutdown_guard & 0x01) != 0;
+        let is_armed = (shutdown_guard & 0x02) != 0;
+
+        if is_link && is_armed {
+            lcd.draw_str_6x10(13, 16, "ARMED & LINK ACT!", false);
+        } else if is_armed {
+            lcd.draw_str_6x10(28, 16, "MODEL ARMED!", false);
+        } else {
+            lcd.draw_str_6x10(31, 16, "LINK ACTIVE!", false);
+        }
+
         lcd.draw_str_6x10(10, 28, "RELEASE, THEN HOLD", false);
         lcd.draw_str_6x10(34, 39, "TO CONFIRM", false);
     } else if progress_pct > 0 {
@@ -495,6 +512,7 @@ impl BoardIdleHook for DefaultIdleState {
         _storage: &mut RadioStorage,
         _buzzer: &mut Buzzer,
         _shutdown_ok: bool,
+        _guard_reasons: u8,
     ) -> (bool, bool, bool) {
         let ok_held = !menu_active && (keys & (1 << 10)) != 0;
         (ok_held, false, false)
