@@ -259,6 +259,7 @@ pub trait BoardProfile: Copy + Clone + 'static {
     // RF Protocol Capabilities
     const HAS_INTERNAL_AFHDS2A: bool;
     const HAS_INTERNAL_CRSF: bool;
+    const HAS_EXTERNAL_MODULE_BAY: bool = false;
     const SUPPORTED_PROTOCOLS: &'static [RfProtocol];
     const DEFAULT_PROTOCOL: RfProtocol;
 

@@ -4,7 +4,7 @@ This roadmap tracks unresolved issues, safety fixes, and feature requests report
 
 ## 🏁 Release Checkpoints
 
-1. **`v1.0.0-rc7` $\rightarrow$ `v1.0.0` (Production Gate):** All **Priority 0** safety & hardware stability blockers are implemented and tagged in `v1.0.0-rc7`. Once community testers confirm these fixes on hardware, `v1.0.0` will be tagged directly from `rc7` without risking new feature regressions.
+1. **`v1.0.0-rc8` $\rightarrow$ `v1.0.0` (Production Gate):** All **Priority 0** safety & hardware stability blockers are implemented in `v1.0.0-rc8`. **Dual-Module UART Routing (Internal RF vs. External Module Bay)** is targeted for the next RC (`v1.0.0-rc9`) before tagging `v1.0.0`.
 2. **`v1.0.1` (Patch Release — Bug Fixes & Parity Polish):** Low-risk, zero-EEPROM-migration bug fixes and board-table parity items (`AUX_SOURCES` stick mapping on STM32F4 for Issue #40, timer latch/trigger fix, horizontal roller edit polarity consistency, native CC2500 vs 4-in-1 MPM protocol list split, F5J 10s step & `"ZOOM"` label, and documentation).
 3. **`v1.1.0` (Minor Release — Controls, Mixer & UI Capabilities):** Structural input/mixer/UI enhancements (unrestricted `CH1..CH18` channel assignment without requiring `Freeform` template, Logical Switches `L1..L8` as universal triggers, momentary switch software latch/toggle mode, telemetry dashboard Timers 1–4 picker, and dedicated F5J competition HUD).
 
@@ -13,6 +13,10 @@ This roadmap tracks unresolved issues, safety fixes, and feature requests report
 ## 🚨 Priority 0: Safety & Stability Blockers (Completed in `v1.0.0-rc7` — Gate for `v1.0.0`)
 
 These issues directly affect flight safety or hardware operation and were resolved in `v1.0.0-rc7` ahead of declaring production `v1.0.0`.
+
+- [X] **Dual-Module UART Routing (Internal RF vs. External Module Bay) *(Completed in `v1.0.0-rc9`)***
+  - *Issue:* `crates/ferrox-stm32f4/src/uart.rs` previously hardcoded a single `USART1` (`PB6/PB7`) serial port, and `ferrox-core` had a single `RfProtocol` selector. STM32F4 radios have separate internal RF (`USART1`, `PB6/PB7`) and external module bay (`USART6`, `PC6/PC7`) UARTs/power pins.
+  - *Implemented:* Added hardware dual-UART routing with DMA streams on STM32F4, `SerialPort::set_port_route()`, `rf_module_target()` model configuration storage, and dynamic UI toggle (`Module: Internal` vs `Module: External (Bay)`) in `SETUP` menu.
 
 - [X] **Power-Off Warning with Active Telemetry / Connected RX**
   - *Reported by:* Johan Lindell ([Post #35](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100#post55249545))
@@ -138,3 +142,12 @@ These issues directly affect flight safety or hardware operation and were resolv
     - [`crates/ferrox-core/src/ui/dashboard/pages/f5j.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/dashboard/pages/f5j.rs#L50-L260): Implement dedicated large-font soaring HUD page.
     - [`crates/ferrox-core/src/soaring/f5j/score.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/soaring/f5j/score.rs): Score calculation and landing bonus tape input prompt.
     - [`crates/ferrox-core/src/soaring/f5j/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/soaring/f5j/mod.rs#L30-L34): Touchdown auto-transition hook.
+
+- [ ] **Main Screen Timer & Expanded 3-Line Large-Font Custom Telemetry *(Pending further user input)***
+  - *Reported by:* Johan Lindell ([Post #54](https://www.rcgroups.com/forums/showthread.php?4966503-Official-Ferrox-Radio-OS-Thread&pp=100))
+  - *Issue:* Place the primary timer on the main screen (similar to EdgeTX) with a larger font for quick in-flight glances, and expand `"Custom Telem"` from 2 lines to 3 lines (6 sensors/values) with larger numeric font sizes. *(Note: Pending further user input before finalizing layout changes.)*
+
+- [ ] **Battery Voltage Calibration Menu**
+  - *Issue:* Allow users to fine-tune the displayed battery voltage against a multimeter reading via a calibration offset/multiplier in Radio Setup (or Diag -> Analog), persisted in radio storage.
+
+

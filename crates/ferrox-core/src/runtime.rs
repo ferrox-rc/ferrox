@@ -193,6 +193,8 @@ impl FlightPipeline {
         let is_crsf = proto == crate::board::RfProtocol::Crsf;
         let rf_active = !sim_mode;
 
+        crate::uart::set_port_route(active_model.rf_module_target());
+
         crsf::set_enabled(
             is_crsf && rf_active,
             active_model.crsf_baud,

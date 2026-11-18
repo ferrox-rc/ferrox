@@ -265,6 +265,9 @@ pub trait Qx7HalDescriptor: 'static {
     /// Internal RF power and bootloader control pins.
     const INT_RF_PWR: PinDef = PinDef::new(Port::C, 4);
     const INT_RF_BOOTCMD: Option<PinDef> = Some(PinDef::new(Port::B, 1));
+
+    /// External RF module bay power switch pin (`PD8` on most STM32F4 radios).
+    const EXT_RF_PWR: PinDef = PinDef::new(Port::D, 8);
 }
 
 // ============================================================================

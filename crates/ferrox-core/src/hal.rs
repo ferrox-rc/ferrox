@@ -163,6 +163,9 @@ pub trait SerialPort {
 
     /// Read a single byte from the receive buffer, if available.
     fn read_byte(&mut self) -> Option<u8>;
+
+    /// Set internal vs external module physical route (0 = Internal, 1 = External).
+    fn set_port_route(&mut self, _route: u8) {}
 }
 
 /// Dummy serial port for tests.

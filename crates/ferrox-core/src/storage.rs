@@ -782,6 +782,19 @@ impl ModelConfig {
         }
     }
 
+    /// Get RF Module Target (0 = Internal Module, 1 = External Module Bay).
+    /// Stored in bit 6 of `_pad0`.
+    #[inline(always)]
+    pub const fn rf_module_target(&self) -> u8 {
+        (self._pad0 >> 6) & 0x01
+    }
+
+    /// Set RF Module Target (0 = Internal Module, 1 = External Module Bay).
+    #[inline(always)]
+    pub fn set_rf_module_target(&mut self, target: u8) {
+        self._pad0 = (self._pad0 & !0x40) | ((target & 0x01) << 6);
+    }
+
     /// Get MPM RF Frequency Fine-Tuning offset (`-127..+127`, stored in `_pad_crv`).
     #[inline(always)]
     pub const fn mpm_freq_tune(&self) -> i8 {
@@ -2762,6 +2775,20 @@ mod tests {
             assert_eq!(storage.active_model.rf_protocol, proto);
             assert_eq!(storage.active_model.dsm_sub_proto, proto);
         }
+
+        // Dual RF Module target (0 = Internal, 1 = External Bay)
+        assert_eq!(storage.active_model.rf_module_target(), 0);
+        storage.active_model.set_rf_module_target(1);
+        assert_eq!(storage.active_model.rf_module_target(), 1);
+        storage.active_model.set_mpm_rx_num(12);
+        storage.active_model.set_mpm_range_check(true);
+        assert_eq!(storage.active_model.rf_module_target(), 1);
+        assert_eq!(storage.active_model.mpm_rx_num(), 12);
+        assert!(storage.active_model.mpm_range_check());
+        storage.active_model.set_rf_module_target(0);
+        assert_eq!(storage.active_model.rf_module_target(), 0);
+        assert_eq!(storage.active_model.mpm_rx_num(), 12);
+        assert!(storage.active_model.mpm_range_check());
 
         // Out-of-range protocol / sub-protocol reset safely
         storage.active_model.rf_protocol = 99;

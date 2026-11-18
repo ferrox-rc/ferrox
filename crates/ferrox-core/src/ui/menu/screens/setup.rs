@@ -673,18 +673,19 @@ pub fn update_rx_setup(
         storage::save_active_model(storage);
     }
 
+    let has_ext_bay = ActiveBoard::HAS_EXTERNAL_MODULE_BAY;
     let item_count = match current_proto {
         RfProtocol::Afhds2a => 6,
-        RfProtocol::Crsf => 5,
-        RfProtocol::Cc2500 => 6,
+        RfProtocol::Crsf => if has_ext_bay { 6 } else { 5 },
+        RfProtocol::Cc2500 => if has_ext_bay { 7 } else { 6 },
         RfProtocol::Dsm => {
             #[cfg(feature = "dsm-fwd-prog")]
             {
-                5
+                if has_ext_bay { 6 } else { 5 }
             }
             #[cfg(not(feature = "dsm-fwd-prog"))]
             {
-                4
+                if has_ext_bay { 5 } else { 4 }
             }
         }
     };
@@ -762,37 +763,71 @@ pub fn update_rx_setup(
                         };
                     storage::save_active_model(storage);
                 }
-                (RfProtocol::Crsf, 1) => {
-                    ctrl.editing = true;
-                    buzzer.click();
-                }
-                (RfProtocol::Crsf, 2) => {
-                    buzzer.click();
-                    storage.active_model.crsf_half_duplex =
-                        if storage.active_model.crsf_half_duplex == 0 {
-                            1
-                        } else {
-                            0
-                        };
-                    storage::save_active_model(storage);
-                }
-                (RfProtocol::Crsf, 3) => {
-                    buzzer.click();
-                    storage.active_model.crsf_arm_mode = if storage.active_model.crsf_arm_mode == 0
-                    {
-                        1
+                (RfProtocol::Crsf, item) => {
+                    if has_ext_bay {
+                        match item {
+                            1 => {
+                                buzzer.click();
+                                let next_target = if storage.active_model.rf_module_target() == 0 { 1 } else { 0 };
+                                storage.active_model.set_rf_module_target(next_target);
+                                crate::uart::set_port_route(next_target);
+                                storage::save_active_model(storage);
+                            }
+                            2 => {
+                                ctrl.editing = true;
+                                buzzer.click();
+                            }
+                            3 => {
+                                buzzer.click();
+                                storage.active_model.crsf_half_duplex =
+                                    if storage.active_model.crsf_half_duplex == 0 { 1 } else { 0 };
+                                storage::save_active_model(storage);
+                            }
+                            4 => {
+                                buzzer.click();
+                                storage.active_model.crsf_arm_mode =
+                                    if storage.active_model.crsf_arm_mode == 0 { 1 } else { 0 };
+                                storage::save_active_model(storage);
+                            }
+                            5 => {
+                                buzzer.click();
+                                crate::crsf::start_config();
+                                ctrl.state = MenuState::CrsfSetup;
+                                ctrl.selected_item = 0;
+                                ctrl.scroll_offset = 0;
+                                return;
+                            }
+                            _ => {}
+                        }
                     } else {
-                        0
-                    };
-                    storage::save_active_model(storage);
-                }
-                (RfProtocol::Crsf, 4) => {
-                    buzzer.click();
-                    crate::crsf::start_config();
-                    ctrl.state = MenuState::CrsfSetup;
-                    ctrl.selected_item = 0;
-                    ctrl.scroll_offset = 0;
-                    return;
+                        match item {
+                            1 => {
+                                ctrl.editing = true;
+                                buzzer.click();
+                            }
+                            2 => {
+                                buzzer.click();
+                                storage.active_model.crsf_half_duplex =
+                                    if storage.active_model.crsf_half_duplex == 0 { 1 } else { 0 };
+                                storage::save_active_model(storage);
+                            }
+                            3 => {
+                                buzzer.click();
+                                storage.active_model.crsf_arm_mode =
+                                    if storage.active_model.crsf_arm_mode == 0 { 1 } else { 0 };
+                                storage::save_active_model(storage);
+                            }
+                            4 => {
+                                buzzer.click();
+                                crate::crsf::start_config();
+                                ctrl.state = MenuState::CrsfSetup;
+                                ctrl.selected_item = 0;
+                                ctrl.scroll_offset = 0;
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 (RfProtocol::Dsm, 1) => {
                     buzzer.click();
@@ -866,7 +901,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            1 if current_proto == RfProtocol::Crsf => {
+            idx if current_proto == RfProtocol::Crsf && idx == (if has_ext_bay { 2 } else { 1 }) => {
                 if keys.up {
                     storage.active_model.crsf_baud = (storage.active_model.crsf_baud + 1) % 5;
                     buzzer.play_tone(2200, 30);
@@ -967,9 +1002,13 @@ pub fn update_rx_setup(
             }
             let footer = if ctrl.editing {
                 "[OK] Save   [UP/DN] Change"
-            } else if ctrl.selected_item == 2 || ctrl.selected_item == 3 {
+            } else if has_ext_bay && ctrl.selected_item == 1 {
+                "[OK] Toggle Module [ESC] Exit"
+            } else if (!has_ext_bay && (ctrl.selected_item == 2 || ctrl.selected_item == 3))
+                || (has_ext_bay && (ctrl.selected_item == 3 || ctrl.selected_item == 4))
+            {
                 "[OK] Toggle Mode  [ESC] Exit"
-            } else if ctrl.selected_item == 4 {
+            } else if (!has_ext_bay && ctrl.selected_item == 4) || (has_ext_bay && ctrl.selected_item == 5) {
                 "[OK] Open Config  [ESC] Exit"
             } else {
                 "[OK] Edit   [ESC] Exit"
@@ -1276,45 +1315,98 @@ fn render_crsf_row(
     editing: bool,
     storage: &RadioStorage,
 ) {
-    match idx {
-        0 => {
-            let proto_val = if editing && is_sel { "[CRSF]" } else { "CRSF" };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Proto:", Some(proto_val));
-        }
-        1 => {
-            let baud_idx = (storage.active_model.crsf_baud as usize).min(CRSF_BAUD_NAMES.len() - 1);
-            let name = CRSF_BAUD_NAMES[baud_idx];
-            if editing && is_sel {
-                let mut b_buf = [0u8; 20];
-                b_buf[0] = b'[';
-                let len = name.len().min(18);
-                b_buf[1..1 + len].copy_from_slice(&name.as_bytes()[..len]);
-                b_buf[1 + len] = b']';
-                let s = ascii_as_str(&b_buf[..2 + len]);
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Baud:", Some(s));
-            } else {
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Baud:", Some(name));
+    let has_ext = ActiveBoard::HAS_EXTERNAL_MODULE_BAY;
+    if has_ext {
+        match idx {
+            0 => {
+                let proto_val = if editing && is_sel { "[CRSF]" } else { "CRSF" };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Proto:", Some(proto_val));
             }
+            1 => {
+                let target_str = if storage.active_model.rf_module_target() == 0 {
+                    "Internal"
+                } else {
+                    "External (Bay)"
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Module:", Some(target_str));
+            }
+            2 => {
+                let baud_idx = (storage.active_model.crsf_baud as usize).min(CRSF_BAUD_NAMES.len() - 1);
+                let name = CRSF_BAUD_NAMES[baud_idx];
+                if editing && is_sel {
+                    let mut b_buf = [0u8; 20];
+                    b_buf[0] = b'[';
+                    let len = name.len().min(18);
+                    b_buf[1..1 + len].copy_from_slice(&name.as_bytes()[..len]);
+                    b_buf[1 + len] = b']';
+                    let s = ascii_as_str(&b_buf[..2 + len]);
+                    widgets::draw_list_row_right(lcd, slot, is_sel, "Baud:", Some(s));
+                } else {
+                    widgets::draw_list_row_right(lcd, slot, is_sel, "Baud:", Some(name));
+                }
+            }
+            3 => {
+                let duplex_val = if storage.active_model.crsf_half_duplex == 0 {
+                    "Full (2W)"
+                } else {
+                    "Half (1W)"
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Duplex:", Some(duplex_val));
+            }
+            4 => {
+                let arm_val = if storage.active_model.crsf_arm_mode == 0 {
+                    "CH5 (Std)"
+                } else {
+                    "Switch"
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Arm Mode:", Some(arm_val));
+            }
+            5 => {
+                widgets::draw_list_row_right(lcd, slot, is_sel, "[Configure Module]", None);
+            }
+            _ => {}
         }
-        2 => {
-            let duplex_val = if storage.active_model.crsf_half_duplex == 0 {
-                "Full (2W)"
-            } else {
-                "Half (1W)"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Duplex:", Some(duplex_val));
+    } else {
+        match idx {
+            0 => {
+                let proto_val = if editing && is_sel { "[CRSF]" } else { "CRSF" };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Proto:", Some(proto_val));
+            }
+            1 => {
+                let baud_idx = (storage.active_model.crsf_baud as usize).min(CRSF_BAUD_NAMES.len() - 1);
+                let name = CRSF_BAUD_NAMES[baud_idx];
+                if editing && is_sel {
+                    let mut b_buf = [0u8; 20];
+                    b_buf[0] = b'[';
+                    let len = name.len().min(18);
+                    b_buf[1..1 + len].copy_from_slice(&name.as_bytes()[..len]);
+                    b_buf[1 + len] = b']';
+                    let s = ascii_as_str(&b_buf[..2 + len]);
+                    widgets::draw_list_row_right(lcd, slot, is_sel, "Baud:", Some(s));
+                } else {
+                    widgets::draw_list_row_right(lcd, slot, is_sel, "Baud:", Some(name));
+                }
+            }
+            2 => {
+                let duplex_val = if storage.active_model.crsf_half_duplex == 0 {
+                    "Full (2W)"
+                } else {
+                    "Half (1W)"
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Duplex:", Some(duplex_val));
+            }
+            3 => {
+                let arm_val = if storage.active_model.crsf_arm_mode == 0 {
+                    "CH5 (Std)"
+                } else {
+                    "Switch"
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Arm Mode:", Some(arm_val));
+            }
+            4 => {
+                widgets::draw_list_row_right(lcd, slot, is_sel, "[Configure Module]", None);
+            }
+            _ => {}
         }
-        3 => {
-            let arm_val = if storage.active_model.crsf_arm_mode == 0 {
-                "CH5 (Std)"
-            } else {
-                "Switch"
-            };
-            widgets::draw_list_row_right(lcd, slot, is_sel, "Arm Mode:", Some(arm_val));
-        }
-        4 => {
-            widgets::draw_list_row_right(lcd, slot, is_sel, "[Configure Module]", None);
-        }
-        _ => {}
     }
 }

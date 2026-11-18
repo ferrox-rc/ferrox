@@ -408,6 +408,7 @@ macro_rules! impl_qx7_board_profile {
             const DEFAULT_PROTOCOL: RfProtocol = RfProtocol::Crsf;
             const HAS_INTERNAL_AFHDS2A: bool = false;
             const HAS_INTERNAL_CRSF: bool = true;
+            const HAS_EXTERNAL_MODULE_BAY: bool = true;
 
             #[inline]
             fn eeprom_crc16(data: &[u8]) -> u16 {

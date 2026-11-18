@@ -29,6 +29,12 @@ pub fn set_module_power(enabled: bool) {
     }
 }
 
+pub fn set_port_route(route: u8) {
+    if let Some(ref mut p) = unsafe { SERIAL_PORT.as_mut() } {
+        p.set_port_route(route);
+    }
+}
+
 pub fn set_uart_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
     HALF_DUPLEX_ACTIVE.store(half_duplex, Ordering::Relaxed);
     if let Some(ref mut p) = unsafe { SERIAL_PORT.as_mut() } {
