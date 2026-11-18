@@ -6,19 +6,7 @@ use cortex_m_rt::exception;
 /// Configures SysTick to lowest hardware interrupt priority (0xC0) so it never
 /// preempts or delays RF time-critical IRQs (TIM16 and EXTI2_3 at 0x80).
 pub fn init() {
-    unsafe {
-        let mut p = cortex_m::peripheral::Peripherals::steal();
-        p.SCB
-            .set_priority(cortex_m::peripheral::scb::SystemHandler::SysTick, 0xC0);
-
-        p.SYST.set_reload(48_000 - 1);
-        p.SYST.clear_current();
-        p.SYST
-            .set_clock_source(cortex_m::peripheral::syst::SystClkSource::Core);
-        p.SYST.enable_interrupt();
-        p.SYST.enable_counter();
-        cortex_m::interrupt::enable();
-    }
+    ferrox_core::time::init_systick(48_000_000);
 }
 
 /// Monotonic system uptime in milliseconds since boot.

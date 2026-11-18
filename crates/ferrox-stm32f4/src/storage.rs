@@ -6,7 +6,6 @@ use crate::descriptor::{PinDef, PocketHal, Qx7HalDescriptor};
 use crate::sdcard::{SpiSdCard, FERROX_TELEM_SECTOR_BASE, SD_SECTOR_SIZE};
 
 const EEPROM_ADDR: u8 = 0x51; // 7-bit I2C address for M24256 on Q X7 family
-const PAGE_SIZE: usize = 64;
 
 pub struct PocketEepromI2cBus<H: Qx7HalDescriptor = PocketHal> {
     using_sd: bool,
@@ -293,19 +292,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
     }
 
     fn write_i2c(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
-        let end = (addr as usize).checked_add(buf.len()).ok_or(())?;
-        if end > (u16::MAX as usize) + 1 {
-            return Err(());
-        }
-        let mut cur_addr = addr;
-        let mut offset = 0;
-        let total = buf.len();
-
-        while offset < total {
-            let page_offset = (cur_addr as usize) % PAGE_SIZE;
-            let bytes_in_page = PAGE_SIZE - page_offset;
-            let chunk_size = bytes_in_page.min(total - offset);
-
+        ferrox_core::storage::for_each_eeprom_page(addr, buf, |cur_addr, chunk| {
             self.wait_while_busy();
             if let Err(e) = (|| -> Result<(), ()> {
                 self.send_start()?;
@@ -316,7 +303,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
                 self.write_byte((cur_addr & 0xFF) as u8)?;
 
                 // Stream page chunk
-                for &byte in &buf[offset..offset + chunk_size] {
+                for &byte in chunk {
                     self.write_byte(byte)?;
                 }
                 Ok(())
@@ -330,14 +317,8 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
             if !self.poll_ack() {
                 return Err(());
             }
-
-            offset += chunk_size;
-            if offset < total {
-                cur_addr = cur_addr.checked_add(chunk_size as u16).ok_or(())?;
-            }
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn read_sd(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {

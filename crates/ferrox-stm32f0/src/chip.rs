@@ -1,4 +1,3 @@
-use core::ptr;
 use ferrox_core::hal::SystemDriver;
 use stm32f0xx_hal::pac;
 
@@ -15,16 +14,6 @@ impl Default for Stm32f0SystemDriver {
         Self::new()
     }
 }
-
-pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
-
-/// Retained magic word in `.uninit` SRAM to signal DFU entry across a software reset.
-/// Stored in `.uninit` so startup code does not zero it and the initial stack frame at
-/// `_stack_start` (`0x2000_4000`) does not overwrite it before `check_sram_dfu_entry()`.
-use core::mem::MaybeUninit;
-
-#[link_section = ".uninit"]
-static mut DFU_RETAINED_FLAG: MaybeUninit<u32> = MaybeUninit::uninit();
 
 /// Memory addresses for supported STM32F0 / APM32F0 chips.
 #[cfg(feature = "apm32")]
@@ -60,50 +49,11 @@ impl SystemDriver for Stm32f0SystemDriver {
     }
 
     fn read_uid(&mut self) -> [u8; 12] {
-        let mut uid = [0u8; 12];
-        unsafe {
-            let src = UID_BASE_ADDR as *const u8;
-            for (i, byte) in uid.iter_mut().enumerate() {
-                *byte = core::ptr::read_volatile(src.add(i));
-            }
-        }
-        uid
+        unsafe { ferrox_core::chip::read_uid_from_addr(UID_BASE_ADDR) }
     }
 
     fn init_time(&mut self) {
         crate::time::init();
-    }
-
-    fn delay_cycles(&mut self, n: u32) {
-        cortex_m::asm::delay(n);
-    }
-
-    fn has_retained_dfu_flag(&mut self) -> bool {
-        unsafe {
-            let flag =
-                core::ptr::read_volatile(core::ptr::addr_of!(DFU_RETAINED_FLAG).cast::<u32>());
-            flag == DFU_MAGIC_FLAG
-        }
-    }
-
-    fn set_retained_dfu_flag(&mut self) {
-        unsafe {
-            core::ptr::write_volatile(
-                core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(),
-                DFU_MAGIC_FLAG,
-            );
-        }
-    }
-
-    fn clear_retained_dfu_flag(&mut self) {
-        unsafe {
-            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(), 0);
-        }
-    }
-
-    fn reboot_to_dfu(&mut self) -> ! {
-        self.set_retained_dfu_flag();
-        cortex_m::peripheral::SCB::sys_reset()
     }
 
     fn enter_dfu_bootloader(&mut self) -> ! {
@@ -240,42 +190,12 @@ unsafe fn rcc_deinit() {
 /// Perform a clean software jump to the MCU's built-in factory DFU bootloader.
 pub fn enter_dfu_bootloader() -> ! {
     unsafe {
-        // 1. Reset RCC to default HSI 8MHz state
         rcc_deinit();
-
-        // 2. Clear SysTick and 3. Clear NVIC interrupt enables and pendings
-        let mut cp = cortex_m::peripheral::Peripherals::steal();
-        cp.SYST.disable_counter();
-        cp.SYST.disable_interrupt();
-        cp.SYST.clear_current();
-
-        cp.NVIC.icer[0].write(0xFFFF_FFFF);
-        cp.NVIC.icpr[0].write(0xFFFF_FFFF);
-        // Clear any pending SysTick exception in SCB.ICSR (PENDSTCLR = bit 25)
-        cp.SCB.icsr.write(1 << 25);
-
-        cortex_m::interrupt::disable();
-
-        cortex_m::asm::dsb();
-
-        // 4. Remap System Memory to 0x0000_0000 via SYSCFG
-        let syscfg = &*pac::SYSCFG::ptr();
-        syscfg
-            .cfgr1
-            .modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
-
-        cortex_m::asm::dsb();
-        cortex_m::asm::isb();
-
-        // 5. Read initial MSP and reset handler from the bootloader base address
-        let bootloader_addr = DFU_BOOTLOADER_ADDR;
-        let initial_msp = ptr::read_volatile(bootloader_addr as *const u32);
-        let reset_handler_addr = ptr::read_volatile((bootloader_addr + 4) as *const u32);
-
-        // 6. CRITICAL: Re-enable interrupts! The ST USB DFU ROM bootloader requires IRQs!
-        cortex_m::interrupt::enable();
-
-        // 7. Bootstrap into the bootloader
-        cortex_m::asm::bootstrap(initial_msp as *const u32, reset_handler_addr as *const u32);
+        ferrox_core::chip::jump_to_system_bootloader(DFU_BOOTLOADER_ADDR, 1, || {
+            let syscfg = &*pac::SYSCFG::ptr();
+            syscfg
+                .cfgr1
+                .modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
+        })
     }
 }

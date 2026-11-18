@@ -404,19 +404,30 @@ pub trait SystemDriver {
     fn init_time(&mut self);
 
     /// Spin-delay for a given number of processor cycles / microsecond loops.
-    fn delay_cycles(&mut self, n: u32);
+    fn delay_cycles(&mut self, n: u32) {
+        cortex_m::asm::delay(n);
+    }
 
     /// Check if high SRAM retained memory contains a pending DFU boot request.
-    fn has_retained_dfu_flag(&mut self) -> bool;
+    fn has_retained_dfu_flag(&mut self) -> bool {
+        crate::chip::has_sram_dfu_magic()
+    }
 
     /// Set retained flag in high SRAM to request DFU on next reset.
-    fn set_retained_dfu_flag(&mut self);
+    fn set_retained_dfu_flag(&mut self) {
+        crate::chip::set_sram_dfu_magic();
+    }
 
     /// Set retained flag and perform rapid system reset into DFU bootloader.
-    fn reboot_to_dfu(&mut self) -> !;
+    fn reboot_to_dfu(&mut self) -> ! {
+        self.set_retained_dfu_flag();
+        cortex_m::peripheral::SCB::sys_reset()
+    }
 
     /// Clear retained flag.
-    fn clear_retained_dfu_flag(&mut self);
+    fn clear_retained_dfu_flag(&mut self) {
+        crate::chip::clear_sram_dfu_magic();
+    }
 
     /// Jump directly into ROM DFU bootloader.
     fn enter_dfu_bootloader(&mut self) -> !;

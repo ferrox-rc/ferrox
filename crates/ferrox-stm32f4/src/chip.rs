@@ -1,4 +1,3 @@
-use core::ptr;
 use ferrox_core::hal::SystemDriver;
 use stm32f4::stm32f407 as pac;
 
@@ -15,13 +14,6 @@ impl Default for Stm32f4SystemDriver {
         Self::new()
     }
 }
-
-pub const DFU_MAGIC_FLAG: u32 = 0xDEAD_BEEF;
-
-use core::mem::MaybeUninit;
-
-#[link_section = ".uninit"]
-static mut DFU_RETAINED_FLAG: MaybeUninit<u32> = MaybeUninit::uninit();
 
 #[cfg(feature = "edgetx-bootloader")]
 const EDGETX_FLAVOUR: &str = if cfg!(feature = "board-zorro") {
@@ -133,50 +125,11 @@ impl SystemDriver for Stm32f4SystemDriver {
     }
 
     fn read_uid(&mut self) -> [u8; 12] {
-        let mut uid = [0u8; 12];
-        unsafe {
-            let src = UID_BASE_ADDR as *const u8;
-            for (i, byte) in uid.iter_mut().enumerate() {
-                *byte = core::ptr::read_volatile(src.add(i));
-            }
-        }
-        uid
+        unsafe { ferrox_core::chip::read_uid_from_addr(UID_BASE_ADDR) }
     }
 
     fn init_time(&mut self) {
         crate::time::init();
-    }
-
-    fn delay_cycles(&mut self, n: u32) {
-        cortex_m::asm::delay(n);
-    }
-
-    fn has_retained_dfu_flag(&mut self) -> bool {
-        unsafe {
-            let flag =
-                core::ptr::read_volatile(core::ptr::addr_of!(DFU_RETAINED_FLAG).cast::<u32>());
-            flag == DFU_MAGIC_FLAG
-        }
-    }
-
-    fn set_retained_dfu_flag(&mut self) {
-        unsafe {
-            core::ptr::write_volatile(
-                core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(),
-                DFU_MAGIC_FLAG,
-            );
-        }
-    }
-
-    fn clear_retained_dfu_flag(&mut self) {
-        unsafe {
-            core::ptr::write_volatile(core::ptr::addr_of_mut!(DFU_RETAINED_FLAG).cast::<u32>(), 0);
-        }
-    }
-
-    fn reboot_to_dfu(&mut self) -> ! {
-        self.set_retained_dfu_flag();
-        cortex_m::peripheral::SCB::sys_reset()
     }
 
     fn enter_dfu_bootloader(&mut self) -> ! {
@@ -334,36 +287,16 @@ unsafe fn rcc_deinit() {
 pub fn enter_dfu_bootloader() -> ! {
     unsafe {
         rcc_deinit();
+        ferrox_core::chip::jump_to_system_bootloader(DFU_BOOTLOADER_ADDR, 8, || {
+            let scb = &*cortex_m::peripheral::SCB::PTR;
+            scb.vtor.write(0);
+            cortex_m::asm::dsb();
 
-        let mut cp = cortex_m::peripheral::Peripherals::steal();
-        cp.SYST.disable_counter();
-        cp.SYST.disable_interrupt();
-        cp.SYST.clear_current();
-        cp.SCB.icsr.write(1 << 25); // PENDSTCLR
-
-        for i in 0..8 {
-            cp.NVIC.icer[i].write(0xFFFF_FFFF);
-            cp.NVIC.icpr[i].write(0xFFFF_FFFF);
-        }
-
-        cortex_m::interrupt::disable();
-        cp.SCB.vtor.write(0);
-        cortex_m::asm::dsb();
-
-        // Remap System Memory to 0x0000_0000 via SYSCFG_MEMRMP (MEM_MODE = 0b01)
-        let syscfg = &*pac::SYSCFG::ptr();
-        syscfg
-            .memrm
-            .modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
-
-        cortex_m::asm::dsb();
-        cortex_m::asm::isb();
-
-        let bootloader_addr = DFU_BOOTLOADER_ADDR;
-        let initial_msp = ptr::read_volatile(bootloader_addr as *const u32);
-        let reset_handler_addr = ptr::read_volatile((bootloader_addr + 4) as *const u32);
-
-        cortex_m::interrupt::enable();
-        cortex_m::asm::bootstrap(initial_msp as *const u32, reset_handler_addr as *const u32);
+            // Remap System Memory to 0x0000_0000 via SYSCFG_MEMRMP (MEM_MODE = 0b01)
+            let syscfg = &*pac::SYSCFG::ptr();
+            syscfg
+                .memrm
+                .modify(|r, w| w.bits((r.bits() & !0x03) | 0x01));
+        })
     }
 }

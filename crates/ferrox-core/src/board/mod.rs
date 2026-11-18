@@ -409,6 +409,7 @@ pub trait BoardProfile: Copy + Clone + 'static {
 /// Board-specific background idle hook interface.
 pub trait BoardIdleHook: Default + 'static {
     /// Update board-specific background tasks and return `(ok_held_for_menu, timer_reset_clicked, instant_trim_clicked)`.
+    #[allow(clippy::too_many_arguments)]
     fn update(
         &mut self,
         now: u32,

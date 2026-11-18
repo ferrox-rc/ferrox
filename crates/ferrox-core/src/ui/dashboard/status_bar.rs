@@ -107,7 +107,8 @@ pub fn render(
         lcd.draw_str_4x6(93, 3, vbat_str, false);
     }
 
-    // --- Telemetry RSSI Range Alarms & Stats Tracking ---
+    // --- Telemetry Min-Stats Tracking ---
+    let _ = (buzzer, rssi_alarm_timer);
     if telem.connected {
         if !*telem_seen {
             *telem_seen = true;
@@ -123,26 +124,6 @@ pub fn render(
                 *min_rx_v_mv = telem.rx_voltage_mv;
             }
         }
-
-        if telem.rssi < 20 {
-            if *rssi_alarm_timer >= 3000 {
-                *rssi_alarm_timer = 0;
-                buzzer.warn_rssi_critical();
-            } else {
-                *rssi_alarm_timer += 33;
-            }
-        } else if telem.rssi < 40 {
-            if *rssi_alarm_timer >= 6000 {
-                *rssi_alarm_timer = 0;
-                buzzer.warn_rssi_low();
-            } else {
-                *rssi_alarm_timer += 33;
-            }
-        } else {
-            *rssi_alarm_timer = 0;
-        }
-    } else {
-        *rssi_alarm_timer = 0;
     }
 
     // Header divider line (y = 11)

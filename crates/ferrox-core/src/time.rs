@@ -35,3 +35,25 @@ pub fn advance_millis(ms: u32) {
     let cur = SYSTEM_MILLIS.load(Ordering::Relaxed);
     SYSTEM_MILLIS.store(cur.wrapping_add(ms), Ordering::Relaxed);
 }
+
+/// Initialize Cortex-M SysTick timer for 1 kHz (1.000 ms) ticks at `core_clock_hz`.
+/// Configures SysTick to lowest hardware interrupt priority (`0xC0`) so it never
+/// preempts time-critical RF or DMA ISRs.
+pub fn init_systick(core_clock_hz: u32) {
+    #[cfg(not(test))]
+    unsafe {
+        let mut p = cortex_m::peripheral::Peripherals::steal();
+        p.SCB
+            .set_priority(cortex_m::peripheral::scb::SystemHandler::SysTick, 0xC0);
+
+        p.SYST.set_reload((core_clock_hz / 1000).saturating_sub(1));
+        p.SYST.clear_current();
+        p.SYST
+            .set_clock_source(cortex_m::peripheral::syst::SystClkSource::Core);
+        p.SYST.enable_interrupt();
+        p.SYST.enable_counter();
+        cortex_m::interrupt::enable();
+    }
+    #[cfg(test)]
+    let _ = core_clock_hz;
+}

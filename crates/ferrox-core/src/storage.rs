@@ -78,6 +78,37 @@ pub const fn model_slot_addr(index: usize) -> Option<u16> {
     }
 }
 
+/// Split an arbitrary EEPROM write buffer across `PAGE_SIZE` (64-byte) page boundaries
+/// with overflow validation, invoking `write_page(page_addr, chunk)` for each page chunk.
+#[allow(clippy::result_unit_err)]
+pub fn for_each_eeprom_page(
+    addr: u16,
+    buf: &[u8],
+    mut write_page: impl FnMut(u16, &[u8]) -> Result<(), ()>,
+) -> Result<(), ()> {
+    let end = (addr as usize).checked_add(buf.len()).ok_or(())?;
+    if end > (u16::MAX as usize) + 1 {
+        return Err(());
+    }
+    let mut cur_addr = addr;
+    let mut offset = 0;
+    let total = buf.len();
+
+    while offset < total {
+        let page_offset = (cur_addr as usize) % PAGE_SIZE;
+        let bytes_in_page = PAGE_SIZE - page_offset;
+        let chunk_size = bytes_in_page.min(total - offset).min(PAGE_SIZE);
+
+        write_page(cur_addr, &buf[offset..offset + chunk_size])?;
+
+        offset += chunk_size;
+        if offset < total {
+            cur_addr = cur_addr.checked_add(chunk_size as u16).ok_or(())?;
+        }
+    }
+    Ok(())
+}
+
 /// Calibration parameters for a single analog channel (8 bytes).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

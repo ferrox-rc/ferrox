@@ -80,22 +80,107 @@ impl Default for Stm32f4AudioDriver {
     }
 }
 
+/// Shared hardware initialization for `PA4` (`DAC_OUT1`), `PE12` (`AUDIO_MUTE`), `DMA1`, `TIM5`, `TIM6`, and `DAC1`.
+pub(crate) unsafe fn init_dac1_hw() {
+    let rcc = &*pac::RCC::ptr();
+    let gpioa = &*pac::GPIOA::ptr();
+    let gpioe = &*pac::GPIOE::ptr();
+    let dac = &*pac::DAC::ptr();
+
+    // Enable GPIOA, GPIOE, DMA1 clocks (AHB1) and TIM5, TIM6, DAC clocks (APB1)
+    rcc.ahb1enr
+        .modify(|r, w| w.bits(r.bits() | (1 << 0) | (1 << 4) | (1 << 21)));
+    rcc.apb1enr
+        .modify(|r, w| w.bits(r.bits() | (1 << 3) | (1 << 4) | (1 << 29)));
+    let _ = rcc.ahb1enr.read().bits();
+    let _ = rcc.apb1enr.read().bits();
+
+    // Ensure PE12 (AUDIO_MUTE) is output HIGH (muted)
+    gpioe
+        .moder
+        .modify(|r, w| w.bits((r.bits() & !(0x03 << 24)) | (0x01 << 24)));
+    gpioe.bsrr.write(|w| w.bits(1 << 12));
+
+    // PA4 (AUDIO_OUT): Analog mode (0b11) for DAC_OUT1
+    gpioa
+        .moder
+        .modify(|r, w| w.bits((r.bits() & !(0x03 << 8)) | (0x03 << 8)));
+
+    // Park DAC1 at midpoint
+    dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
+    dac.cr.write(|w| w.bits(1 << 0));
+}
+
+/// Configure `DMA1_Stream5` (Channel 7) in circular 16-bit M2P mode feeding `DAC_DHR12R1`
+/// with trigger selection `tsel` (`0b000` = `TIM6_TRGO`, `0b011` = `TIM5_TRGO`).
+pub(crate) unsafe fn start_dac1_circular_dma(buf_ptr: u32, len: u32, tsel: u32) {
+    let gpioa = &*pac::GPIOA::ptr();
+    let dac = &*pac::DAC::ptr();
+    let dma1 = &*pac::DMA1::ptr();
+
+    gpioa
+        .moder
+        .modify(|r, w| w.bits((r.bits() & !(0x03 << 8)) | (0x03 << 8)));
+
+    // Disable DMA1 Stream 5 with bounded timeout before reconfiguring (RM0090 §10.3.17)
+    dma1.st[5].cr.modify(|r, w| w.bits(r.bits() & !1));
+    let mut timeout = 10_000u32;
+    while (dma1.st[5].cr.read().bits() & 1) != 0 && timeout > 0 {
+        timeout -= 1;
+    }
+    // Clear Stream 5 interrupt flags (HIFCR bits 11:6)
+    dma1.hifcr.write(|w| w.bits(0x3D << 6));
+
+    let dhr_ptr = core::ptr::addr_of!(dac.dhr12r1) as u32;
+    dma1.st[5].par.write(|w| w.bits(dhr_ptr));
+    dma1.st[5].m0ar.write(|w| w.bits(buf_ptr));
+    dma1.st[5].ndtr.write(|w| w.bits(len));
+    // CHSEL=7 (bits 27:25), PL=10 High (17:16), MSIZE=01 16b (14:13),
+    // PSIZE=01 16b (12:11), MINC=1 (10), CIRC=1 (8), DIR=01 M2P (6), EN=1 (0)
+    dma1.st[5].cr.write(|w| {
+        w.bits(
+            (7 << 25)
+                | (2 << 16)
+                | (1 << 13)
+                | (1 << 11)
+                | (1 << 10)
+                | (1 << 8)
+                | (1 << 6)
+                | 1,
+        )
+    });
+
+    // Configure DAC Channel 1: EN1 (0), TEN1 (2), TSEL1 (5:3), DMAEN1 (12)
+    dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
+    dac.cr
+        .write(|w| w.bits((1 << 0) | (1 << 2) | ((tsel & 0x07) << 3) | (1 << 12)));
+}
+
+/// Mute `PE12` (`AUDIO_MUTE` HIGH), stop `DMA1_Stream5`, and park `DAC1` at midpoint (`2048`).
+pub(crate) unsafe fn stop_dac1_dma_and_mute() {
+    let gpioe = &*pac::GPIOE::ptr();
+    let dac = &*pac::DAC::ptr();
+    let dma1 = &*pac::DMA1::ptr();
+
+    // Mute audio amp first (PE12 HIGH)
+    gpioe.bsrr.write(|w| w.bits(1 << 12));
+
+    dma1.st[5].cr.modify(|r, w| w.bits(r.bits() & !1));
+    dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
+    dac.cr.write(|w| w.bits(1 << 0)); // EN1 only (holding midpoint)
+}
+
+/// Unmute `PE12` (`AUDIO_MUTE` LOW).
+#[inline]
+pub(crate) unsafe fn unmute_amp() {
+    let gpioe = &*pac::GPIOE::ptr();
+    gpioe.bsrr.write(|w| w.bits(1 << (12 + 16)));
+}
+
 impl AudioOutput for Stm32f4AudioDriver {
     fn init(&mut self) {
-        let rcc = unsafe { &*pac::RCC::ptr() };
-        let gpioe = unsafe { &*pac::GPIOE::ptr() };
         unsafe {
-            // Enable GPIOA, GPIOE, DMA1 clocks (AHB1) and TIM6, DAC clocks (APB1)
-            rcc.ahb1enr
-                .modify(|r, w| w.bits(r.bits() | (1 << 0) | (1 << 4) | (1 << 21)));
-            rcc.apb1enr
-                .modify(|r, w| w.bits(r.bits() | (1 << 4) | (1 << 29)));
-
-            // Ensure PE12 (AUDIO_MUTE) is output HIGH (muted)
-            gpioe
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 24)) | (0x01 << 24)));
-            gpioe.bsrr.write(|w| w.bits(1 << 12));
+            init_dac1_hw();
         }
     }
 
@@ -108,19 +193,12 @@ impl AudioOutput for Stm32f4AudioDriver {
             self.stop();
         }
 
-        let gpioa = unsafe { &*pac::GPIOA::ptr() };
-        let gpioe = unsafe { &*pac::GPIOE::ptr() };
         let tim5 = unsafe { &*pac::TIM5::ptr() };
         let tim6 = unsafe { &*pac::TIM6::ptr() };
-        let dac = unsafe { &*pac::DAC::ptr() };
-        let dma1 = unsafe { &*pac::DMA1::ptr() };
 
         unsafe {
-            // Stop TIM5 tone timer if running, ensure PA4 is Analog (MODER = 0b11) for DAC_OUT1
+            // Stop TIM5 tone timer if running
             tim5.cr1.modify(|r, w| w.bits(r.bits() & !0x01));
-            gpioa
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 8)) | (0x03 << 8)));
 
             // Fill ring with midpoint silence before starting DMA
             DMA_RING.0.fill(DAC_MIDPOINT);
@@ -129,30 +207,8 @@ impl AudioOutput for Stm32f4AudioDriver {
             self.samples_queued = 0;
             self.sample_rate_hz = sr;
 
-            // Disable DMA1 Stream 5 before reconfiguring
-            dma1.st[5].cr.modify(|r, w| w.bits(r.bits() & !1));
-            while (dma1.st[5].cr.read().bits() & 1) != 0 {}
-            // Clear Stream 5 interrupt flags (HIFCR bits 11:6)
-            dma1.hifcr.write(|w| w.bits(0x3D << 6));
-
             let ring_ptr = core::ptr::addr_of!(DMA_RING.0) as u32;
-            let dhr_ptr = core::ptr::addr_of!(dac.dhr12r1) as u32;
-
-            dma1.st[5].par.write(|w| w.bits(dhr_ptr));
-            dma1.st[5].m0ar.write(|w| w.bits(ring_ptr));
-            dma1.st[5].ndtr.write(|w| w.bits(BUF_LEN as u32));
-            // CHSEL=7 (bits 27:25), PL=10 High (17:16), MSIZE=01 16b (14:13),
-            // PSIZE=01 16b (12:11), MINC=1 (10), CIRC=1 (8), DIR=01 M2P (6)
-            dma1.st[5].cr.write(|w| {
-                w.bits(
-                    (7 << 25) | (2 << 16) | (1 << 13) | (1 << 11) | (1 << 10) | (1 << 8) | (1 << 6),
-                )
-            });
-            dma1.st[5].cr.modify(|r, w| w.bits(r.bits() | 1)); // EN
-
-            // Configure DAC Channel 1: EN1 (0), TEN1 (2), TSEL1=000 TIM6_TRGO, DMAEN1 (12)
-            dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
-            dac.cr.write(|w| w.bits((1 << 0) | (1 << 2) | (1 << 12)));
+            start_dac1_circular_dma(ring_ptr, BUF_LEN as u32, 0b000); // TSEL1 = 000 (TIM6_TRGO)
 
             // Configure TIM6 (APB1 timer clock = 84 MHz): MMS=010 (Update -> TRGO)
             tim6.cr1.write(|w| w.bits(0));
@@ -163,8 +219,7 @@ impl AudioOutput for Stm32f4AudioDriver {
             tim6.egr.write(|w| w.bits(1));
             tim6.cr1.write(|w| w.bits(1)); // CEN
 
-            // Unmute audio amp (PE12 LOW)
-            gpioe.bsrr.write(|w| w.bits(1 << (12 + 16)));
+            unmute_amp();
         }
 
         self.active = true;
@@ -176,27 +231,11 @@ impl AudioOutput for Stm32f4AudioDriver {
         if !self.active {
             return;
         }
-        let gpioa = unsafe { &*pac::GPIOA::ptr() };
-        let gpioe = unsafe { &*pac::GPIOE::ptr() };
         let tim6 = unsafe { &*pac::TIM6::ptr() };
-        let dac = unsafe { &*pac::DAC::ptr() };
-        let dma1 = unsafe { &*pac::DMA1::ptr() };
 
         unsafe {
-            // Mute audio amp first (PE12 HIGH)
-            gpioe.bsrr.write(|w| w.bits(1 << 12));
-
             tim6.cr1.write(|w| w.bits(0));
-            dac.cr.write(|w| w.bits(0));
-            dma1.st[5].cr.modify(|r, w| w.bits(r.bits() & !1));
-
-            // Reset DAC channel 1 to midpoint (2048) and leave PA4 in Analog mode (0b11)
-            // so DacToneBuzzer can cleanly output sine wave tones via DAC1.
-            dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
-            dac.cr.write(|w| w.bits(1 << 0)); // EN1 only (no trigger, holding midpoint)
-            gpioa
-                .moder
-                .modify(|r, w| w.bits((r.bits() & !(0x03 << 8)) | (0x03 << 8)));
+            stop_dac1_dma_and_mute();
         }
 
         self.active = false;

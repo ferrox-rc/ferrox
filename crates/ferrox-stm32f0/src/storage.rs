@@ -6,7 +6,7 @@
 //! - Fallback: I2C1 on PB8 (SCL) and PB9 (SDA) across addresses 0x50..0x57
 
 use ferrox_core::hal::StorageBus;
-use ferrox_core::storage::{EEPROM_STATUS, PAGE_SIZE};
+use ferrox_core::storage::EEPROM_STATUS;
 use stm32f0xx_hal::pac;
 
 pub struct EepromI2cBus;
@@ -351,14 +351,8 @@ impl StorageBus for EepromI2cBus {
         Ok(())
     }
 
-    fn write(&mut self, mut addr: u16, mut data: &[u8]) -> Result<(), ()> {
-        while !data.is_empty() {
-            let page_offset = (addr as usize) % PAGE_SIZE;
-            let space_in_page = PAGE_SIZE - page_offset;
-            let chunk_len = data.len().min(space_in_page).min(PAGE_SIZE);
-
-            let chunk = &data[..chunk_len];
-
+    fn write(&mut self, addr: u16, data: &[u8]) -> Result<(), ()> {
+        ferrox_core::storage::for_each_eeprom_page(addr, data, |cur_addr, chunk| {
             let status = unsafe { EEPROM_STATUS };
             let bus_num = if status.bus == 1 { 1 } else { 2 };
             let dev_addr = if status.detected { status.addr } else { 0x50 };
@@ -371,7 +365,7 @@ impl StorageBus for EepromI2cBus {
             };
 
             let total_bytes = (2 + chunk.len()) as u8;
-            let addr_bytes = addr.to_be_bytes();
+            let addr_bytes = cur_addr.to_be_bytes();
 
             i2c.cr2.write(|w| {
                 w.sadd()
@@ -386,26 +380,7 @@ impl StorageBus for EepromI2cBus {
                     .start()
             });
 
-            for &b in &addr_bytes {
-                let mut timeout = 10_000u32;
-                while !i2c.isr.read().txis().bit() && timeout > 0 {
-                    let isr = i2c.isr.read();
-                    if isr.nackf().bit() || isr.berr().bit() || isr.arlo().bit() || isr.ovr().bit()
-                    {
-                        clear_i2c_flags(i2c);
-                        recover_i2c(bus_num);
-                        return Err(());
-                    }
-                    timeout -= 1;
-                }
-                if timeout == 0 {
-                    recover_i2c(bus_num);
-                    return Err(());
-                }
-                i2c.txdr.write(|w| w.txdata().bits(b));
-            }
-
-            for &b in chunk {
+            for &b in addr_bytes.iter().chain(chunk.iter()) {
                 let mut timeout = 10_000u32;
                 while !i2c.isr.read().txis().bit() && timeout > 0 {
                     let isr = i2c.isr.read();
@@ -483,17 +458,7 @@ impl StorageBus for EepromI2cBus {
                 recover_i2c(bus_num);
                 return Err(());
             }
-
-            let Some(next_addr) = addr.checked_add(chunk_len as u16) else {
-                if data.len() > chunk_len {
-                    return Err(());
-                }
-                break;
-            };
-            addr = next_addr;
-            data = &data[chunk_len..];
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 }

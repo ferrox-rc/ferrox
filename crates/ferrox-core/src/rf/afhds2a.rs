@@ -91,6 +91,58 @@ impl TelemetryData {
             packets_received: 0,
         }
     }
+
+    pub const fn from_crsf(ct: &crate::crsf::protocol::CrsfTelemetry) -> Self {
+        Self {
+            connected: ct.connected,
+            rssi: ct.uplink_link_quality,
+            rx_voltage_mv: ct.rx_battery_mv,
+            alt_m: ct.baro_alt_m,
+            alt_dm: ct.baro_alt_dm,
+            vspeed_cms: ct.vspeed_cms,
+            has_vspeed: ct.has_vspeed,
+            rpm: ct.rpm,
+            temp_c_x10: ct.temp_c_x10,
+            last_rx_voltage_ms: ct.last_vbat_ms,
+            last_alt_ms: ct.last_alt_ms,
+            last_vspd_ms: ct.last_vspd_ms,
+            last_rpm_ms: ct.last_rpm_ms,
+            last_temp_ms: ct.last_temp_ms,
+            ..Self::new()
+        }
+    }
+
+    pub const fn from_mpm(mt: &super::mpm::MpmTelemetry) -> Self {
+        Self {
+            connected: mt.connected,
+            rssi: mt.rssi,
+            rx_voltage_mv: mt.rx_batt_mv,
+            alt_m: mt.alt_m,
+            alt_dm: mt.alt_dm,
+            vspeed_cms: mt.vspeed_cms,
+            has_vspeed: mt.has_vspeed,
+            rpm: mt.rpm as u32,
+            temp_c_x10: mt.temp_c_x10,
+            last_rx_voltage_ms: mt.last_rx_batt_ms,
+            last_alt_ms: mt.last_alt_ms,
+            last_vspd_ms: mt.last_vspd_ms,
+            last_rpm_ms: mt.last_rpm_ms,
+            last_temp_ms: mt.last_temp_ms,
+            packets_sent: mt.packets_sent as u32,
+            packets_received: mt.packets_received as u32,
+        }
+    }
+
+    #[cfg(feature = "rf-dsm")]
+    pub const fn from_dsm(dt: &crate::dsm::DsmTelemetry, now: u32) -> Self {
+        Self {
+            connected: dt.connected,
+            rssi: dt.rssi_pct,
+            rx_voltage_mv: dt.rx_voltage_mv,
+            last_rx_voltage_ms: if dt.connected { now } else { 0 },
+            ..Self::new()
+        }
+    }
 }
 
 /// Read persisted receiver ID from Flash if previously bound.

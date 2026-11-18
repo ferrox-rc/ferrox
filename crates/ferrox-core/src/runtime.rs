@@ -191,75 +191,51 @@ impl FlightPipeline {
         // 6. Publish channels to active RF subsystem
         let proto = ActiveBoard::resolve_protocol(active_model.rf_protocol);
         let is_crsf = proto == crate::board::RfProtocol::Crsf;
+        let rf_active = !sim_mode;
 
-        match proto {
-            crate::board::RfProtocol::Crsf => {
-                #[cfg(feature = "rf-dsm")]
-                dsm::set_enabled(false);
-                rf::mpm::set_enabled(false);
-                let crsf_active = !sim_mode;
-                crsf::set_enabled(
-                    crsf_active,
-                    active_model.crsf_baud,
-                    active_model.crsf_half_duplex != 0,
-                );
-                if crsf_active {
+        crsf::set_enabled(
+            is_crsf && rf_active,
+            active_model.crsf_baud,
+            active_model.crsf_half_duplex != 0,
+        );
+        #[cfg(feature = "rf-dsm")]
+        dsm::set_enabled(proto == crate::board::RfProtocol::Dsm && rf_active);
+        rf::mpm::set_enabled(proto == crate::board::RfProtocol::Cc2500 && rf_active);
+        rf::set_silenced(proto != crate::board::RfProtocol::Afhds2a || sim_mode);
+
+        if rf_active {
+            match proto {
+                crate::board::RfProtocol::Crsf => {
                     let arm_mode_switch = active_model.crsf_arm_mode != 0;
                     crsf::update_channels(now, &rf_chs, arm_mode_switch, is_armed);
                     crsf::poll_telemetry(now);
                 }
-                rf::set_silenced(true);
-            }
-            #[cfg(feature = "rf-dsm")]
-            crate::board::RfProtocol::Dsm => {
-                crsf::set_enabled(false, 0, false);
-                rf::mpm::set_enabled(false);
-                let dsm_active = !sim_mode;
-                dsm::set_enabled(dsm_active);
-                dsm::set_bind_mode(rf::is_binding());
-                rf::set_silenced(true);
-                if dsm_active {
+                #[cfg(feature = "rf-dsm")]
+                crate::board::RfProtocol::Dsm => {
+                    dsm::set_bind_mode(rf::is_binding());
                     let sub_proto =
                         crate::board::DsmSubProtocol::from_u8(active_model.dsm_sub_proto);
                     dsm::update_link(now, &rf_chs, sub_proto);
                     dsm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);
                 }
-            }
-            #[cfg(not(feature = "rf-dsm"))]
-            crate::board::RfProtocol::Dsm => {}
-            crate::board::RfProtocol::Cc2500 => {
-                crsf::set_enabled(false, 0, false);
-                #[cfg(feature = "rf-dsm")]
-                dsm::set_enabled(false);
-                rf::set_silenced(true);
-                let mpm_active = !sim_mode;
-                rf::mpm::set_enabled(mpm_active);
-                if mpm_active {
+                #[cfg(not(feature = "rf-dsm"))]
+                crate::board::RfProtocol::Dsm => {}
+                crate::board::RfProtocol::Cc2500 => {
                     let cc_proto = rf::mpm::Cc2500Protocol::from_u8(active_model.rx_serial_proto);
-                    let rx_num = active_model.mpm_rx_num();
-                    let freq_tune = active_model.mpm_freq_tune();
-                    let range_check = active_model.mpm_range_check();
                     rf::mpm::update_link(
                         now,
                         &rf_chs,
                         cc_proto,
-                        rx_num,
-                        freq_tune,
+                        active_model.mpm_rx_num(),
+                        active_model.mpm_freq_tune(),
                         rf::is_binding(),
-                        range_check,
+                        active_model.mpm_range_check(),
                     );
                     rf::mpm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);
                 }
-            }
-            crate::board::RfProtocol::Afhds2a => {
-                crsf::set_enabled(false, 0, false);
-                #[cfg(feature = "rf-dsm")]
-                dsm::set_enabled(false);
-                rf::mpm::set_enabled(false);
-                rf::set_silenced(sim_mode);
-                if !sim_mode {
+                crate::board::RfProtocol::Afhds2a => {
                     rf::set_channels(&rf_chs);
                 }
             }
@@ -267,70 +243,10 @@ impl FlightPipeline {
 
         // 7. Map telemetry data based on active protocol
         let telem = match proto {
-            crate::board::RfProtocol::Crsf => {
-                let ct = crsf::get_telemetry();
-                rf::afhds2a::TelemetryData {
-                    connected: ct.connected,
-                    rssi: ct.uplink_link_quality,
-                    rx_voltage_mv: ct.rx_battery_mv,
-                    alt_m: ct.baro_alt_m,
-                    alt_dm: ct.baro_alt_dm,
-                    vspeed_cms: ct.vspeed_cms,
-                    has_vspeed: ct.has_vspeed,
-                    rpm: ct.rpm,
-                    temp_c_x10: ct.temp_c_x10,
-                    last_rx_voltage_ms: ct.last_vbat_ms,
-                    last_alt_ms: ct.last_alt_ms,
-                    last_vspd_ms: ct.last_vspd_ms,
-                    last_rpm_ms: ct.last_rpm_ms,
-                    last_temp_ms: ct.last_temp_ms,
-                    packets_sent: 0,
-                    packets_received: 0,
-                }
-            }
+            crate::board::RfProtocol::Crsf => TelemetryData::from_crsf(&crsf::get_telemetry()),
             #[cfg(feature = "rf-dsm")]
-            crate::board::RfProtocol::Dsm => {
-                let dt = dsm::get_telemetry();
-                rf::afhds2a::TelemetryData {
-                    connected: dt.connected,
-                    rssi: dt.rssi_pct,
-                    rx_voltage_mv: dt.rx_voltage_mv,
-                    alt_m: 0,
-                    alt_dm: 0,
-                    vspeed_cms: 0,
-                    has_vspeed: false,
-                    rpm: 0,
-                    temp_c_x10: 0,
-                    last_rx_voltage_ms: if dt.connected { now } else { 0 },
-                    last_alt_ms: 0,
-                    last_vspd_ms: 0,
-                    last_rpm_ms: 0,
-                    last_temp_ms: 0,
-                    packets_sent: 0,
-                    packets_received: 0,
-                }
-            }
-            crate::board::RfProtocol::Cc2500 => {
-                let mt = rf::mpm::get_telemetry();
-                rf::afhds2a::TelemetryData {
-                    connected: mt.connected,
-                    rssi: mt.rssi,
-                    rx_voltage_mv: mt.rx_batt_mv,
-                    alt_m: mt.alt_m,
-                    alt_dm: mt.alt_dm,
-                    vspeed_cms: mt.vspeed_cms,
-                    has_vspeed: mt.has_vspeed,
-                    rpm: mt.rpm as u32,
-                    temp_c_x10: mt.temp_c_x10,
-                    last_rx_voltage_ms: mt.last_rx_batt_ms,
-                    last_alt_ms: mt.last_alt_ms,
-                    last_vspd_ms: mt.last_vspd_ms,
-                    last_rpm_ms: mt.last_rpm_ms,
-                    last_temp_ms: mt.last_temp_ms,
-                    packets_sent: mt.packets_sent as u32,
-                    packets_received: mt.packets_received as u32,
-                }
-            }
+            crate::board::RfProtocol::Dsm => TelemetryData::from_dsm(&dsm::get_telemetry(), now),
+            crate::board::RfProtocol::Cc2500 => TelemetryData::from_mpm(&rf::mpm::get_telemetry()),
             _ => rf::get_telemetry_local(&mut self.telem_reading_idx),
         };
         let is_binding = !is_crsf && rf::is_binding();
@@ -341,14 +257,12 @@ impl FlightPipeline {
         // 9. Variometer Acoustic Evaluation & Background Audio Generation
         if !menu_active || vario_preview {
             let vario_cfg = storage.vario_config();
-            let sw_active = match vario_cfg.switch {
-                0 => false,
-                1 => true,
-                sw if sw <= (ActiveBoard::MAX_MIX_SWITCH + 1) => {
-                    mixer::eval_arm_switch(sw - 1, &state.switches)
-                }
-                _ => false,
-            };
+            let sw_active = mixer::eval_feature_switch(
+                vario_cfg.switch,
+                true,
+                ActiveBoard::MAX_MIX_SWITCH,
+                &state.switches,
+            );
             let thr_ch = rf_chs[2]; // CH3 Throttle in µs (1000..2000)
             let tone = self.vario.update(
                 now,
@@ -414,6 +328,7 @@ pub struct BackgroundIdleManager {
     pub prev_telem_connected: bool,
     pub telem_was_seen: bool,
     pub vbat_alarm_timer_ms: u32,
+    pub rssi_alarm_timer_ms: u32,
     #[cfg(any(feature = "voice-audio", test))]
     pub telemetry_logger: crate::telemetry_log::TelemetryLogger,
     #[cfg(any(feature = "voice-audio", test))]
@@ -421,6 +336,17 @@ pub struct BackgroundIdleManager {
     #[cfg(feature = "voice-audio")]
     pub audio_callouts: crate::audio::CalloutScheduler,
     pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
+}
+
+#[inline]
+fn tick_periodic_alarm(timer_ms: &mut u32, period_ms: u32, dt_ms: u16) -> bool {
+    if *timer_ms >= period_ms {
+        *timer_ms = 0;
+        true
+    } else {
+        *timer_ms = timer_ms.saturating_add(dt_ms as u32);
+        false
+    }
 }
 
 impl BackgroundIdleManager {
@@ -478,6 +404,7 @@ impl BackgroundIdleManager {
             prev_telem_connected: false,
             telem_was_seen: false,
             vbat_alarm_timer_ms: 0,
+            rssi_alarm_timer_ms: 0,
             #[cfg(any(feature = "voice-audio", test))]
             telemetry_logger: crate::telemetry_log::TelemetryLogger::new(),
             #[cfg(any(feature = "voice-audio", test))]
@@ -605,24 +532,35 @@ impl BackgroundIdleManager {
             self.inactivity_beep_timer = 0;
         } else if dt_ms > 0 {
             self.inactivity_timer_ms = self.inactivity_timer_ms.saturating_add(dt_ms as u32);
-            if self.inactivity_timer_ms >= 600_000 {
-                if self.inactivity_beep_timer >= 30_000 {
-                    self.inactivity_beep_timer = 0;
-                    buzzer.warn_inactivity();
-                } else {
-                    self.inactivity_beep_timer += dt_ms as u32;
-                }
+            if self.inactivity_timer_ms >= 600_000
+                && tick_periodic_alarm(&mut self.inactivity_beep_timer, 30_000, dt_ms)
+            {
+                buzzer.warn_inactivity();
             }
         }
 
-        // 4b. Telemetry Lost Edge Detection & Alarm
+        // 4b. Telemetry Lost Edge Detection & RSSI Range Alarms (checked on all screens)
         if flight.telem.connected {
             self.telem_was_seen = true;
-        } else if self.prev_telem_connected && self.telem_was_seen && !flight.is_binding && rf_ok {
-            buzzer.warn_telemetry_lost();
-            #[cfg(feature = "voice-audio")]
-            if storage.radio.audio_enabled != 0 {
-                crate::audio::play_alert(crate::audio::TelemetryCallout::TelemetryLost);
+            if flight.telem.rssi < 20 {
+                if tick_periodic_alarm(&mut self.rssi_alarm_timer_ms, 3000, dt_ms) {
+                    buzzer.warn_rssi_critical();
+                }
+            } else if flight.telem.rssi < 40 {
+                if tick_periodic_alarm(&mut self.rssi_alarm_timer_ms, 6000, dt_ms) {
+                    buzzer.warn_rssi_low();
+                }
+            } else {
+                self.rssi_alarm_timer_ms = 0;
+            }
+        } else {
+            self.rssi_alarm_timer_ms = 0;
+            if self.prev_telem_connected && self.telem_was_seen && !flight.is_binding && rf_ok {
+                buzzer.warn_telemetry_lost();
+                #[cfg(feature = "voice-audio")]
+                if storage.radio.audio_enabled != 0 {
+                    crate::audio::play_alert(crate::audio::TelemetryCallout::TelemetryLost);
+                }
             }
         }
         self.prev_telem_connected = flight.telem.connected;
@@ -630,15 +568,12 @@ impl BackgroundIdleManager {
         // 4c. Transmitter Low Battery Alarm (checked on all screens)
         let vbat_warn_mv = (storage.radio.vbat_warn_deci as u16) * 100;
         if flight.state.battery_mv < vbat_warn_mv {
-            if self.vbat_alarm_timer_ms >= 8000 {
-                self.vbat_alarm_timer_ms = 0;
+            if tick_periodic_alarm(&mut self.vbat_alarm_timer_ms, 8000, dt_ms) {
                 buzzer.warn_battery();
                 #[cfg(feature = "voice-audio")]
                 if storage.radio.audio_enabled != 0 {
                     crate::audio::play_alert(crate::audio::TelemetryCallout::LowBattery);
                 }
-            } else {
-                self.vbat_alarm_timer_ms += dt_ms as u32;
             }
         } else {
             self.vbat_alarm_timer_ms = 7000;
@@ -925,14 +860,12 @@ impl BackgroundIdleManager {
         // 8d. Periodic 512-byte sector CSV telemetry logging to SD card
         #[cfg(any(feature = "sd-logging", test))]
         {
-            let sd_sw_active = match model.sd_log_mode {
-                0 => false,
-                1 => is_armed_or_unassigned,
-                sw if sw <= (ActiveBoard::MAX_MIX_SWITCH + 1) => {
-                    mixer::eval_arm_switch(sw - 1, &flight.state.switches)
-                }
-                _ => false,
-            };
+            let sd_sw_active = mixer::eval_feature_switch(
+                model.sd_log_mode,
+                is_armed_or_unassigned,
+                ActiveBoard::MAX_MIX_SWITCH,
+                &flight.state.switches,
+            );
             #[cfg(any(feature = "soaring", test))]
             let soaring_auto = model.soaring.auto_log_enabled() && is_armed_or_unassigned;
             #[cfg(not(any(feature = "soaring", test)))]
@@ -1341,31 +1274,26 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     // 6. Start deterministic 2.0s Hardware Watchdog (IWDG) via PAC
     watchdog::start();
 
-    // 7. Initialize ADC1 + DMA1 autonomous continuous scanner
-    crate::adc::init(storage.radio.ext_adc != 0);
-    watchdog::feed();
-    {
+    #[inline]
+    fn pump_boot_buzzer(buzzer: &mut Buzzer, buzzer_last_ms: &mut u32, min_dt_ms: u16) {
+        watchdog::feed();
         let now = time::millis();
-        let dt = now.wrapping_sub(buzzer_last_ms) as u16;
-        if dt > 0 {
+        let dt = now.wrapping_sub(*buzzer_last_ms) as u16;
+        if dt >= min_dt_ms {
             buzzer.tick(dt);
-            buzzer_last_ms = now;
+            *buzzer_last_ms = now;
         }
     }
+
+    // 7. Initialize ADC1 + DMA1 autonomous continuous scanner
+    crate::adc::init(storage.radio.ext_adc != 0);
+    pump_boot_buzzer(&mut buzzer, &mut buzzer_last_ms, 1);
 
     // 8. Initialize input calibration and capture resting stick centers
     input::init();
     input::apply_calibration(&storage.radio);
     ActiveBoard::init_board_keys(&storage.radio);
-    watchdog::feed();
-    {
-        let now = time::millis();
-        let dt = now.wrapping_sub(buzzer_last_ms) as u16;
-        if dt > 0 {
-            buzzer.tick(dt);
-            buzzer_last_ms = now;
-        }
-    }
+    pump_boot_buzzer(&mut buzzer, &mut buzzer_last_ms, 1);
 
     // 9. Initialize A7105 RF transceiver & AFHDS 2A stack
     let uid = crate::chip::read_uid();
@@ -1381,15 +1309,7 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     if bind_on_boot {
         rf::set_bind_mode(true);
     }
-    watchdog::feed();
-    {
-        let now = time::millis();
-        let dt = now.wrapping_sub(buzzer_last_ms) as u16;
-        if dt > 0 {
-            buzzer.tick(dt);
-            buzzer_last_ms = now;
-        }
-    }
+    pump_boot_buzzer(&mut buzzer, &mut buzzer_last_ms, 1);
 
     // Initialize USB peripheral (Joystick / Serial / Composite / Off)
     usb::init(storage.radio.usb_mode);
@@ -1431,17 +1351,10 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     // 10. Hold splash screen for ~1200ms (1.2s) total elapsed time since LCD initialization,
     // continuously advancing buzzer playback to maintain musical cadence
     if !was_watchdog_reset && !calib_wizard.is_active() {
-        let _ = buzzer_last_ms;
         buzzer.chime_welcome();
         buzzer_last_ms = time::millis();
         while time::millis().wrapping_sub(splash_start_ms) < 1200 {
-            watchdog::feed();
-            let now = time::millis();
-            let dt = now.wrapping_sub(buzzer_last_ms) as u16;
-            if dt >= 5 {
-                buzzer.tick(dt);
-                buzzer_last_ms = now;
-            }
+            pump_boot_buzzer(&mut buzzer, &mut buzzer_last_ms, 5);
         }
     }
 
@@ -1487,8 +1400,9 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
             }
 
             // Once the transmitter has been running steadily in the flight loop for >5 seconds,
-            // invoke the board-level panic counter reset callback.
+            // clear the retained panic loop counter and invoke any optional board callback.
             if now > 5000 {
+                crate::chip::clear_panic_count();
                 if let Some(cb) = on_stable_runtime {
                     cb();
                 }

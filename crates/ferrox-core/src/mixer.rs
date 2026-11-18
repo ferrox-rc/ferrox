@@ -208,6 +208,22 @@ pub fn eval_arm_switch(arm_switch: u8, switches: &Switches) -> bool {
     }
 }
 
+/// Evaluate a 3-mode feature switch setting (`0 = Off`, `1 = On / Armed`, `2..=max+1 = Switch (sw - 1)`).
+#[inline]
+pub fn eval_feature_switch(
+    sw_mode: u8,
+    on_when_one: bool,
+    max_mix_switch: u8,
+    switches: &Switches,
+) -> bool {
+    match sw_mode {
+        0 => false,
+        1 => on_when_one,
+        sw if sw <= (max_mix_switch + 1) => eval_arm_switch(sw - 1, switches),
+        _ => false,
+    }
+}
+
 /// Determine whether High Rates (true) or Low Rates (false) are active.
 pub fn is_dr_high(dr_switch: u8, switches: &Switches) -> bool {
     match dr_switch {
