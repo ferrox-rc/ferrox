@@ -45,7 +45,7 @@ jobs:
           cargo clippy -p ferrox-i6s --target thumbv6m-none-eabi -- -D warnings
           cargo clippy -p ferrox-i6x --target thumbv6m-none-eabi -- -D warnings
           cargo clippy -p ferrox-f4 --target thumbv7em-none-eabihf -- -D warnings
-          cargo clippy -p ferrox-f4 --no-default-features --features zorro --target thumbv7em-none-eabihf -- -D warnings
+          cargo clippy -p ferrox-f4 --no-default-features --features zorro,full --target thumbv7em-none-eabihf -- -D warnings
 
       - name: Run host unit tests
         run: |
@@ -69,8 +69,8 @@ jobs:
           done
 
           for board in pocket boxer zorro tx12 qx7 tprov2 t12 x9d x9e at9spro gx12; do
-            cargo build --release -p ferrox-f4 --no-default-features --features "${board}" --target thumbv7em-none-eabihf
-            cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --no-default-features --features "${board}" --target thumbv7em-none-eabihf -- -O binary "ci-artifacts/ferrox-${board}.bin"
+            cargo build --release -p ferrox-f4 --no-default-features --features "${board},full" --target thumbv7em-none-eabihf
+            cargo objcopy -p ferrox-f4 --bin ferrox-f4 --release --no-default-features --features "${board},full" --target thumbv7em-none-eabihf -- -O binary "ci-artifacts/ferrox-${board}.bin"
             cp "target/thumbv7em-none-eabihf/release/ferrox-f4" "ci-artifacts/ferrox-${board}.elf"
             ./tools/build-sd-bin.sh "${board}" "ci-artifacts/ferrox-${board}-sd.bin"
           done

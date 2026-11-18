@@ -60,7 +60,7 @@ cargo objcopy \
     --release \
     --target thumbv7em-none-eabihf \
     --no-default-features \
-    --features "${BOARD},edgetx-bootloader" \
+    --features "${BOARD},full,edgetx-bootloader" \
     -- -O binary "${APP_BIN}"
 
 # EdgeTX Bootloader seeks 32,768 bytes into the .bin before validating the
