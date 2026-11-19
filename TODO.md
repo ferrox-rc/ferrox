@@ -4,15 +4,22 @@ This roadmap tracks unresolved issues, safety fixes, and feature requests report
 
 ## 🏁 Release Checkpoints
 
-1. **`v1.0.0-rc8` $\rightarrow$ `v1.0.0` (Production Gate):** All **Priority 0** safety & hardware stability blockers are implemented in `v1.0.0-rc8`. **Dual-Module UART Routing (Internal RF vs. External Module Bay)** is targeted for the next RC (`v1.0.0-rc9`) before tagging `v1.0.0`.
-2. **`v1.0.1` (Patch Release — Bug Fixes & Parity Polish):** Low-risk, zero-EEPROM-migration bug fixes and board-table parity items (`AUX_SOURCES` stick mapping on STM32F4 for Issue #40, timer latch/trigger fix, horizontal roller edit polarity consistency, native CC2500 vs 4-in-1 MPM protocol list split, F5J 10s step & `"ZOOM"` label, and documentation).
-3. **`v1.1.0` (Minor Release — Controls, Mixer & UI Capabilities):** Structural input/mixer/UI enhancements (unrestricted `CH1..CH18` channel assignment without requiring `Freeform` template, Logical Switches `L1..L8` as universal triggers, momentary switch software latch/toggle mode, telemetry dashboard Timers 1–4 picker, and dedicated F5J competition HUD).
+1. **`v1.0.0-rc10` $\rightarrow$ `v1.0.0` (Production Gate):** All **Priority 0** safety, hardware stability, dual-module UART routing, and `CC2500`/`MPM 4-in-1` split blockers are implemented in `v1.0.0-rc10` ahead of tagging `v1.0.0`.
+2. **`v1.0.1` (Patch Release — High-Priority Docs Review, Bug Fixes & Parity Polish):** Full documentation review, low-risk zero-EEPROM-migration bug fixes, and board-table parity items (`AUX_SOURCES` stick mapping on STM32F4 for Issue #40, battery calibration menu, timer latch/trigger fix, horizontal roller edit polarity consistency, and F5J 10s step & `"ZOOM"` label).
+3. **`v1.1.0` (Minor Release — Controls, Mixer & UI Capabilities):** Structural input/mixer/UI enhancements (unrestricted `CH1..CH18` channel assignment without requiring `Freeform` template, Logical Switches `L1..L8` as universal triggers, momentary switch software latch/toggle mode, telemetry dashboard Timers 1–4 picker, separate Vario volume & pot-assigned master volume from #43, and dedicated F5J competition HUD).
 
 ---
 
-## 🚨 Priority 0: Safety & Stability Blockers (Completed in `v1.0.0-rc7` — Gate for `v1.0.0`)
+## 🚨 Priority 0: Safety & Stability Blockers (Completed through `v1.0.0-rc10` — Gate for `v1.0.0`)
 
-These issues directly affect flight safety or hardware operation and were resolved in `v1.0.0-rc7` ahead of declaring production `v1.0.0`.
+These issues directly affect flight safety or hardware operation and were resolved ahead of declaring production `v1.0.0`.
+
+- [X] **`v1.0.0-rc10` Gate Fixes & `CC2500` / `MPM 4-in-1` Split *(Completed in `v1.0.0-rc10`)***
+  - **False `"LINK ACTIVE!"` Shutdown Warning (#44):** Ignored TX-only `ELRS_STATUS` heartbeats and required `uplink_link_quality > 0` in `LINK_STATISTICS` (`crsf/mod.rs`, `crsf/protocol.rs`).
+  - **Vario Switch Assignment & Preview (#43):** Added `[...]` edit brackets on `Switch:` in `VARIO SETUP` and respected `sw_active` during live preview (`ui/menu/screens/model.rs`, `runtime.rs`).
+  - **Channel Assignments Resetting from `None` on Reboot:** Removed legacy `aux_channels[0..6] == [0; 6]` overwrite in `ModelConfig::sanitize()` (`storage.rs`).
+  - **Mode 1 Trim Mapping, STM32F4 Trim Direction & Zorro Trim Beeps:** Mapped trims per active `StickMode` (`trim.rs`, `runtime.rs`), fixed inverted STM32F4 trim bit polarity (`ferrox-stm32f4/src/keys.rs`), and bumped `trim_step` tone to `65 ms` (`buzzer.rs`).
+  - **Dual-Module UART UI Parity & `CC2500` / `MPM 4-in-1` Split:** Added `rf-mpm` Cargo feature and `RfProtocol::Mpm = 4` (`board/mod.rs`, `qx7_family.rs`, `setup.rs`), wired `Module: Internal / External (Bay)` across `CRSF`, `CC2500`, `MPM 4-in-1`, and `DSM`, and derived `DEFAULT_PROTOCOL` from `SUPPORTED_PROTOCOLS[0]`.
 
 - [X] **Dual-Module UART Routing (Internal RF vs. External Module Bay) *(Completed in `v1.0.0-rc9`)***
   - *Issue:* `crates/ferrox-stm32f4/src/uart.rs` previously hardcoded a single `USART1` (`PB6/PB7`) serial port, and `ferrox-core` had a single `RfProtocol` selector. STM32F4 radios have separate internal RF (`USART1`, `PB6/PB7`) and external module bay (`USART6`, `PC6/PC7`) UARTs/power pins.
@@ -57,6 +64,9 @@ These issues directly affect flight safety or hardware operation and were resolv
 ---
 
 ## 🔧 Target `v1.0.1` Patch Candidates: Bug Fixes, Parity & Polish
+
+- [ ] **Full Documentation Review *(High Priority — Post-`v1.0.0`)***
+  - *Scope:* Comprehensive audit and update of `README.md`, `docs/USER_GUIDE.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and Web Flasher guides to reflect `v1.0.0` features (dual-module UART routing, `CC2500` vs. `MPM 4-in-1` split, custom build `-sd.bin` vs. DFU flashing, restoring EdgeTX bootloader, Mode 1–4 trims, Vario setup, and F5J soaring).
 
 - [ ] **STM32F4 `AUX_SOURCES` Stick Mapping Parity (GitHub Issue #40 — Part 1)**
   - *Reported by:* WimH ([GitHub Issue #40](https://github.com/ferrox-rc/ferrox/issues/40#issuecomment-6970857477))
