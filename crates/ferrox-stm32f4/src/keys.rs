@@ -94,33 +94,33 @@ impl<H: Qx7HalDescriptor> KeyDriver for Qx7KeyDriver<H> {
     fn scan_keys(&mut self) -> u16 {
         let mut keys = 0u16;
 
-        // Trims (active LOW):
-        // T4: Dec (bit 0), Inc (bit 1)
-        if H::TRIM_T4.0.is_low() {
+        // Trims (active LOW): even bits = Inc (+1), odd bits = Dec (-1)
+        // T4 (RH): Inc (bit 0), Dec (bit 1)
+        if H::TRIM_T4.1.is_low() {
             keys |= 1 << 0;
         }
-        if H::TRIM_T4.1.is_low() {
+        if H::TRIM_T4.0.is_low() {
             keys |= 1 << 1;
         }
-        // T3: Dec (bit 2), Inc (bit 3)
-        if H::TRIM_T3.0.is_low() {
+        // T3 (RV): Inc (bit 2), Dec (bit 3)
+        if H::TRIM_T3.1.is_low() {
             keys |= 1 << 2;
         }
-        if H::TRIM_T3.1.is_low() {
+        if H::TRIM_T3.0.is_low() {
             keys |= 1 << 3;
         }
-        // T2: Dec (bit 4), Inc (bit 5)
-        if H::TRIM_T2.0.is_low() {
+        // T2 (LV): Inc (bit 4), Dec (bit 5)
+        if H::TRIM_T2.1.is_low() {
             keys |= 1 << 4;
         }
-        if H::TRIM_T2.1.is_low() {
+        if H::TRIM_T2.0.is_low() {
             keys |= 1 << 5;
         }
-        // T1: Dec (bit 6), Inc (bit 7)
-        if H::TRIM_T1.0.is_low() {
+        // T1 (LH): Inc (bit 6), Dec (bit 7)
+        if H::TRIM_T1.1.is_low() {
             keys |= 1 << 6;
         }
-        if H::TRIM_T1.1.is_low() {
+        if H::TRIM_T1.0.is_low() {
             keys |= 1 << 7;
         }
 

@@ -617,7 +617,22 @@ pub fn update_vario_setup(
             0 => {
                 let sw_str = switch_mode_label(storage.active_model.vario_switch, "ON");
                 let is_sel = idx == ctrl.selected_item;
-                widgets::draw_list_row_right(lcd, slot, is_sel, "Switch:", Some(sw_str));
+                if ctrl.editing && is_sel {
+                    let mut buf = [0u8; 16];
+                    buf[0] = b'[';
+                    let len = sw_str.len().min(14);
+                    buf[1..1 + len].copy_from_slice(&sw_str.as_bytes()[..len]);
+                    buf[1 + len] = b']';
+                    widgets::draw_list_row_right(
+                        lcd,
+                        slot,
+                        is_sel,
+                        "Switch:",
+                        Some(ascii_as_str(&buf[..2 + len])),
+                    );
+                } else {
+                    widgets::draw_list_row_right(lcd, slot, is_sel, "Switch:", Some(sw_str));
+                }
             }
             1 => {
                 let climb_val = storage.active_model.vario_climb_deadband;

@@ -402,10 +402,16 @@ macro_rules! impl_qx7_board_profile {
                 RfProtocol::Crsf,
                 #[cfg(feature = "rf-cc2500")]
                 RfProtocol::Cc2500,
+                #[cfg(feature = "rf-mpm")]
+                RfProtocol::Mpm,
                 #[cfg(feature = "rf-dsm")]
                 RfProtocol::Dsm,
             ];
-            const DEFAULT_PROTOCOL: RfProtocol = RfProtocol::Crsf;
+            const DEFAULT_PROTOCOL: RfProtocol = if !Self::SUPPORTED_PROTOCOLS.is_empty() {
+                Self::SUPPORTED_PROTOCOLS[0]
+            } else {
+                RfProtocol::Crsf
+            };
             const HAS_INTERNAL_AFHDS2A: bool = false;
             const HAS_INTERNAL_CRSF: bool = true;
             const HAS_EXTERNAL_MODULE_BAY: bool = true;

@@ -19,6 +19,8 @@ pub enum RfProtocol {
     Cc2500 = 2,
     /// Spektrum DSM2 / DSMX (MULTI-Module 100k 8E2 serial or CYRF6936).
     Dsm = 3,
+    /// 4-in-1 Multi-Protocol Module (100k 8E2 MPM serial, internal or external bay).
+    Mpm = 4,
 }
 
 impl RfProtocol {
@@ -29,6 +31,7 @@ impl RfProtocol {
             1 => Self::Crsf,
             2 => Self::Cc2500,
             3 => Self::Dsm,
+            4 => Self::Mpm,
             _ => Self::Afhds2a,
         }
     }
@@ -40,6 +43,7 @@ impl RfProtocol {
             Self::Crsf => "CRSF",
             Self::Cc2500 => "CC2500",
             Self::Dsm => "SPEKTRUM DSM",
+            Self::Mpm => "MPM 4-in-1",
         }
     }
 
@@ -50,6 +54,7 @@ impl RfProtocol {
             Self::Crsf => "[CRSF]",
             Self::Cc2500 => "[CC2500]",
             Self::Dsm => "[SPEKTRUM DSM]",
+            Self::Mpm => "[MPM 4-in-1]",
         }
     }
 }

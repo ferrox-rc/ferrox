@@ -106,6 +106,7 @@ pub fn render(
         let disc_str = match proto {
             crate::board::RfProtocol::Crsf => "CRSF: DISCONNECTED",
             crate::board::RfProtocol::Cc2500 => "CC2500: NO TELEM",
+            crate::board::RfProtocol::Mpm => "MPM: NO TELEM",
             crate::board::RfProtocol::Dsm => "DSM: NO TELEM",
             crate::board::RfProtocol::Afhds2a => "AFHDS2A: DISCONNECTED",
         };

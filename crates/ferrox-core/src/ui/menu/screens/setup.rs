@@ -674,18 +674,19 @@ pub fn update_rx_setup(
     }
 
     let has_ext_bay = ActiveBoard::HAS_EXTERNAL_MODULE_BAY;
+    let ext_off = usize::from(has_ext_bay);
     let item_count = match current_proto {
         RfProtocol::Afhds2a => 6,
-        RfProtocol::Crsf => if has_ext_bay { 6 } else { 5 },
-        RfProtocol::Cc2500 => if has_ext_bay { 7 } else { 6 },
+        RfProtocol::Crsf => 5 + ext_off,
+        RfProtocol::Cc2500 | RfProtocol::Mpm => 6 + ext_off,
         RfProtocol::Dsm => {
             #[cfg(feature = "dsm-fwd-prog")]
             {
-                if has_ext_bay { 6 } else { 5 }
+                5 + ext_off
             }
             #[cfg(not(feature = "dsm-fwd-prog"))]
             {
-                if has_ext_bay { 5 } else { 4 }
+                4 + ext_off
             }
         }
     };
@@ -829,19 +830,29 @@ pub fn update_rx_setup(
                         }
                     }
                 }
-                (RfProtocol::Dsm, 1) => {
+                (RfProtocol::Dsm | RfProtocol::Cc2500 | RfProtocol::Mpm, 1) if has_ext_bay => {
+                    buzzer.click();
+                    let next_target = if storage.active_model.rf_module_target() == 0 {
+                        1
+                    } else {
+                        0
+                    };
+                    storage.active_model.set_rf_module_target(next_target);
+                    storage::save_active_model(storage);
+                }
+                (RfProtocol::Dsm, idx) if idx == 1 + ext_off => {
                     buzzer.click();
                     let cur = DsmSubProtocol::from_u8(storage.active_model.dsm_sub_proto);
                     storage.active_model.dsm_sub_proto = cur.next() as u8;
                     storage::save_active_model(storage);
                 }
-                (RfProtocol::Dsm, 2) => {
+                (RfProtocol::Dsm, idx) if idx == 2 + ext_off => {
                     buzzer.click();
                     ctrl.request_bind = true;
                     ctrl.state = MenuState::Closed;
                     return;
                 }
-                (RfProtocol::Dsm, 3) => {
+                (RfProtocol::Dsm, idx) if idx == 3 + ext_off => {
                     buzzer.click();
                     storage.active_model.rf_power = if storage.active_model.rf_power == 0 {
                         1
@@ -850,7 +861,7 @@ pub fn update_rx_setup(
                     };
                     storage::save_active_model(storage);
                 }
-                (RfProtocol::Dsm, 4) => {
+                (RfProtocol::Dsm, idx) if idx == 4 + ext_off => {
                     #[cfg(feature = "dsm-fwd-prog")]
                     {
                         ctrl.state = MenuState::DsmSetup;
@@ -867,17 +878,19 @@ pub fn update_rx_setup(
                         buzzer.click();
                     }
                 }
-                (RfProtocol::Cc2500, 1 | 3 | 4) => {
+                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx)
+                    if idx == 1 + ext_off || idx == 3 + ext_off || idx == 4 + ext_off =>
+                {
                     ctrl.editing = true;
                     buzzer.click();
                 }
-                (RfProtocol::Cc2500, 2) => {
+                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 2 + ext_off => {
                     buzzer.click();
                     ctrl.request_bind = true;
                     ctrl.state = MenuState::Closed;
                     return;
                 }
-                (RfProtocol::Cc2500, 5) => {
+                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 5 + ext_off => {
                     buzzer.click();
                     let next_rc = !storage.active_model.mpm_range_check();
                     storage.active_model.set_mpm_range_check(next_rc);
@@ -889,6 +902,7 @@ pub fn update_rx_setup(
         }
     } else {
         // Editing Phase
+        let is_mpm_family = matches!(current_proto, RfProtocol::Cc2500 | RfProtocol::Mpm);
         match ctrl.selected_item {
             0 => {
                 if keys.up {
@@ -901,7 +915,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            idx if current_proto == RfProtocol::Crsf && idx == (if has_ext_bay { 2 } else { 1 }) => {
+            idx if current_proto == RfProtocol::Crsf && idx == 1 + ext_off => {
                 if keys.up {
                     storage.active_model.crsf_baud = (storage.active_model.crsf_baud + 1) % 5;
                     buzzer.play_tone(2200, 30);
@@ -914,7 +928,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            1 if current_proto == RfProtocol::Cc2500 => {
+            idx if is_mpm_family && idx == 1 + ext_off => {
                 let cur = crate::rf::mpm::Cc2500Protocol::from_u8(
                     storage.active_model.rx_serial_proto,
                 );
@@ -926,7 +940,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            3 if current_proto == RfProtocol::Cc2500 => {
+            idx if is_mpm_family && idx == 3 + ext_off => {
                 let cur = storage.active_model.mpm_rx_num();
                 if keys.up {
                     storage.active_model.set_mpm_rx_num((cur + 1) & 0x0F);
@@ -936,7 +950,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            4 if current_proto == RfProtocol::Cc2500 => {
+            idx if is_mpm_family && idx == 4 + ext_off => {
                 let cur = storage.active_model.mpm_freq_tune();
                 if keys.up {
                     storage.active_model.set_mpm_freq_tune(cur.saturating_add(1));
@@ -1015,27 +1029,45 @@ pub fn update_rx_setup(
             };
             widgets::draw_footer(lcd, footer);
         }
-        RfProtocol::Cc2500 => {
+        RfProtocol::Cc2500 | RfProtocol::Mpm => {
             for slot in 0..4 {
                 let idx = ctrl.scroll_offset + slot;
                 if idx >= item_count {
                     break;
                 }
-                match idx {
-                    0 => {
-                        let proto_val = if ctrl.editing && idx == ctrl.selected_item {
-                            "[CC2500]"
-                        } else {
-                            "CC2500"
-                        };
-                        widgets::draw_list_row_right(
-                            lcd,
-                            slot,
-                            idx == ctrl.selected_item,
-                            "Proto:",
-                            Some(proto_val),
-                        );
-                    }
+                if idx == 0 {
+                    let proto_val = match (current_proto, ctrl.editing && idx == ctrl.selected_item)
+                    {
+                        (RfProtocol::Mpm, true) => "[MPM 4-in-1]",
+                        (RfProtocol::Mpm, false) => "MPM 4-in-1",
+                        (_, true) => "[CC2500]",
+                        (_, false) => "CC2500",
+                    };
+                    widgets::draw_list_row_right(
+                        lcd,
+                        slot,
+                        idx == ctrl.selected_item,
+                        "Proto:",
+                        Some(proto_val),
+                    );
+                    continue;
+                }
+                if has_ext_bay && idx == 1 {
+                    let target_str = if storage.active_model.rf_module_target() == 0 {
+                        "Internal"
+                    } else {
+                        "External (Bay)"
+                    };
+                    widgets::draw_list_row_right(
+                        lcd,
+                        slot,
+                        idx == ctrl.selected_item,
+                        "Module:",
+                        Some(target_str),
+                    );
+                    continue;
+                }
+                match idx - ext_off {
                     1 => {
                         let proto_mode = crate::rf::mpm::Cc2500Protocol::from_u8(
                             storage.active_model.rx_serial_proto,
@@ -1146,9 +1178,11 @@ pub fn update_rx_setup(
             }
             let footer = if ctrl.editing {
                 "[OK] Save   [UP/DN] Change"
-            } else if ctrl.selected_item == 2 {
+            } else if has_ext_bay && ctrl.selected_item == 1 {
+                "[OK] Toggle Module [ESC] Exit"
+            } else if ctrl.selected_item == 2 + ext_off {
                 "[OK] Start Bind   [ESC] Exit"
-            } else if ctrl.selected_item == 5 {
+            } else if ctrl.selected_item == 5 + ext_off {
                 "[OK] Toggle       [ESC] Exit"
             } else {
                 "[OK] Edit         [ESC] Exit"
@@ -1161,21 +1195,37 @@ pub fn update_rx_setup(
                 if idx >= item_count {
                     break;
                 }
-                match idx {
-                    0 => {
-                        let proto_val = if ctrl.editing && idx == ctrl.selected_item {
-                            "[SPEKTRUM DSM]"
-                        } else {
-                            "SPEKTRUM DSM"
-                        };
-                        widgets::draw_list_row_right(
-                            lcd,
-                            slot,
-                            idx == ctrl.selected_item,
-                            "Proto:",
-                            Some(proto_val),
-                        );
-                    }
+                if idx == 0 {
+                    let proto_val = if ctrl.editing && idx == ctrl.selected_item {
+                        "[SPEKTRUM DSM]"
+                    } else {
+                        "SPEKTRUM DSM"
+                    };
+                    widgets::draw_list_row_right(
+                        lcd,
+                        slot,
+                        idx == ctrl.selected_item,
+                        "Proto:",
+                        Some(proto_val),
+                    );
+                    continue;
+                }
+                if has_ext_bay && idx == 1 {
+                    let target_str = if storage.active_model.rf_module_target() == 0 {
+                        "Internal"
+                    } else {
+                        "External (Bay)"
+                    };
+                    widgets::draw_list_row_right(
+                        lcd,
+                        slot,
+                        idx == ctrl.selected_item,
+                        "Module:",
+                        Some(target_str),
+                    );
+                    continue;
+                }
+                match idx - ext_off {
                     1 => {
                         let sub = DsmSubProtocol::from_u8(storage.active_model.dsm_sub_proto);
                         widgets::draw_list_row_right(
@@ -1223,11 +1273,13 @@ pub fn update_rx_setup(
             }
             let footer = if ctrl.editing {
                 "[OK] Save   [UP/DN] Change"
-            } else if ctrl.selected_item == 1 || ctrl.selected_item == 3 {
+            } else if has_ext_bay && ctrl.selected_item == 1 {
+                "[OK] Toggle Module [ESC] Exit"
+            } else if ctrl.selected_item == 1 + ext_off || ctrl.selected_item == 3 + ext_off {
                 "[OK] Cycle Mode   [ESC] Exit"
-            } else if ctrl.selected_item == 2 {
+            } else if ctrl.selected_item == 2 + ext_off {
                 "[OK] Start Bind   [ESC] Exit"
-            } else if ctrl.selected_item == 4 {
+            } else if ctrl.selected_item == 4 + ext_off {
                 "[OK] Open Config  [ESC] Exit"
             } else {
                 "[OK] Edit   [ESC] Exit"

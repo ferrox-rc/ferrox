@@ -1413,9 +1413,6 @@ impl RadioStorage {
         if m.failsafe_thr < 900 || m.failsafe_thr > 2100 {
             m.failsafe_thr = 1000;
         }
-        if m.aux_channels[0..6] == [0; 6] {
-            m.aux_channels = [7, 8, 5, 6, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0];
-        }
         for src in m.aux_channels.iter_mut() {
             if *src > 57 {
                 *src = 0;

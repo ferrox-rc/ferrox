@@ -202,7 +202,12 @@ impl FlightPipeline {
         );
         #[cfg(feature = "rf-dsm")]
         dsm::set_enabled(proto == crate::board::RfProtocol::Dsm && rf_active);
-        rf::mpm::set_enabled(proto == crate::board::RfProtocol::Cc2500 && rf_active);
+        rf::mpm::set_enabled(
+            matches!(
+                proto,
+                crate::board::RfProtocol::Cc2500 | crate::board::RfProtocol::Mpm
+            ) && rf_active,
+        );
         rf::set_silenced(proto != crate::board::RfProtocol::Afhds2a || sim_mode);
 
         if rf_active {
@@ -223,7 +228,7 @@ impl FlightPipeline {
                 }
                 #[cfg(not(feature = "rf-dsm"))]
                 crate::board::RfProtocol::Dsm => {}
-                crate::board::RfProtocol::Cc2500 => {
+                crate::board::RfProtocol::Cc2500 | crate::board::RfProtocol::Mpm => {
                     let cc_proto = rf::mpm::Cc2500Protocol::from_u8(active_model.rx_serial_proto);
                     rf::mpm::update_link(
                         now,
@@ -248,7 +253,9 @@ impl FlightPipeline {
             crate::board::RfProtocol::Crsf => TelemetryData::from_crsf(&crsf::get_telemetry()),
             #[cfg(feature = "rf-dsm")]
             crate::board::RfProtocol::Dsm => TelemetryData::from_dsm(&dsm::get_telemetry(), now),
-            crate::board::RfProtocol::Cc2500 => TelemetryData::from_mpm(&rf::mpm::get_telemetry()),
+            crate::board::RfProtocol::Cc2500 | crate::board::RfProtocol::Mpm => {
+                TelemetryData::from_mpm(&rf::mpm::get_telemetry())
+            }
             _ => rf::get_telemetry_local(&mut self.telem_reading_idx),
         };
         let is_binding = !is_crsf && rf::is_binding();
@@ -273,7 +280,7 @@ impl FlightPipeline {
                 telem.vspeed_cms,
                 telem.has_vspeed,
                 telem.connected,
-                sw_active || vario_preview,
+                sw_active,
                 thr_ch,
                 &vario_cfg,
             );
@@ -1412,7 +1419,12 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
             buzzer.tick(dt_ms);
             trainer::tick_ms(dt_ms);
             if !menu_active {
-                trims.update(keys, dt_ms, &mut buzzer);
+                trims.update(
+                    keys,
+                    dt_ms,
+                    StickMode::from_u8(storage.radio.stick_mode),
+                    &mut buzzer,
+                );
             }
 
             // Once the transmitter has been running steadily in the flight loop for >5 seconds,

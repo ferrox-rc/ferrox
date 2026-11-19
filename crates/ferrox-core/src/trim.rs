@@ -68,7 +68,13 @@ impl TrimController {
 
     /// Update trims based on raw 16-bit key matrix scan.
     /// Handles single clicks, auto-repeat, DFU lockout, and buzzer tones.
-    pub fn update(&mut self, keys: u16, dt_ms: u16, buzzer: &mut Buzzer) {
+    pub fn update(
+        &mut self,
+        keys: u16,
+        dt_ms: u16,
+        stick_mode: crate::safety::StickMode,
+        buzzer: &mut Buzzer,
+    ) {
         // Decrease active display timer
         if self.active_timer_ms > 0 {
             self.active_timer_ms = self.active_timer_ms.saturating_sub(dt_ms);
@@ -122,21 +128,33 @@ impl TrimController {
         }
 
         if let Some(key_bit) = trigger_key {
-            self.process_trim_key(key_bit, buzzer);
+            self.process_trim_key(key_bit, stick_mode, buzzer);
         }
     }
 
     /// Process a single trim click for a given key index (0..7).
-    fn process_trim_key(&mut self, key: u8, buzzer: &mut Buzzer) {
-        let (axis, delta) = match key {
-            0 => (ActiveTrim::Roll, 1),
-            1 => (ActiveTrim::Roll, -1),
-            2 => (ActiveTrim::Pitch, 1),
-            3 => (ActiveTrim::Pitch, -1),
-            4 => (ActiveTrim::Throttle, 1),
-            5 => (ActiveTrim::Throttle, -1),
-            6 => (ActiveTrim::Yaw, 1),
-            7 => (ActiveTrim::Yaw, -1),
+    /// Physical trim bit pairs: 0/1 = RH (+/-), 2/3 = RV (+/-), 4/5 = LV (+/-), 6/7 = LH (+/-).
+    fn process_trim_key(
+        &mut self,
+        key: u8,
+        stick_mode: crate::safety::StickMode,
+        buzzer: &mut Buzzer,
+    ) {
+        use crate::safety::StickMode;
+        let delta: i8 = if (key & 1) == 0 { 1 } else { -1 };
+        let axis = match (key >> 1, stick_mode) {
+            // Right Horizontal (bits 0..1)
+            (0, StickMode::Mode1 | StickMode::Mode2) => ActiveTrim::Roll,
+            (0, StickMode::Mode3 | StickMode::Mode4) => ActiveTrim::Yaw,
+            // Right Vertical (bits 2..3)
+            (1, StickMode::Mode1 | StickMode::Mode3) => ActiveTrim::Throttle,
+            (1, StickMode::Mode2 | StickMode::Mode4) => ActiveTrim::Pitch,
+            // Left Vertical (bits 4..5)
+            (2, StickMode::Mode1 | StickMode::Mode3) => ActiveTrim::Pitch,
+            (2, StickMode::Mode2 | StickMode::Mode4) => ActiveTrim::Throttle,
+            // Left Horizontal (bits 6..7)
+            (3, StickMode::Mode1 | StickMode::Mode2) => ActiveTrim::Yaw,
+            (3, StickMode::Mode3 | StickMode::Mode4) => ActiveTrim::Roll,
             _ => return,
         };
         self.step_trim(axis, delta, buzzer);

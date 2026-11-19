@@ -380,8 +380,10 @@ pub fn parse_telemetry_frame(frame: &[u8], telem: &mut CrsfTelemetry, now_ms: u3
                     _ => 0,
                 };
                 telem.last_link_ms = now_ms;
-                telem.connected = true;
-                telem.last_telemetry_ms = now_ms;
+                telem.connected = telem.uplink_link_quality > 0;
+                if telem.connected {
+                    telem.last_telemetry_ms = now_ms;
+                }
                 return true;
             }
         }

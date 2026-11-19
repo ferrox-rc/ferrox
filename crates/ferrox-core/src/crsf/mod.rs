@@ -516,8 +516,7 @@ pub fn poll_telemetry(now_ms: u32) {
                             let frame_type = frame[2];
                             match frame_type {
                                 protocol::CRSF_FRAMETYPE_ELRS_STATUS => {
-                                    TELEMETRY.connected = true;
-                                    TELEMETRY.last_telemetry_ms = now_ms;
+                                    // TX-module status heartbeat; does not indicate an active RX link.
                                 }
                                 protocol::CRSF_FRAMETYPE_DEVICE_INFO => {
                                     handle_device_info_frame(&frame[3..RX_LEN - 1], now_ms);
