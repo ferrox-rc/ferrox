@@ -5,6 +5,20 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc11] - 2026-11-19
+
+### Added
+- **STM32F4 Full External JR/Nano Bay Bus Support (#45) (`crates/ferrox-stm32f4/src/uart.rs`, `descriptor.rs`, `lib.rs`)**: Renamed `PocketSerialPort` to `Stm32f4SerialPort` and implemented all 5-pin JR/Nano bay configurations:
+  - **External CRSF Half-Duplex (Pins 3, 4, 5 `S.Port`):** `USART2` (`PD5` TX / `PD6` RX, APB1 42 MHz) with hardware `PD4` (`TELEMETRY_DIR_GPIO`) TX/RX direction toggling (`TELEMETRY_DIR_TX_HIGH` per board) and zero DMA conflict with `DAC1` audio.
+  - **External CRSF Full-Duplex (Pins 1, 2, 3, 4):** `USART6` (`PC6` TX / `PC7` RX) with DMA2 Stream 1 RX.
+  - **External 4-in-1 MPM / CC2500 / DSM (Pin 1 TX + Pin 5 RX):** Split `USART6` TX (`PC6`, 100k 8E2) + `USART2` RX (`PD6`, `PD4` held in RX mode).
+- **MULTI-Module Naming & Separate `CC2500` vs. `MPM 4-in-1` Sub-Protocol Lists (#47) (`rf/mpm.rs`, `setup.rs`)**: Added `FrSkyX2` / `FrSkyX2 LBT` (D16 V2, MULTI ID 64), adopted standard MULTI-Module names (`FrSkyX`, `FrSkyX LBT`, `FrSkyX2`, `FrSkyX2 LBT`, `FrSkyD`, `HoTT`, `SFHSS`, `AFHDS2A`, `AFHDS`, `DSMX`, `Corona`, `Hitec`), and filtered `CC2500` to native CC2500 protocols while `MPM 4-in-1` exposes the full 4-in-1 set.
+
+### Fixed
+- **MPM 100k 8E2 Baud Index Mismatch (`rf/mpm.rs`)**: Pointed `mpm::BAUD_IDX_MULTI_100K_8E2` at `crate::uart::BAUD_IDX_MULTI_100K_8E2` (`5` = 100,000 baud 8E2) instead of stale duplicate `4` (1.875 Mbaud 8N1).
+- **`MPM 4-in-1` Resetting to `CRSF` on Reboot (#47) (`board/mod.rs`, `storage.rs`)**: Added `RfProtocol::MAX_VALUE` and replaced the hardcoded `m.rf_protocol > 3` bound in `ModelConfig::sanitize()`.
+- **In-Menu Binding UX for `CC2500` / `MPM` (#47) (`setup.rs`)**: Clicking `[Bind Receiver]` now toggles binding in-place (`[Binding... (OK)]`) instead of closing Protocol Setup, and automatically stops bind mode when exiting the menu.
+
 ## [1.0.0-rc10] - 2026-11-18
 
 ### Added

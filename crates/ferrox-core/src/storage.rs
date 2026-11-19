@@ -1375,7 +1375,7 @@ impl RadioStorage {
         if m.model_type > max_model_type {
             m.model_type = 0;
         }
-        if m.rf_protocol > 3 {
+        if m.rf_protocol > crate::board::RfProtocol::MAX_VALUE {
             m.rf_protocol = crate::board::ActiveBoard::DEFAULT_PROTOCOL as u8;
         }
         if m.dsm_sub_proto > 3 {

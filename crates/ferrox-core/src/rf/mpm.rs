@@ -9,19 +9,20 @@
 use crate::mixer::NUM_CHANNELS;
 
 /// UART baud index for 100,000 baud 8E2 (Even Parity, 2 Stop Bits) MULTI-Module stream.
-pub const BAUD_IDX_MULTI_100K_8E2: u8 = 4;
+pub const BAUD_IDX_MULTI_100K_8E2: u8 = crate::uart::BAUD_IDX_MULTI_100K_8E2;
 
 /// MULTI-Module Protocol IDs:
 pub const MPM_PROTO_FLYSKY: u8 = 1; // FlySky AFHDS (V1)
 pub const MPM_PROTO_FRSKY_D: u8 = 3; // FrSky D8
 pub const MPM_PROTO_DSM: u8 = 6; // Spektrum DSM2 / DSMX
-pub const MPM_PROTO_FRSKY_X: u8 = 15; // FrSky D16 / X (FCC & LBT)
+pub const MPM_PROTO_FRSKY_X: u8 = 15; // FrSky D16 V1 / X (FCC & LBT)
 pub const MPM_PROTO_SFHSS: u8 = 21; // Futaba SFHSS
 pub const MPM_PROTO_FRSKY_V: u8 = 25; // FrSky V8
 pub const MPM_PROTO_AFHDS2A: u8 = 28; // FlySky AFHDS 2A
 pub const MPM_PROTO_CORONA: u8 = 36; // Corona
 pub const MPM_PROTO_HITEC: u8 = 39; // Hitec Optima/Minima
 pub const MPM_PROTO_HOTT: u8 = 57; // Graupner HoTT
+pub const MPM_PROTO_FRSKY_X2: u8 = 64; // FrSky D16 V2 / X2 (FCC & LBT)
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -36,6 +37,8 @@ pub enum Cc2500Protocol {
     FlySky2a = 7,
     FlySkyStd = 8,
     Dsmx = 9,
+    FrSkyX2 = 10,
+    FrSkyX2Lbt = 11,
 }
 
 impl Cc2500Protocol {
@@ -51,29 +54,58 @@ impl Cc2500Protocol {
             7 => Self::FlySky2a,
             8 => Self::FlySkyStd,
             9 => Self::Dsmx,
+            10 => Self::FrSkyX2,
+            11 => Self::FrSkyX2Lbt,
             _ => Self::FrSkyD16,
         }
     }
 
     pub const fn name(self) -> &'static str {
         match self {
-            Self::FrSkyD16 => "FRSKY D16",
-            Self::FrSkyLbt => "FRSKY LBT",
-            Self::FrSkyD8 => "FRSKY D8",
-            Self::Hott => "GRAUPNER HOTT",
-            Self::Sfhss => "FUTABA SFHSS",
-            Self::FlySky2a => "FLYSKY 2A",
-            Self::FlySkyStd => "FLYSKY V1",
-            Self::Dsmx => "SPEKTRUM DSMX",
-            Self::Corona => "CORONA",
-            Self::Hitec => "HITEC",
+            Self::FrSkyD16 => "FrSkyX",
+            Self::FrSkyLbt => "FrSkyX LBT",
+            Self::FrSkyX2 => "FrSkyX2",
+            Self::FrSkyX2Lbt => "FrSkyX2 LBT",
+            Self::FrSkyD8 => "FrSkyD",
+            Self::Hott => "HoTT",
+            Self::Sfhss => "SFHSS",
+            Self::FlySky2a => "AFHDS2A",
+            Self::FlySkyStd => "AFHDS",
+            Self::Dsmx => "DSMX",
+            Self::Corona => "Corona",
+            Self::Hitec => "Hitec",
         }
     }
 
+    pub const fn is_cc2500_native(self) -> bool {
+        matches!(
+            self,
+            Self::FrSkyD16
+                | Self::FrSkyLbt
+                | Self::FrSkyX2
+                | Self::FrSkyX2Lbt
+                | Self::FrSkyD8
+                | Self::Hott
+                | Self::Sfhss
+                | Self::Corona
+                | Self::Hitec
+        )
+    }
+
     pub const fn next(self) -> Self {
-        match self {
+        self.next_for(true)
+    }
+
+    pub const fn prev(self) -> Self {
+        self.prev_for(true)
+    }
+
+    pub const fn next_for(self, is_mpm: bool) -> Self {
+        let mut cand = match self {
             Self::FrSkyD16 => Self::FrSkyLbt,
-            Self::FrSkyLbt => Self::FrSkyD8,
+            Self::FrSkyLbt => Self::FrSkyX2,
+            Self::FrSkyX2 => Self::FrSkyX2Lbt,
+            Self::FrSkyX2Lbt => Self::FrSkyD8,
             Self::FrSkyD8 => Self::Hott,
             Self::Hott => Self::Sfhss,
             Self::Sfhss => Self::FlySky2a,
@@ -82,14 +114,22 @@ impl Cc2500Protocol {
             Self::Dsmx => Self::Corona,
             Self::Corona => Self::Hitec,
             Self::Hitec => Self::FrSkyD16,
+        };
+        if !is_mpm {
+            while !cand.is_cc2500_native() {
+                cand = cand.next_for(true);
+            }
         }
+        cand
     }
 
-    pub const fn prev(self) -> Self {
-        match self {
+    pub const fn prev_for(self, is_mpm: bool) -> Self {
+        let mut cand = match self {
             Self::FrSkyD16 => Self::Hitec,
             Self::FrSkyLbt => Self::FrSkyD16,
-            Self::FrSkyD8 => Self::FrSkyLbt,
+            Self::FrSkyX2 => Self::FrSkyLbt,
+            Self::FrSkyX2Lbt => Self::FrSkyX2,
+            Self::FrSkyD8 => Self::FrSkyX2Lbt,
             Self::Hott => Self::FrSkyD8,
             Self::Sfhss => Self::Hott,
             Self::FlySky2a => Self::Sfhss,
@@ -97,12 +137,19 @@ impl Cc2500Protocol {
             Self::Dsmx => Self::FlySkyStd,
             Self::Corona => Self::Dsmx,
             Self::Hitec => Self::Corona,
+        };
+        if !is_mpm {
+            while !cand.is_cc2500_native() {
+                cand = cand.prev_for(true);
+            }
         }
+        cand
     }
 
     pub const fn mpm_proto_id(self) -> u8 {
         match self {
             Self::FrSkyD16 | Self::FrSkyLbt => MPM_PROTO_FRSKY_X,
+            Self::FrSkyX2 | Self::FrSkyX2Lbt => MPM_PROTO_FRSKY_X2,
             Self::FrSkyD8 => MPM_PROTO_FRSKY_D,
             Self::Sfhss => MPM_PROTO_SFHSS,
             Self::Corona => MPM_PROTO_CORONA,
@@ -116,8 +163,8 @@ impl Cc2500Protocol {
 
     pub const fn default_sub_proto(self) -> u8 {
         match self {
-            Self::FrSkyLbt => 2, // EU_16 (LBT)
-            Self::Dsmx => 1,     // DSMX_22
+            Self::FrSkyLbt | Self::FrSkyX2Lbt => 2, // EU_16 (LBT)
+            Self::Dsmx => 1,                        // DSMX_22
             _ => 0,
         }
     }

@@ -55,7 +55,7 @@ pub use power::Stm32f4PowerDriver;
 pub use sdcard::SpiSdCard;
 pub use storage::PocketEepromI2cBus;
 pub use trainer::Stm32f4TrainerDriver;
-pub use uart::PocketSerialPort;
+pub use uart::Stm32f4SerialPort;
 pub use watchdog::{feed as watchdog_feed, start as watchdog_start, WatchdogManager};
 
 #[macro_export]
@@ -78,7 +78,7 @@ macro_rules! define_qx7_context {
             static mut USB: ferrox_core::hal::NullUsbDriver = ferrox_core::hal::NullUsbDriver;
             static mut ADC: $crate::Stm32f4AdcDriver<$hal> = $crate::Stm32f4AdcDriver::new();
             static mut KEYS: $crate::Qx7KeyDriver<$hal> = $crate::Qx7KeyDriver::new();
-            static mut UART: $crate::PocketSerialPort<$hal> = $crate::PocketSerialPort::new();
+            static mut UART: $crate::Stm32f4SerialPort<$hal> = $crate::Stm32f4SerialPort::new();
             static mut POWER: $crate::Stm32f4PowerDriver<$hal> = $crate::Stm32f4PowerDriver::new();
             static mut AUDIO: $crate::Stm32f4AudioDriver = $crate::Stm32f4AudioDriver::new();
 

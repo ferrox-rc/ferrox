@@ -24,6 +24,8 @@ pub enum RfProtocol {
 }
 
 impl RfProtocol {
+    pub const MAX_VALUE: u8 = Self::Mpm as u8;
+
     #[inline]
     pub const fn from_u8(val: u8) -> Self {
         match val {

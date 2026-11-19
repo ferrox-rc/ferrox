@@ -700,6 +700,7 @@ pub fn update_rx_setup(
             ctrl.selected_item = 6;
             ctrl.scroll_offset = 3;
             storage.active_model.set_mpm_range_check(false);
+            crate::rf::set_bind_mode(false);
             storage::save_active_model(storage);
             buzzer.click();
             return;
@@ -886,9 +887,8 @@ pub fn update_rx_setup(
                 }
                 (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 2 + ext_off => {
                     buzzer.click();
-                    ctrl.request_bind = true;
-                    ctrl.state = MenuState::Closed;
-                    return;
+                    let next_bind = !crate::rf::is_binding();
+                    crate::rf::set_bind_mode(next_bind);
                 }
                 (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 5 + ext_off => {
                     buzzer.click();
@@ -929,14 +929,15 @@ pub fn update_rx_setup(
                 }
             }
             idx if is_mpm_family && idx == 1 + ext_off => {
+                let is_mpm = current_proto == RfProtocol::Mpm;
                 let cur = crate::rf::mpm::Cc2500Protocol::from_u8(
                     storage.active_model.rx_serial_proto,
                 );
                 if keys.up {
-                    storage.active_model.rx_serial_proto = cur.next() as u8;
+                    storage.active_model.rx_serial_proto = cur.next_for(is_mpm) as u8;
                     buzzer.play_tone(2200, 30);
                 } else if keys.down {
-                    storage.active_model.rx_serial_proto = cur.prev() as u8;
+                    storage.active_model.rx_serial_proto = cur.prev_for(is_mpm) as u8;
                     buzzer.play_tone(2200, 30);
                 }
             }
@@ -1091,13 +1092,20 @@ pub fn update_rx_setup(
                             Some(val_str),
                         );
                     }
-                    2 => widgets::draw_list_row_right(
-                        lcd,
-                        slot,
-                        idx == ctrl.selected_item,
-                        "[Bind Receiver]",
-                        None,
-                    ),
+                    2 => {
+                        let bind_lbl = if crate::rf::is_binding() {
+                            "[Binding... (OK)]"
+                        } else {
+                            "[Bind Receiver]"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            bind_lbl,
+                            None,
+                        );
+                    }
                     3 => {
                         let rx_num = storage.active_model.mpm_rx_num();
                         let mut buf = [0u8; 8];

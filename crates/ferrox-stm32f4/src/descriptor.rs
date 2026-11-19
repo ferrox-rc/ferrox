@@ -268,6 +268,10 @@ pub trait Qx7HalDescriptor: 'static {
 
     /// External RF module bay power switch pin (`PD8` on most STM32F4 radios).
     const EXT_RF_PWR: PinDef = PinDef::new(Port::D, 8);
+
+    /// External S.Port (`PD4`) direction polarity: `true` = HIGH for TX / LOW for RX (RadioMaster/Jumper),
+    /// `false` = LOW for TX / HIGH for RX (FrSky Q X7 ACCESS / X9D+ 2019).
+    const TELEMETRY_DIR_TX_HIGH: bool = true;
 }
 
 // ============================================================================
