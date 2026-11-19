@@ -5,6 +5,18 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc10] - 2026-11-18
+
+### Added
+- **`CC2500` vs. `4-in-1 (MPM)` Protocol & Build Feature Split (`crates/ferrox-core/Cargo.toml`, `boards/ferrox-f4/Cargo.toml`, `board/mod.rs`, `qx7_family.rs`, `runtime.rs`, `setup.rs`)**: Separated single-chip `CC2500` (`rf-cc2500`) and full `4-in-1 Multi-Protocol Module` (`rf-mpm`, `RfProtocol::Mpm = 4`) into distinct selectable protocols and Cargo features with zero EEPROM migration.
+- **Dual-Module UART UI Parity & Dynamic `DEFAULT_PROTOCOL` (`setup.rs`, `qx7_family.rs`)**: Exposed `"Module: Internal / External (Bay)"` selection across `CRSF`, `CC2500`, `MPM 4-in-1`, and `DSM`, and derived `DEFAULT_PROTOCOL` from `SUPPORTED_PROTOCOLS[0]` so single-protocol custom builds automatically default to their compiled-in protocol.
+
+### Fixed
+- **False `"LINK ACTIVE!"` Shutdown Warning on CRSF/ELRS (#44) (`crsf/mod.rs`, `crsf/protocol.rs`)**: Stopped marking `TELEMETRY.connected = true` on TX-only `ELRS_STATUS` heartbeats and required `uplink_link_quality > 0` in `LINK_STATISTICS` to report an active RX link.
+- **Vario Switch Assignment & Preview (#43) (`ui/menu/screens/model.rs`, `runtime.rs`)**: Added `[...]` edit brackets on the `Switch:` row in `VARIO SETUP` and respected `sw_active` during `VARIO SETUP` preview so users can test their assigned switch live.
+- **Channel Assignments Resetting from `None` on Reboot (`storage.rs`)**: Removed the `aux_channels[0..6] == [0; 6]` overwrite in `ModelConfig::sanitize()` that clobbered intentional `None` (`0`) channel assignments after power cycling.
+- **Mode 1 Trim Mapping, STM32F4 Trim Direction & Zorro Trim Beeps (`trim.rs`, `runtime.rs`, `ferrox-stm32f4/src/keys.rs`, `buzzer.rs`)**: Passed active `StickMode` into `TrimController::update()` so trims follow `Mode 1..4`, fixed inverted STM32F4 trim bit polarity (`Inc` on even bits, `Dec` on odd bits), and bumped `trim_step` tone duration to `65 ms` for Zorro speaker amp wake-up.
+
 ## [1.0.0-rc9] - 2026-11-18
 
 ### Added
