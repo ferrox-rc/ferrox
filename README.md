@@ -26,6 +26,7 @@ Use the **[Ferrox-RC Web Flasher](https://ferroxrc.com/flasher)** to flash firmw
 1. Put your transmitter into bootloader mode (see [DFU Combinations](#transmitter-shortcuts--dfu-bootloader)).
 2. Connect the transmitter's top USB data port to your computer.
 3. Open **[ferroxrc.com/flasher](https://ferroxrc.com/flasher)**, select your radio model, and click **Flash**.
+4. **Optional — Custom Build:** Use the **Custom Build** tab to enable only the protocols and features you use (e.g. `CRSF`, `CC2500`, `MPM 4-in-1`, `DSM Forward Prog`, `Soaring`, `Voice Audio`) in ~2 minutes with no local compiler. *(Leave `edgetx-bootloader` unchecked for WebUSB DFU; check it to download an `-sd.bin` image for SD card flashing.)*
 
 ---
 
@@ -53,21 +54,21 @@ For detailed controls, settings menus, and operations, see the **[User Guide & O
 
 Ferrox supports a growing ecosystem of transmitters via modular compile-time board profiles:
 
-| Transmitter Target | Architecture | Display | RF Protocol Support | Storage |
-| :--- | :--- | :--- | :--- | :--- |
-| **FlySky FS-i6X** | STM32F072 (Cortex-M0 @ 48 MHz) | 128×64 Mono LCD | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **DSM** | 16 KB External EEPROM |
-| **FlySky FS-i6S** | STM32F072 (Cortex-M0 @ 48 MHz) | 128×64 Touchscreen + Jog Wheel | Internal **AFHDS 2A** (`A7105`) + External **CRSF / ELRS** & **DSM** | 16 KB External EEPROM |
-| **RadioMaster Pocket** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS (CRSF)** / **CC2500** + Nano Module Bay | Hybrid EEPROM + MicroSD SPI |
-| **RadioMaster GX12** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono OLED + Roller | Internal **ELRS Gemini** + External JR Bay | Hybrid EEPROM + MicroSD SPI |
-| **RadioMaster Boxer** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** + External JR Bay | Hybrid EEPROM + MicroSD SPI |
-| **RadioMaster Zorro** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** + Nano Module Bay | Hybrid EEPROM + MicroSD SPI |
-| **RadioMaster TX12** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** + External JR Bay | Hybrid EEPROM + MicroSD SPI |
-| **Jumper T12 / T12 Pro** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **CC2500 / MPM** + External JR Bay | Hybrid EEPROM + MicroSD SPI |
-| **Jumper T-Pro V2** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** + Nano Module Bay | Hybrid EEPROM + MicroSD SPI |
-| **FrSky Taranis X9D / X9D+** | STM32F407 (Cortex-M4F @ 168 MHz) | 212×64 Wide Mono LCD | Internal FrSky ACCST/ACCESS + External JR Bay | Hybrid EEPROM + MicroSD SPI |
-| **FrSky Taranis X9E** | STM32F407 (Cortex-M4F @ 168 MHz) | 212×64 Wide Mono LCD | Internal FrSky ACCST/ACCESS + External JR Bay | Hybrid EEPROM + MicroSD SPI |
-| **FrSky Taranis Q X7** | STM32F407 (Cortex-M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal FrSky ACCST + External JR Bay | Hybrid EEPROM + MicroSD SPI |
-| **RadioLink AT9S Pro / AT10II** | STM32F405/407 (Cortex-M4F @ 168 MHz) | 320×240 Color TFT (4bpp) | Multi-Protocol + External CRSF/ELRS Bay | Hybrid EEPROM + SPI Flash |
+| Transmitter Target | Status | Architecture | Display | RF Protocol Support | Storage |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **FlySky FS-i6X** | Field-Tested | STM32F072 (M0 @ 48 MHz) | 128×64 Mono LCD | Internal **AFHDS 2A** + External **CRSF/ELRS**, **CC2500**, **DSM** | 16 KB EEPROM |
+| **FlySky FS-i6S** | Field-Tested | STM32F072 (M0 @ 48 MHz) | 128×64 Touch + Jog | Internal **AFHDS 2A** + External **CRSF/ELRS**, **CC2500**, **DSM** | 16 KB EEPROM |
+| **RadioMaster Pocket** | Field-Tested | STM32F407 (M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** + External Nano Bay | EEPROM + MicroSD |
+| **RadioMaster Zorro** | Field-Tested | STM32F407 (M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** / **4-in-1 MPM** + Nano Bay | EEPROM + MicroSD |
+| **RadioMaster TX12 MKII** | Field-Tested | STM32F407 (M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** + External JR Bay | EEPROM + MicroSD |
+| **RadioMaster GX12** | Field-Tested | STM32F407 (M4F @ 168 MHz) | 128×64 Mono OLED + Roller | Internal **ELRS Gemini** + External JR Bay | EEPROM + MicroSD |
+| **RadioMaster Boxer** | Beta | STM32F407 (M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** / **4-in-1 MPM** + JR Bay | EEPROM + MicroSD |
+| **Jumper T-Pro V2** | Beta | STM32F407 (M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **ELRS** / **CC2500** / **4-in-1 MPM** + Nano Bay | EEPROM + MicroSD |
+| **Jumper T12 / T12 Pro** | Beta | STM32F407 (M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal **CC2500 / MPM** + External JR Bay | EEPROM + MicroSD |
+| **FrSky Taranis Q X7** | Beta | STM32F407 (M4F @ 168 MHz) | 128×64 Mono LCD + Roller | Internal FrSky + External JR Bay | EEPROM + MicroSD |
+| **FrSky Taranis X9D / X9D+** | Beta | STM32F407 (M4F @ 168 MHz) | 212×64 Wide Mono LCD | Internal FrSky + External JR Bay | EEPROM + MicroSD |
+| **FrSky Taranis X9E** | Beta | STM32F407 (M4F @ 168 MHz) | 212×64 Wide Mono LCD | Internal FrSky + External JR Bay | EEPROM + MicroSD |
+| **RadioLink AT9S Pro / AT10II** | Beta | STM32F405/407 (M4F @ 168 MHz) | 320×240 Color TFT (4bpp) | Multi-Protocol + External CRSF/ELRS Bay | EEPROM + SPI Flash |
 
 ---
 
@@ -82,12 +83,18 @@ Ferrox supports a growing ecosystem of transmitters via modular compile-time boa
 - **Soaring & F5J Contest Suite**: Motor run timer, competition window timer, altitude launch logging, and dedicated gliding mixes (crow/airbrakes, camber, reflex).
 - **Logical Switches**: `L1..L8` programmable logic engines supporting threshold comparators, delta triggers, edge timers, SR flip-flops, and boolean gating.
 
-### 📡 Modular RF Protocols
-- **Crossfire (CRSF) & ExpressLRS**: High-speed bidirectional telemetry up to 1.875M baud with circular DMA UART and hardware half-duplex auto-gating.
-- **Native On-Radio ELRS / CRSF Configurator**: Built-in zero-heap TBS-Agent device browser (no Lua required) for configuring VTX, receivers, and transmitter settings directly from the screen.
-- **FlySky AFHDS 2A**: Native 260 Hz FHSS protocol with 18-channel interleaved i-BUS telemetry support and ultra-low latency.
-- **CC2500 & Multi-Protocol Module (MPM)**: SPI / Serial support for FrSky D8/D16, SFHSS, and Graupner protocols.
-- **Spektrum DSM2 / DSMX**: Satellite receiver input and Forward Programming configuration menu.
+### 📡 Modular RF Protocols (No Lua Required)
+- **Dual-Module UART Routing (STM32F4)**: Select **Internal** (`USART1`) or **External (Bay)** (`USART6`) per model across `CRSF`, `CC2500`, `MPM 4-in-1`, and `DSM`.
+- **Crossfire (CRSF) & ExpressLRS**: High-speed bidirectional telemetry up to 1.875M baud with circular DMA UART and built-in **on-radio CRSF/ELRS configurator** (queries module menus dynamically — no Lua scripts or version syncing required).
+- **CC2500 (`rf-cc2500`)**: Dedicated single-chip CC2500 support for FrSky D8/D16 (FCC & LBT), Futaba S-FHSS, and Graupner HoTT with S.Port/HoTT telemetry, RX Num, Freq Tune, and Range Check.
+- **4-in-1 Multi-Protocol Module (`rf-mpm`)**: Separate 4-in-1 MPM build feature for internal or external JR/Nano bay 4-in-1 modules.
+- **Spektrum DSM2 / DSMX (`rf-dsm`, `dsm-fwd-prog`)**: Native DSM serial support with built-in **Spektrum Forward Programming** (pulls setup menus directly from stabilized receivers — no Lua required).
+- **FlySky AFHDS 2A (`rf-afhds2a`)**: Native 260 Hz FHSS protocol on FlySky radios with 18-channel interleaved i-BUS telemetry.
+
+### 🔊 Audio, Variometer & Telemetry Logging (STM32F4)
+- **Voice Callouts**: Non-blocking WAV playback using standard EdgeTX `/SOUNDS/<lang>/` voice packs (battery, telemetry lost, flight timers, F5J cues).
+- **Acoustic Variometer**: Configurable climb/sink deadbands, pulse/continuous/mute sink modes, motor-run mute, and switch assignment.
+- **SD Card Telemetry Logging (`sd-logging`)**: Background CSV flight logging triggered on arming or switch.
 
 ### 🎮 USB Simulator & Connectivity
 - **Zero-Dependency Direct PAC USB 2.0**: Native USB stack written directly to the STM32 PMA memory without external crate overhead.
@@ -97,7 +104,7 @@ Ferrox supports a growing ecosystem of transmitters via modular compile-time boa
 
 ### 🖥️ Display & Navigation
 - **Responsive Multi-Page Dashboard**: Fast 30 Hz rendering with dedicated pages for live gimbals/switches, channels 1..10, auxiliary channels 11..18, model telemetry link, and configurable 4-tile sensor dashboards.
-- **Multi-Display Architecture**: Optimized 1-bit monochome rendering for 128×64 and 212×64 displays, plus a zero-heap 4-bit indexed 320×240 color canvas for color radios.
+- **Multi-Display Architecture**: Optimized 1-bit monochrome rendering for 128×64 and 212×64 displays, plus a zero-heap 4-bit indexed 320×240 color canvas for color radios.
 - **Intuitive Controls**: Native support for optical jog wheels and capacitive touchscreens (FS-i6S), 4x4 matrix keypads (FS-i6X), and rotary scroll wheels.
 
 ---
