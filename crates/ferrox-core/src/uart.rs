@@ -46,6 +46,15 @@ pub fn is_half_duplex() -> bool {
     HALF_DUPLEX_ACTIVE.load(Ordering::Relaxed)
 }
 
+#[cfg(feature = "multiswitch")]
+pub fn tx_error_count() -> u32 {
+    if let Some(p) = unsafe { SERIAL_PORT.as_ref() } {
+        p.tx_error_count()
+    } else {
+        0
+    }
+}
+
 /// Baud rate index for MULTI-Module DSM (100,000 baud 8E2).
 pub const BAUD_IDX_MULTI_100K_8E2: u8 = 5;
 /// Baud rate index for Spektrum Satellite Trainer (115,200 baud 8N1).
@@ -88,6 +97,24 @@ pub fn read_byte() -> Option<u8> {
     }
 }
 
+#[cfg(feature = "multiswitch")]
+pub fn try_write_bytes(bytes: &[u8]) -> bool {
+    #[cfg(test)]
+    {
+        if mock::tx_blocked() {
+            return false;
+        }
+        mock::record_tx(bytes);
+        true
+    }
+    #[cfg(not(test))]
+    if let Some(ref mut p) = unsafe { SERIAL_PORT.as_mut() } {
+        p.try_write_bytes(bytes)
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 pub mod mock {
     extern crate std;
@@ -96,6 +123,18 @@ pub mod mock {
 
     static RX_QUEUE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
     static TX_LOG: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+    #[cfg(feature = "multiswitch")]
+    static TX_BLOCKED: Mutex<bool> = Mutex::new(false);
+
+    #[cfg(feature = "multiswitch")]
+    pub fn set_tx_blocked(blocked: bool) {
+        *TX_BLOCKED.lock().unwrap() = blocked;
+    }
+
+    #[cfg(feature = "multiswitch")]
+    pub fn tx_blocked() -> bool {
+        *TX_BLOCKED.lock().unwrap()
+    }
 
     pub fn push_rx_bytes(bytes: &[u8]) {
         let mut q = RX_QUEUE.lock().unwrap();
@@ -126,6 +165,8 @@ pub mod mock {
     }
 
     pub fn clear() {
+        #[cfg(feature = "multiswitch")]
+        set_tx_blocked(false);
         RX_QUEUE.lock().unwrap().clear();
         TX_LOG.lock().unwrap().clear();
     }

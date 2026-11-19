@@ -161,6 +161,18 @@ pub trait SerialPort {
     /// Write a slice of bytes to the transmit buffer/DMA.
     fn write_bytes(&mut self, bytes: &[u8]);
 
+    /// Submit a complete frame without waiting; false leaves it available for retry.
+    #[cfg(feature = "multiswitch")]
+    fn try_write_bytes(&mut self, _bytes: &[u8]) -> bool {
+        false
+    }
+
+    /// Failed TX waits or DMA transfers since startup.
+    #[cfg(feature = "multiswitch")]
+    fn tx_error_count(&self) -> u32 {
+        0
+    }
+
     /// Read a single byte from the receive buffer, if available.
     fn read_byte(&mut self) -> Option<u8>;
 

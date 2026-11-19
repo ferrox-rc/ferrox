@@ -155,6 +155,50 @@ cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --target thumbv6m-none-ea
 .\tools\build-sd-bin.bat pocket   # Windows
 ```
 
+#### MultiSwitch (all radios)
+
+```bash
+# FS-i6S / FS-i6X with MultiSwitch and only the required features:
+cargo build-i6s --no-default-features --features stm32,multiswitch
+cargo build-i6x --features stm32,multiswitch
+# F4 radios; add multiswitch to the selected board's normal build:
+cargo build-pocket --features multiswitch
+cargo build-boxer --features multiswitch
+cargo build-zorro --features multiswitch
+```
+
+Enable the optional `multiswitch` Cargo feature using the command above (use
+`apm32,multiswitch` instead for APM32 hardware). It is disabled in normal builds;
+its stored model settings remain intact when switching firmware variants.
+
+In **Settings Menu → MultiSwitch**, configure up to four addresses (`0..255`,
+or `OFF`) and eight functions per address. Each function has a six-character
+label and either `TOGGLE` or `MOMENTARY` behavior. Configured addresses create
+compact dashboard pages **P6–P9**; an active soaring dashboard follows them.
+
+On **i6S**, tap a function to toggle it, or hold a momentary function; lifting
+the finger, leaving its target, changing pages, or opening the menu releases
+it. Swipe to change pages, tap the status bar for the next page, and hold the
+footer to open settings.
+
+On **all other radios**, **UP/DOWN** or the **rotary encoder** select the
+highlighted function. At the first/last function they switch to the
+previous/next dashboard page. A short **OK / encoder-button** press toggles
+a switch; a momentary function stays active only while **OK** is held.
+Changing the selection or leaving the page releases it; a fresh OK press is
+required to activate another function. Holding **OK** for 1.2 seconds on a
+toggle function opens settings without toggling it. On momentary functions,
+holding OK never opens the menu.
+Dedicated **PAGE** keys retain direct dashboard-page navigation, and
+board-specific settings keys retain their normal menu shortcuts.
+
+Transmission requires CRSF and is disabled in USB simulator mode.
+Set4 commands repeat every 100 ms per address and yield to RC channel frames.
+Existing EEPROM models migrate with all MultiSwitch addresses disabled.
+
+On STM32F4, UART TX timeouts abort the frame instead of panicking. Failures
+appear as `UART TX errors` in **System Info**; RX DMA is left intact.
+
 ---
 
 ## 📚 Documentation Index
