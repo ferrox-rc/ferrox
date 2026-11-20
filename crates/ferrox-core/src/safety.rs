@@ -224,6 +224,43 @@ pub enum PreflightError {
     ThrottleHigh { current_pct: u8, threshold_pct: u8 },
     ThrottleNotCentered { offset_pct: i8 },
     ThrottleHoldDisengaged,
+    #[cfg(feature = "tank-mix")]
+    TankNotCentered,
+    #[cfg(not(feature = "tank-mix"))]
+    TankFeatureDisabled,
+}
+
+pub fn check_tank_preflight(
+    state: &crate::input::InputState,
+    stick_mode: StickMode,
+    model: &crate::storage::ModelConfig,
+) -> Result<(), PreflightError> {
+    #[cfg(not(feature = "tank-mix"))]
+    {
+        let _ = (state, stick_mode, model);
+        Err(PreflightError::TankFeatureDisabled)
+    }
+    #[cfg(feature = "tank-mix")]
+    {
+        let controls = state.flight_controls(stick_mode);
+        let throttle = ((controls.throttle + crate::mixer::MIXER_MAX) / 2)
+            .clamp(0, crate::mixer::MIXER_MAX) as u16;
+        let pots = &state.aux_pots[4..];
+        let prepared = crate::mixer::prepare_channels(
+            controls.aileron,
+            controls.elevator,
+            throttle,
+            controls.rudder,
+            pots,
+            &state.switches,
+            model,
+        );
+        if crate::mixer::evaluate_tank_sources(&prepared, pots, model).centered() {
+            Ok(())
+        } else {
+            Err(PreflightError::TankNotCentered)
+        }
+    }
 }
 
 /// Evaluates throttle safety during the preflight startup sequence.
@@ -304,6 +341,106 @@ pub fn check_preflight_throttle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(feature = "tank-mix"))]
+    #[test]
+    fn tank_preflight_reports_disabled_feature() {
+        let mut model = crate::storage::ModelConfig::default_for_index(0);
+        model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        assert_eq!(
+            check_tank_preflight(&crate::input::read(), StickMode::Mode2, &model),
+            Err(PreflightError::TankFeatureDisabled)
+        );
+    }
+
+    #[cfg(feature = "tank-mix")]
+    #[test]
+    fn tank_preflight_checks_selected_sources_and_conditioning() {
+        let mut state = crate::input::InputState {
+            gimbals: crate::input::Gimbals {
+                lv: -1000,
+                ..Default::default()
+            },
+            pots: crate::input::Pots::default(),
+            switches: crate::input::Switches::new(),
+            battery_mv: 5000,
+            aux_pots: [0; 11],
+            raw: [0; crate::adc::NUM_CHANNELS],
+        };
+        let mut model = crate::storage::ModelConfig::default_for_index(0);
+        model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        model.tank.drive_source = 5;
+        model.tank.steer_source = 6;
+        state.aux_pots[4] = -20;
+        state.aux_pots[5] = 20;
+        assert_eq!(
+            check_tank_preflight(&state, StickMode::Mode2, &model),
+            Ok(())
+        );
+        state.aux_pots[5] = 21;
+        assert_eq!(
+            check_tank_preflight(&state, StickMode::Mode2, &model),
+            Err(PreflightError::TankNotCentered)
+        );
+        state.aux_pots[5] = 0;
+        state.aux_pots[4] = -21;
+        assert_eq!(
+            check_tank_preflight(&state, StickMode::Mode2, &model),
+            Err(PreflightError::TankNotCentered)
+        );
+        model.tank.drive_source = 3;
+        model.tank.steer_source = 15;
+        model.set_channel_source(3, 4);
+        model.dr_high[2] = 50;
+        state.gimbals.lv = 0;
+        state.gimbals.lh = 40;
+        assert_eq!(
+            check_tank_preflight(&state, StickMode::Mode2, &model),
+            Ok(())
+        );
+        state.gimbals.lh = 42;
+        assert_eq!(
+            check_tank_preflight(&state, StickMode::Mode2, &model),
+            Err(PreflightError::TankNotCentered)
+        );
+    }
+
+    #[cfg(feature = "tank-mix")]
+    #[test]
+    fn tank_preflight_distinguishes_raw_and_curved_throttle_sources() {
+        let mut model = crate::storage::ModelConfig::default_for_index(0);
+        model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        model.set_channel_source(2, 58);
+        let state = crate::input::InputState {
+            gimbals: crate::input::Gimbals::default(),
+            pots: crate::input::Pots::default(),
+            switches: crate::input::Switches::new(),
+            battery_mv: 5000,
+            aux_pots: [0; 11],
+            raw: [0; crate::adc::NUM_CHANNELS],
+        };
+        for (drive, steer) in [(58, 0), (0, 58), (14, 0)] {
+            model.tank.drive_source = drive;
+            model.tank.steer_source = steer;
+            model.thr_curve.fill(75);
+            assert_eq!(
+                check_tank_preflight(&state, StickMode::Mode2, &model),
+                Err(PreflightError::TankNotCentered)
+            );
+            model.thr_curve.fill(50);
+            assert_eq!(
+                check_tank_preflight(&state, StickMode::Mode2, &model),
+                Ok(())
+            );
+        }
+        model.tank.drive_source = 3;
+        model.tank.steer_source = 0;
+        model.thr_curve.fill(75);
+        assert_eq!(
+            check_tank_preflight(&state, StickMode::Mode2, &model),
+            Ok(())
+        );
+    }
 
     #[test]
     fn test_stick_mode_channel_mapping() {

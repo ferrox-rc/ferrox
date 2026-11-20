@@ -436,7 +436,7 @@ macro_rules! impl_qx7_board_profile {
 
             fn is_source_available(radio: &RadioConfig, model: &ModelConfig, src: u8) -> bool {
                 match src {
-                    0..=4 => true,                       // None, Roll, Pitch, Thr, Yaw
+                    0..=4 | 58 => true,                  // None, Roll, Pitch, THR, Yaw, THC
                     5 => radio.get_adc_mode(4).is_pot(), // S1
                     6 => <$spec as Qx7FamilyProfile>::HAS_S2_POT && radio.get_adc_mode(5).is_pot(), // S2
                     7 => matches!(
@@ -460,7 +460,9 @@ macro_rules! impl_qx7_board_profile {
                     16..=29 => {
                         let ch_idx = (src - 12) as usize; // 4..17
                         let aux_idx = ch_idx - 4; // 0..13
-                        if model.wing_tail_mix == 3 && ch_idx == 5 {
+                        if (model.wing_tail_mix == 3 && ch_idx == 5)
+                            || crate::mixer::is_tank_motor(ch_idx, model)
+                        {
                             return true;
                         }
                         if model.aux_channels[aux_idx] != 0 {

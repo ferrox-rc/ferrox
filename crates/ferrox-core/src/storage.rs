@@ -600,9 +600,9 @@ pub struct LogicalSwitch {
     /// 0: OFF, 1: a>x, 2: a<x, 3: |a|>x, 4: |a|<x,
     /// 5: AND, 6: OR, 7: XOR, 8: a=b, 9: a>b, 10: a<b
     pub func: u8,
-    /// Primary source index (`0..=57` for value functions) or switch condition (`0..=44` for boolean functions)
+    /// Primary source index (`0..=58` for value functions) or switch condition (`0..=44` for boolean functions)
     pub v1: u8,
-    /// Threshold (`-100..=100%` for `1..=4`) or secondary source/switch index (`0..=57`/`0..=44` for `5..=10`)
+    /// Threshold (`-100..=100%` for `1..=4`) or secondary source/switch index (`0..=58`/`0..=44` for `5..=10`)
     pub v2: i8,
     /// Optional secondary AND switch condition (`0` = None, `1..=44` = switch condition)
     pub and_sw: u8,
@@ -635,7 +635,51 @@ impl LogicalSwitch {
     }
 }
 
-/// Complete profile for an individual aircraft/model (exactly 464 bytes).
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct TankConfig {
+    pub drive_source: u8,
+    pub steer_source: u8,
+    pub left_channel: u8,
+    pub right_channel: u8,
+    pub steer_weight: i8,
+    pub reserved: [u8; 3],
+}
+
+impl TankConfig {
+    pub const fn default_factory() -> Self {
+        Self {
+            drive_source: 3,
+            steer_source: 4,
+            left_channel: 1,
+            right_channel: 2,
+            steer_weight: 100,
+            reserved: [0; 3],
+        }
+    }
+
+    pub fn sanitize(&mut self) {
+        if self.drive_source > 58 {
+            self.drive_source = 3;
+        }
+        if self.steer_source > 58 {
+            self.steer_source = 4;
+        }
+        if self.left_channel == 0 || self.left_channel > 18 {
+            self.left_channel = 1;
+        }
+        if self.right_channel == 0 || self.right_channel > 18
+            || self.right_channel == self.left_channel
+        {
+            self.right_channel = if self.left_channel == 2 { 1 } else { 2 };
+        }
+        if self.steer_weight < -100 || self.steer_weight > 100 {
+            self.steer_weight = 100;
+        }
+    }
+}
+
+/// Complete profile for an individual aircraft/model (exactly 472 bytes).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ModelConfig {
@@ -660,7 +704,7 @@ pub struct ModelConfig {
     pub rf_power: u8,     // 61: AFHDS 2A RF power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
     pub failsafe_thr: u16, // 62..64: Failsafe throttle pulse in µs (e.g. 1000)
     pub aux_channels: [u8; 14], // 64..78: Source for CH5..CH18
-    pub wing_tail_mix: u8, // 78: 0: Normal, 1: Elevon/Delta, 2: V-Tail, 3: Flaperon, 4: Freeform
+    pub wing_tail_mix: u8, // 78: 0: Normal, 1: Elevon/Delta, 2: V-Tail, 3: Flaperon, 4: Freeform, 5: DiffThrust (baitboat), 6: Tank
     pub template_diff: i8, // 79: Differential / mix ratio (-100..+100)
     pub mixes: [MixLine; NUM_MIX_LINES], // 80..336: 32 freeform mix rules (32 * 8 = 256 bytes)
     pub failsafe_mode: u8, // 336: 0: Hold last, 1: Custom pulses
@@ -688,6 +732,7 @@ pub struct ModelConfig {
     pub freeform_ch1_4: [u8; 4], // 388..392: Direct source assignments for CH1..CH4 in Freeform mode
     pub soaring: crate::soaring::SoaringConfig, // 392..416: F5J / F3K Soaring competition & glider config (24 bytes)
     pub logical_switches: [LogicalSwitch; NUM_LOGICAL_SWITCHES], // 416..464: 8 Logical Switches L1..L8 (48 bytes)
+    pub tank: TankConfig, // 464..472: Differential-drive motor setup
 }
 
 impl ModelConfig {
@@ -751,6 +796,7 @@ impl ModelConfig {
             freeform_ch1_4: [0; 4],
             soaring: crate::soaring::SoaringConfig::default_factory(),
             logical_switches: [LogicalSwitch::disabled(); NUM_LOGICAL_SWITCHES],
+            tank: TankConfig::default_factory(),
         }
     }
 
@@ -808,14 +854,14 @@ impl ModelConfig {
     }
 
     /// Read source assigned to a logical channel (0..17 for CH1..CH18).
-    /// In Freeform mode, CH1..CH4 use `freeform_ch1_4[0..4]`.
+    /// In Freeform and Tank modes, CH1..CH4 use `freeform_ch1_4[0..4]`.
     /// In standard wing modes, CH1..CH4 default to their stick sources (1: Roll, 2: Pitch, 3: Thr, 4: Yaw).
     /// CH5..CH18 use `aux_channels[0..13]`.
     #[inline]
     pub fn channel_source(&self, ch_idx: usize) -> u8 {
         match ch_idx {
             0..=3 => {
-                if self.wing_tail_mix == 4 {
+                if self.wing_tail_mix == 4 || crate::mixer::is_tank(self) {
                     self.freeform_ch1_4[ch_idx]
                 } else {
                     (ch_idx + 1) as u8 // 1: Roll, 2: Pitch, 3: Thr, 4: Yaw
@@ -827,13 +873,13 @@ impl ModelConfig {
     }
 
     /// Set source assigned to a logical channel (0..17 for CH1..CH18).
-    /// In Freeform mode, CH1..CH4 update `freeform_ch1_4[0..4]`.
+    /// In Freeform and Tank modes, CH1..CH4 update `freeform_ch1_4[0..4]`.
     /// CH5..CH18 update `aux_channels[0..13]`.
     #[inline]
     pub fn set_channel_source(&mut self, ch_idx: usize, src: u8) {
         match ch_idx {
             0..=3 => {
-                if self.wing_tail_mix == 4 {
+                if self.wing_tail_mix == 4 || crate::mixer::is_tank(self) {
                     self.freeform_ch1_4[ch_idx] = src;
                 }
             }
@@ -936,7 +982,7 @@ impl RadioStorage {
         &mut self.active_model
     }
 
-    /// Check if a mix source ID (0..57, matching `SOURCE_NAMES`) is available on this radio.
+    /// Check if a mix source ID (0..58, matching `SOURCE_NAMES`) is available on this radio.
     /// Filters out unconfigured switches, potentiometers, and unmapped channels.
     #[inline]
     pub fn is_source_available(&self, src: u8) -> bool {
@@ -960,15 +1006,20 @@ impl RadioStorage {
         if ch == 0 || ch > 18 {
             return false;
         }
-        if ch <= 4 {
+        if ch <= 4 && !crate::mixer::is_tank(&self.active_model) {
             return true; // CH1..CH4 primary controls
         }
-        let ch_idx = (ch - 1) as usize; // 4..17
-        let aux_idx = ch_idx - 4; // 0..13
+        if crate::mixer::is_tank(&self.active_model)
+            && (ch == self.active_model.tank.left_channel
+                || ch == self.active_model.tank.right_channel)
+        {
+            return true;
+        }
+        let ch_idx = (ch - 1) as usize;
         if self.active_model.wing_tail_mix == 3 && ch == 6 {
             return true; // Flaperon right aileron
         }
-        if self.active_model.aux_channels[aux_idx] != 0 {
+        if self.active_model.channel_source(ch_idx) != 0 {
             return true;
         }
         self.active_model.mixes.iter().any(|m| m.target_ch == ch)
@@ -1166,6 +1217,7 @@ impl RadioStorage {
                     )
             } // SWM
             50..=57 => true, // L1..L8 Logical Switches
+            58 => true, // THC
             _ => false,
         }
     }
@@ -1404,9 +1456,8 @@ impl RadioStorage {
         if m.dr_switch > 6 {
             m.dr_switch = 0;
         }
-        if m.wing_tail_mix > 4 {
-            m.wing_tail_mix = 0;
-        }
+        m.wing_tail_mix = crate::mixer::WingTailTemplate::from_u8(m.wing_tail_mix) as u8;
+        m.tank.sanitize();
         if m.template_diff < -100 || m.template_diff > 100 {
             m.template_diff = 0;
         }
@@ -1414,18 +1465,18 @@ impl RadioStorage {
             m.failsafe_thr = 1000;
         }
         for src in m.aux_channels.iter_mut() {
-            if *src > 57 {
+            if *src > 58 {
                 *src = 0;
             }
         }
         for src in m.freeform_ch1_4.iter_mut() {
-            if *src > 57 {
+            if *src > 58 {
                 *src = 0;
             }
         }
         for mix in m.mixes.iter_mut() {
             if mix.target_ch > 18
-                || mix.source > 57
+                || mix.source > 58
                 || mix.weight_src > 41
                 || mix.mode > 2
                 || mix.switch > 44
@@ -1529,11 +1580,11 @@ impl RadioStorage {
                     ls.v2 = 0;
                 }
             } else {
-                if ls.v1 > 57 {
+                if ls.v1 > 58 {
                     ls.v1 = 0;
                 }
                 if ls.is_dual_source_func() {
-                    if ls.v2 < 0 || ls.v2 > 57 {
+                    if ls.v2 < 0 || ls.v2 > 58 {
                         ls.v2 = 0;
                     }
                 } else {
@@ -1567,8 +1618,10 @@ impl RadioStorage {
 const _: () = assert!(core::mem::size_of::<RadioConfig>() == 148);
 const _: () = assert!(core::mem::size_of::<MixLine>() == 8);
 const _: () = assert!(core::mem::size_of::<LogicalSwitch>() == 6);
-const _: () = assert!(core::mem::size_of::<ModelConfig>() == 464);
-const _: () = assert!(core::mem::size_of::<RadioStorage>() == 612);
+const _: () = assert!(core::mem::size_of::<TankConfig>() == 8);
+const _: () = assert!(core::mem::offset_of!(ModelConfig, tank) == 464);
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 472);
+const _: () = assert!(core::mem::size_of::<RadioStorage>() == 620);
 
 static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 
@@ -2042,6 +2095,17 @@ pub fn unpack_legacy_v1_model(v1: &LegacyModelConfigV1) -> ModelConfig {
 }
 
 /// Helper to read a raw C struct from an EEPROM slot with 8-byte framing and CRC16 verification.
+fn unpack_model_prefix(payload: &[u8]) -> ModelConfig {
+    assert!(payload.len() <= 464);
+    let mut model = ModelConfig::default_for_index(0);
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            payload.as_ptr(), &mut model as *mut ModelConfig as *mut u8, payload.len(),
+        );
+    }
+    model
+}
+
 pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
     #[cfg(test)]
     {
@@ -2116,19 +2180,20 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                 );
             }
 
-            // In-place upgrade: re-save slot as v2 (392 bytes) with updated CRC-16 envelope
+            // In-place upgrade with updated CRC-16 envelope.
             let _ = save_slot(addr, &v2_model);
 
             return Ok(());
         }
 
-        // Check if this is a ModelConfig request and the slot holds legacy 348, 364, 368, 392, or 416 bytes
+        // Check for an older model payload; all existing offsets remain unchanged.
         if expected_size == core::mem::size_of::<ModelConfig>()
             && (hdr.len == 348
                 || hdr.len == 364
                 || hdr.len == 368
                 || hdr.len == 392
-                || hdr.len == 416)
+                || hdr.len == 416
+                || hdr.len == 464)
             && hdr.magic == SLOT_MAGIC
             && hdr.flags == 0
         {
@@ -2147,7 +2212,7 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
                 };
                 unpack_legacy_i6x_368_model(&legacy_i6x)
             } else {
-                unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) }
+                unpack_model_prefix(&buf[..old_len])
             };
 
             if hdr.len <= 348 {
@@ -2174,6 +2239,7 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
             if hdr.len <= 416 {
                 model.logical_switches = [LogicalSwitch::disabled(); NUM_LOGICAL_SWITCHES];
             }
+            model.tank = TankConfig::default_factory();
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     &model as *const ModelConfig as *const T,
@@ -2274,6 +2340,8 @@ pub fn peek_model_name(slot_idx: usize) -> Option<[u8; 10]> {
             && hdr.len != 364
             && hdr.len != 368
             && hdr.len != 392
+            && hdr.len != 416
+            && hdr.len != 464
         {
             return None;
         }
@@ -2534,6 +2602,81 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_tank_migrates_current_464_losslessly() {
+        let mut payload = [0u8; 464];
+        for (idx, byte) in payload.iter_mut().enumerate() {
+            *byte = (idx as u8).wrapping_mul(17).wrapping_add(3);
+        }
+        payload[78] = 4; // Existing Freeform, not Tank.
+        payload[388..392].copy_from_slice(&[45, 49, 50, 57]);
+        let migrated = unpack_model_prefix(&payload);
+        let prefix = unsafe {
+            core::slice::from_raw_parts(&migrated as *const ModelConfig as *const u8, 464)
+        };
+        assert_eq!(prefix, payload);
+        assert_eq!(migrated.tank, TankConfig::default_factory());
+        assert_eq!(migrated.wing_tail_mix, 4);
+        assert_eq!(migrated.freeform_ch1_4, [45, 49, 50, 57]);
+        assert_eq!(core::mem::offset_of!(ModelConfig, tank), 464);
+        assert_eq!(MODEL_SLOT_SIZE, 768);
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model.wing_tail_mix = 4;
+        storage.active_model.freeform_ch1_4 = [45, 49, 50, 57];
+        storage.sanitize();
+        assert_eq!(storage.active_model.wing_tail_mix, 4);
+        assert_eq!(storage.active_model.freeform_ch1_4, [45, 49, 50, 57]);
+    }
+
+    #[test]
+    fn test_tank_migration_does_not_reinterpret_diff_thrust() {
+        let mut payload = [0u8; 464];
+        payload[78] = 5;
+        let mut storage = RadioStorage::default_factory();
+        storage.active_model = unpack_model_prefix(&payload);
+        storage.sanitize();
+        assert_eq!(
+            storage.active_model.wing_tail_mix,
+            if cfg!(feature = "baitboat") { 5 } else { 0 }
+        );
+        assert!(!crate::mixer::is_tank(&storage.active_model));
+    }
+
+    #[test]
+    fn test_tank_sanitize_and_unmapped_channel_usage() {
+        let mut storage = RadioStorage::default_factory();
+        assert_eq!(storage.active_model.tank, TankConfig::default_factory());
+        storage.active_model.wing_tail_mix = crate::mixer::WingTailTemplate::Tank as u8;
+        storage.active_model.tank = TankConfig {
+            drive_source: 59, steer_source: 255, left_channel: 0,
+            right_channel: 19, steer_weight: -128, reserved: [0; 3],
+        };
+        storage.sanitize();
+        assert_eq!(
+            storage.active_model.wing_tail_mix,
+            crate::mixer::WingTailTemplate::Tank as u8
+        );
+        assert_eq!(storage.active_model.tank, TankConfig::default_factory());
+        for source in 0..=58 {
+            storage.active_model.tank.drive_source = source;
+            storage.active_model.tank.steer_source = source;
+            storage.active_model.tank.left_channel = 2;
+            storage.active_model.tank.right_channel = 2;
+            storage.active_model.tank.steer_weight = -100;
+            storage.sanitize();
+            assert_eq!(storage.active_model.tank.drive_source, source);
+            assert_eq!(storage.active_model.tank.steer_source, source);
+            assert_eq!(storage.active_model.tank.right_channel, 1);
+            assert_eq!(storage.active_model.tank.steer_weight, -100);
+        }
+        storage.active_model.tank.left_channel = 17;
+        storage.active_model.tank.right_channel = 18;
+        assert!(storage.is_channel_configured(17));
+        assert!(storage.is_channel_configured(18));
+        assert!(storage.is_weight_src_available(35));
+        assert!(!storage.is_channel_configured(16));
+    }
+
+    #[test]
     fn test_adc_input_mode_detent() {
         assert_eq!(AdcInputMode::from_u8(0), AdcInputMode::Default);
         assert_eq!(AdcInputMode::from_u8(1), AdcInputMode::Off);
@@ -2580,9 +2723,9 @@ mod tests {
 
     #[test]
     fn test_model_config_size_and_rf_power() {
-        assert_eq!(core::mem::size_of::<ModelConfig>(), 464);
+        assert_eq!(core::mem::size_of::<ModelConfig>(), 472);
         assert_eq!(core::mem::size_of::<RadioConfig>(), 148);
-        assert_eq!(core::mem::size_of::<RadioStorage>(), 612);
+        assert_eq!(core::mem::size_of::<RadioStorage>(), 620);
 
         let default_m = ModelConfig::default_for_index(0);
         assert_eq!(default_m.rf_power, 0);
@@ -3124,20 +3267,27 @@ mod tests {
     #[test]
     fn test_sanitize_extended_bounds() {
         let mut storage = RadioStorage::default_factory();
-        storage.active_model.aux_channels[0] = 57;
-        storage.active_model.aux_channels[1] = 58;
-        storage.active_model.freeform_ch1_4[0] = 57;
-        storage.active_model.freeform_ch1_4[1] = 58;
+        storage.active_model.aux_channels[0] = 58;
+        storage.active_model.aux_channels[1] = 59;
+        storage.active_model.freeform_ch1_4[0] = 58;
+        storage.active_model.freeform_ch1_4[1] = 59;
+        storage.active_model.mixes[0].source = 58;
+        storage.active_model.logical_switches[0].func = 8;
+        storage.active_model.logical_switches[0].v1 = 58;
+        storage.active_model.logical_switches[0].v2 = 58;
         storage.active_model.mixes[0].switch = 44;
         storage.active_model.mixes[1].switch = 45;
 
         storage.sanitize();
 
-        assert_eq!(storage.active_model.aux_channels[0], 57);
+        assert_eq!(storage.active_model.aux_channels[0], 58);
         assert_eq!(storage.active_model.aux_channels[1], 0);
-        assert_eq!(storage.active_model.freeform_ch1_4[0], 57);
+        assert_eq!(storage.active_model.freeform_ch1_4[0], 58);
         assert_eq!(storage.active_model.freeform_ch1_4[1], 0);
         assert_eq!(storage.active_model.mixes[0].switch, 44);
+        assert_eq!(storage.active_model.mixes[0].source, 58);
+        assert_eq!(storage.active_model.logical_switches[0].v1, 58);
+        assert_eq!(storage.active_model.logical_switches[0].v2, 58);
         assert_eq!(storage.active_model.mixes[1].switch, 0);
     }
 }

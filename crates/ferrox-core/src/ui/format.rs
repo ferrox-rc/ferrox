@@ -200,12 +200,12 @@ pub fn prev_ascii(c: u8) -> u8 {
     }
 }
 
-pub const SOURCE_NAMES: [&str; 58] = [
+pub const SOURCE_NAMES: [&str; 59] = [
     "None", "Roll", "Pitch", "Thr", "Yaw", "VRA", "VRB", "SA", "SB", "SC", "SD", "MAX", "CH1",
     "CH2", "CH3", "CH4", "CH5", "CH6", "CH7", "CH8", "CH9", "CH10", "CH11", "CH12", "CH13", "CH14",
     "CH15", "CH16", "CH17", "CH18", "Thr+", "SE", "SF", "SG", "SH", "SWI", "SWJ", "VRC", "VRD",
     "VRE", "VRF", "VRG", "SWK", "SWL", "SWM", "GV1", "GV2", "GV3", "GV4", "GV5", "L1", "L2", "L3",
-    "L4", "L5", "L6", "L7", "L8",
+    "L4", "L5", "L6", "L7", "L8", "THC",
 ];
 
 pub const SWITCH_COND_NAMES: [&str; 45] = [
@@ -220,7 +220,17 @@ pub const LOGICAL_FUNC_NAMES: [&str; 11] = [
 ];
 
 pub const MODE_NAMES: [&str; 3] = ["ADD (+)", "MULT (*)", "REPL (:=)"];
-pub const TEMPLATE_NAMES: [&str; 5] = ["NORMAL", "ELEVON/DELTA", "V-TAIL", "FLAPERON", "FREEFORM"];
+pub const TEMPLATE_NAMES: &[&str] = &[
+    "NORMAL",
+    "ELEVON/DELTA",
+    "V-TAIL",
+    "FLAPERON",
+    "FREEFORM",
+    #[cfg(any(feature = "baitboat", feature = "tank-mix"))]
+    "DIFF THR",
+    #[cfg(feature = "tank-mix")]
+    "TANK",
+];
 pub const DR_SWITCH_NAMES: [&str; 7] = ["None", "SA", "SB", "SC", "SD", "SE", "SF"];
 pub const AXIS_NAMES: [&str; 3] = ["Roll", "Pitch", "Yaw"];
 

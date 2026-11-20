@@ -23,7 +23,7 @@ flowchart TD
     end
 
     subgraph S3 ["Stage 3: Mixing & Templates"]
-        TPL["Aircraft Template: Normal / Elevon / V-Tail / Flaperon"]
+        TPL["Template: Normal / Elevon / V-Tail / Flaperon / Freeform / Tank"]
         AUX["Aux Source Mapping (CH5..CH18)"]
         MIX["32 Freeform Mix Rules (Weight, Modulation, Offset, Mode, Switch)"]
     end
@@ -124,6 +124,69 @@ CH6 (Right Aileron) = -Roll + (Flap / 2)
 ```
 - Flap deployment is driven by the physical source assigned to **CH6** in the `Aux Channels` menu (e.g. switch `SB` for 3-position flaps, or rotary knob `VRA` for variable camber).
 
+### Freeform and Tank
+
+Tank is controlled by the Cargo feature **`tank-mix`**, enabled by default
+on i6S and by all F4 board profiles (including `--no-default-features` builds).
+i6X keeps it opt-in because its full standard feature set plus Tank exceeds
+128 KB flash. For build commands, see the
+[Tank Mixer section](../README.md#tank-mixer).
+
+**Freeform** retains stored template ID **4**, including direct CH1..CH4
+assignments and all 32 free mixes. **Tank** uses ID **6**; ID **5** remains
+reserved for the optional `baitboat` differential-thrust template. Cycling the
+`Wing & Mixer` template selector includes Tank and, with `baitboat` enabled,
+DiffThrust.
+
+Without `tank-mix`, the Tank template and setup menu are unavailable. Existing
+Tank configurations retain ID 6 and all settings, but show `TANK OFF` in the
+template selector and `TANK-MIX DISABLED!` at startup. All output channels
+remain neutral even after skipping the warning or applying trainer input.
+
+Choose `TANK`, then `Tank Setup` to configure:
+
+| Setting | Default | Range |
+| :--- | :--- | :--- |
+| Drive Src | Thr (3) | Existing mix sources 0..58 |
+| Steer Src | Yaw (4) | Existing mix sources 0..58 |
+| Left Out | CH1 | CH1..CH18 |
+| Right Out | CH2 | CH1..CH18, distinct from Left Out |
+| Steer Wt | +100 | -100..+100, one-percent steps |
+
+Source stepping and moved-pot selection skip unavailable physical inputs.
+GV1..GV5 (45..49) and the existing logical sources L1..L8 (50..57) remain
+selectable. Channel sources use the existing mixer channel snapshot.
+`Thr` (3) is the raw throttle stick, without the throttle curve; `THC` (58)
+is the output of the configured throttle curve. Both are selectable in Tank
+Setup, channel assignments, free mixes and logical switches. The Tank startup
+neutral check evaluates the selected source with the same curve as the mixer.
+Selected motor outputs are labelled `L.MOT` and `R.MOT` in the channel
+monitor and count as configured even without an auxiliary assignment.
+The channel assignment menu excludes these two motor outputs and offers all
+remaining channels, including CH1..CH4. As in Freeform, unassigned channels
+are neutral rather than automatically following a stick, and primary-channel
+digital trims are not applied. For motors on CH1/CH2, CH3..CH18 can therefore
+be assigned freely. Direct CH1..CH4 assignments share the existing Freeform
+settings; no EEPROM layout change is required.
+GVars and the 32 free mixes remain accessible below `Tank Setup`; returning
+from an editor restores the corresponding row.
+
+Tank mixes bipolar drive and steering for two reversible motor controllers,
+including forward/reverse steering hysteresis and proportional saturation.
+Use a spring-centred drive input and verify neutral, direction, output
+reversing, arming and failsafe with the vehicle safely immobilized before use.
+The normal low-throttle aircraft preflight check does not apply to Tank.
+Motor arming neutralizes both selected outputs even after trainer handover;
+logical arm switches use the same conditioned decision as the mixer.
+
+Tank settings append an eight-byte `TankConfig` at model offset **464**.
+The model payload is **472 bytes**; existing field offsets and the
+**768-byte EEPROM model slots** are unchanged. Older 128-, 348-, 364-,
+368- (including legacy i6X), 392-, 416- and 464-byte models migrate with
+default Tank settings while preserving their existing template and data.
+Saving Tank edits or leaving Tank Setup retains the screen on a save error
+so the write can be retried.
+
 ---
 
 ## 4. Auxiliary Channel Remapping (CH5..CH18)
@@ -135,7 +198,8 @@ All 14 auxiliary channels (CH5 through CH18) can be independently assigned to an
 | **0** | `None` | Neutral output (no input source) | 1500 µs |
 | **1** | `Roll` | Conditioned Aileron stick input | 988..2012 µs |
 | **2** | `Pitch`| Conditioned Elevator stick input | 988..2012 µs |
-| **3** | `Thr`  | Spline-curved Throttle stick input | 988..2012 µs |
+| **3** | `Thr`  | Raw Throttle stick input, without throttle curve | 988..2012 µs |
+| **58** | `THC` | Throttle curve output (linear or spline) | 988..2012 µs |
 | **4** | `Yaw`  | Conditioned Rudder stick input | 988..2012 µs |
 | **5** | `VRA`  | Left rotary dial potentiometer | 988..2012 µs |
 | **6** | `VRB`  | Right rotary dial potentiometer | 988..2012 µs |
@@ -144,6 +208,11 @@ All 14 auxiliary channels (CH5 through CH18) can be independently assigned to an
 | **33..34**| `SG..SH` | Header `J4` tactile buttons `PA13`/`PA14` (when `J4 Mode` = `SG/SH BTN`) | UP: 988 µs / DN: 2012 µs |
 | **37..41**| `VRC..VRG`| Extended analog pots on `PC1..PC5` (when `Ext ADC (PC)` enabled) | 988..2012 µs |
 | **42..44**| `SWK..SWM`| Extended switches on `PC3..PC5` (when configured in switch mode) | 988 / 1500 / 2012 µs |
+
+Existing explicit `Thr` and `Thr+` assignments now bypass the throttle curve.
+Select `THC` to apply it. The implicit throttle output of the standard aircraft
+templates still uses the curve. Existing source IDs and the EEPROM layout
+are unchanged; THC appends source ID 58.
 
 ### Factory Default Auxiliary Mapping
 - `CH5`: **SA** (Arming switch / Flight mode)
