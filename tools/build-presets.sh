@@ -14,10 +14,10 @@ cargo objcopy -p ferrox-i6x --bin ferrox-i6x --release --no-default-features \
 
 echo "=== Building ferrox-i6s-soaring ==="
 cargo build --release -p ferrox-i6s --no-default-features \
-  --features stm32,touch,rf-afhds2a,rf-crsf,soaring,logical-switches \
+  --features stm32,touch,rf-afhds2a,rf-crsf,soaring \
   --target thumbv6m-none-eabi
 cargo objcopy -p ferrox-i6s --bin ferrox-i6s --release --no-default-features \
-  --features stm32,touch,rf-afhds2a,rf-crsf,soaring,logical-switches \
+  --features stm32,touch,rf-afhds2a,rf-crsf,soaring \
   --target thumbv6m-none-eabi -- -O binary "${OUT_DIR}/ferrox-i6s-soaring.bin"
 
 cat > "${OUT_DIR}/manifest.json" <<'EOF'
