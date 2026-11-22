@@ -159,7 +159,7 @@ Radio (FS-i6S)                               External ELRS TX Module
 - Live status strings from the device (`[Binding]`, `[Erasing]`, `[OK]`) are rendered dynamically while polling at the device-specified timeout interval.
 
 > [!TIP]
-> For the complete byte-level framing breakdown, wire timing diagrams, CRC-8 formulas, and state machine transitions, refer to the [CRSF Protocol Specification & Verification Guide](CRSF_PROTOCOL_SPEC.md).
+> Byte-level CRSF framing, CRC-8 (`0xD5` / `0xBA` for `Set4`), and MultiSwitch (`0x32` Command / `0xA1` Sub-command) packet builders live in [`crates/ferrox-core/src/crsf/protocol.rs`](../crates/ferrox-core/src/crsf/protocol.rs) and [`crates/ferrox-core/src/multiswitch.rs`](../crates/ferrox-core/src/multiswitch.rs). Enable `--features multiswitch` to activate up to 4×8-switch CRSF MultiSwitch banks per model.
 
 ---
 

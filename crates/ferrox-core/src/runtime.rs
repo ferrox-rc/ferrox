@@ -10,7 +10,6 @@ use crate::board::{ActiveBoard, BoardIdleHook, BoardProfile};
 use crate::buzzer::Buzzer;
 use crate::calib::CalibWizard;
 use crate::crsf;
-use crate::curve;
 use crate::display::St7567;
 #[cfg(feature = "rf-dsm")]
 use crate::dsm;
@@ -52,6 +51,8 @@ pub struct FlightPipeline {
     pub logical_bank: mixer::LogicalSwitchBank,
     #[cfg(any(feature = "logical-switches", test))]
     pub last_tick_ms: u32,
+    #[cfg(any(feature = "multiswitch", test))]
+    pub multiswitch: crate::multiswitch::MultiSwitchController,
 }
 
 impl FlightPipeline {
@@ -67,6 +68,8 @@ impl FlightPipeline {
             logical_bank: mixer::LogicalSwitchBank::new(),
             #[cfg(any(feature = "logical-switches", test))]
             last_tick_ms: 0,
+            #[cfg(any(feature = "multiswitch", test))]
+            multiswitch: crate::multiswitch::MultiSwitchController::new(),
         }
     }
 
@@ -150,27 +153,17 @@ impl FlightPipeline {
             self.prev_armed = is_armed;
         }
 
-        // 4. Evaluate active model throttle curve (normalized 0..MIXER_MAX)
-        let thr_input =
-            ((controls.throttle + mixer::MIXER_MAX) / 2).clamp(0, mixer::MIXER_MAX) as u16;
-        let thr_curved = curve::evaluate_curve(
-            thr_input,
-            active_model.thr_curve_pts,
-            active_model.thr_curve_smooth != 0,
-            &active_model.thr_curve,
-        );
-
-        // 5. Compute all 14 channels via 4-stage pipeline (D/R, Expo, Matrix Mixer, Trims, Reversing)
+        // 4. Compute all 18 channels via the 11-stage ±1024 fixed-point pipeline
         let mut rf_chs = mixer::compute_channels(
             controls.aileron,
             controls.elevator,
-            thr_curved,
+            controls.throttle,
             controls.rudder,
             &state.aux_pots[4..],
             &state.switches,
             active_model,
             trims,
-            storage.radio.throttle_trim,
+            false,
         );
 
         // 5b. Safety Handover: Process student PPM input if Trainer In is enabled
@@ -188,12 +181,19 @@ impl FlightPipeline {
             trainer::update_out_channels(&rf_chs);
         }
 
-        // 6. Publish channels to active RF subsystem
+        // 6. Publish channels to active RF subsystem via typed SerialRouteConfig
         let proto = ActiveBoard::resolve_protocol(active_model.rf_protocol);
         let is_crsf = proto == crate::board::RfProtocol::Crsf;
         let rf_active = !sim_mode;
 
-        crate::uart::set_port_route(active_model.rf_module_target());
+        let serial_route = crate::uart::resolve_serial_route(
+            proto,
+            active_model.rf_module_target() != 0,
+            active_model.crsf_half_duplex != 0,
+            active_model.crsf_baud,
+        );
+        let serial_active = rf_active && proto != crate::board::RfProtocol::Afhds2a;
+        crate::uart::configure_route(serial_active, serial_route);
 
         crsf::set_enabled(
             is_crsf && rf_active,
@@ -215,6 +215,8 @@ impl FlightPipeline {
                 crate::board::RfProtocol::Crsf => {
                     let arm_mode_switch = active_model.crsf_arm_mode != 0;
                     crsf::update_channels(now, &rf_chs, arm_mode_switch, is_armed);
+                    #[cfg(any(feature = "multiswitch", test))]
+                    let _ = self.multiswitch.tick(now, active_model, true);
                     crsf::poll_telemetry(now);
                 }
                 #[cfg(feature = "rf-dsm")]
@@ -228,12 +230,26 @@ impl FlightPipeline {
                 }
                 #[cfg(not(feature = "rf-dsm"))]
                 crate::board::RfProtocol::Dsm => {}
-                crate::board::RfProtocol::Cc2500 | crate::board::RfProtocol::Mpm => {
-                    let cc_proto = rf::mpm::Cc2500Protocol::from_u8(active_model.rx_serial_proto);
+                crate::board::RfProtocol::Cc2500 => {
+                    let spec = rf::cc2500::Cc2500Protocol::from_u8(active_model.rx_serial_proto).spec();
                     rf::mpm::update_link(
                         now,
                         &rf_chs,
-                        cc_proto,
+                        spec,
+                        active_model.mpm_rx_num(),
+                        active_model.mpm_freq_tune(),
+                        rf::is_binding(),
+                        active_model.mpm_range_check(),
+                    );
+                    rf::mpm::poll_telemetry(now);
+                    rf::set_channels(&rf_chs);
+                }
+                crate::board::RfProtocol::Mpm => {
+                    let spec = rf::mpm::MpmProtocol::from_u8(active_model.rx_serial_proto).spec();
+                    rf::mpm::update_link(
+                        now,
+                        &rf_chs,
+                        spec,
                         active_model.mpm_rx_num(),
                         active_model.mpm_freq_tune(),
                         rf::is_binding(),
@@ -1347,7 +1363,7 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
     );
 
     let mut trims = TrimController::new();
-    trims.throttle_enabled = storage.radio.throttle_trim != 0;
+    trims.throttle_enabled = storage.active_model.trim_mode != 0;
 
     // Load active model trims and receiver ID
     let active = storage.active_model();

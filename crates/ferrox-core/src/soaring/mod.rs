@@ -44,8 +44,10 @@ impl SoaringDiscipline {
     }
 }
 
-/// Persistent per-model soaring & F5J competition configuration (24 bytes).
-/// Embedded directly into `ModelConfig` within the 768-byte EEPROM model slot.
+/// Persistent per-model soaring & F5J competition configuration (12 bytes).
+/// Embedded directly into `ModelConfig` v2 within the 768-byte EEPROM model slot.
+/// Tail topology (V-Tail / M-Tail), Crow braking, and dual-switch arming live in
+/// the unified predefined mixer registry and Logical Switches (`L1..L8`).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SoaringConfig {
@@ -65,23 +67,13 @@ pub struct SoaringConfig {
     pub land_alt_max_m: u8,
     /// Seconds of ground stability required to confirm touchdown (default `3`)
     pub confirm_secs: u8,
-    /// Optional motor arming switch condition (`0..=28`)
-    pub arm_switch: u8,
-    /// Optional crow / landing switch condition (`0..=28`)
-    pub crow_switch: u8,
-    /// Glider tail topology (`0`: X-tail / Std, `1`: V-tail, `2`: M-tail)
-    pub tail_type: u8,
-    /// M-tail aileron-to-elevator roll-assist weight (`-100..=+100`, default `20`)
-    pub mtail_aile_ele: i8,
-    /// M-tail rudder-to-elevator roll-assist weight (`-100..=+100`, default `20`)
-    pub mtail_rud_ele: i8,
     /// Feature bitflags (`Bit 0`: Auto-Log SD, `Bit 1`: Audio countdown cues)
     pub flags: u8,
     /// Reserved for future F3K / glider parameters
-    pub _reserved: [u8; 10],
+    pub _reserved: [u8; 3],
 }
 
-const _: () = assert!(core::mem::size_of::<SoaringConfig>() == 24);
+const _: () = assert!(core::mem::size_of::<SoaringConfig>() == 12);
 
 impl SoaringConfig {
     pub const FLAG_AUTO_LOG: u8 = 1 << 0;
@@ -98,13 +90,8 @@ impl SoaringConfig {
             min_climb_m: 15,
             land_alt_max_m: 5,
             confirm_secs: 3,
-            arm_switch: 0,
-            crow_switch: 0,
-            tail_type: 0,
-            mtail_aile_ele: 20,
-            mtail_rud_ele: 20,
             flags: Self::FLAG_AUTO_LOG | Self::FLAG_AUDIO_CUES,
-            _reserved: [0; 10],
+            _reserved: [0; 3],
         }
     }
 
@@ -171,16 +158,6 @@ impl SoaringConfig {
         if self.confirm_secs == 0 || self.confirm_secs > 15 {
             self.confirm_secs = 3;
         }
-        if self.arm_switch > 44 {
-            self.arm_switch = 0;
-        }
-        if self.crow_switch > 44 {
-            self.crow_switch = 0;
-        }
-        if self.tail_type > 2 {
-            self.tail_type = 0;
-        }
-        self.mtail_aile_ele = self.mtail_aile_ele.clamp(-100, 100);
-        self.mtail_rud_ele = self.mtail_rud_ele.clamp(-100, 100);
+        self._reserved = [0; 3];
     }
 }

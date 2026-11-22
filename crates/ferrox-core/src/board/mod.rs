@@ -205,6 +205,36 @@ pub enum HardwareExtItem {
     PpmIn,
 }
 
+/// Physical external RF module bay connector topology.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BayConnectorKind {
+    None,
+    Jr5Pin,
+    Nano8Pin,
+    AuxHeader,
+}
+
+impl BayConnectorKind {
+    pub const fn short_name(self) -> &'static str {
+        match self {
+            Self::None => "NONE",
+            Self::Jr5Pin => "JR-5",
+            Self::Nano8Pin => "NANO-8",
+            Self::AuxHeader => "AUX",
+        }
+    }
+}
+
+/// OEM internal RF module hardware fitted to this transmitter build variant.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum InternalModuleKind {
+    None,
+    SpiAfhds2a,
+    UartCrsf,
+    UartCc2500,
+    UartMpm4In1,
+}
+
 /// Diagnostic screen pages selectable per board via [`BoardProfile::DIAG_PAGES`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DiagPage {
@@ -218,6 +248,8 @@ pub enum DiagPage {
     ExtAnalog,
     /// Page 4: External I2C EEPROM bus, address, and health status.
     EepromStorage,
+    /// Page 5: Live RF / UART route, framing, duplex, TX error & RX byte diagnostics.
+    RfUart,
 }
 
 /// Static board capabilities, bounds, and hardware hooks.
@@ -263,10 +295,12 @@ pub trait BoardProfile: Copy + Clone + 'static {
     const VBAT_WARN_MAX_DECI: u8 = 50;
     const VBAT_WARN_DEFAULT_DECI: u8 = 44;
 
-    // RF Protocol Capabilities
+    // RF Protocol & Bay Capabilities
     const HAS_INTERNAL_AFHDS2A: bool;
     const HAS_INTERNAL_CRSF: bool;
     const HAS_EXTERNAL_MODULE_BAY: bool = false;
+    const BAY_CONNECTOR: BayConnectorKind = BayConnectorKind::Jr5Pin;
+    const INTERNAL_MODULE: InternalModuleKind = InternalModuleKind::UartCrsf;
     const SUPPORTED_PROTOCOLS: &'static [RfProtocol];
     const DEFAULT_PROTOCOL: RfProtocol;
 

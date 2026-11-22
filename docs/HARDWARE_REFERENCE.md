@@ -1,10 +1,24 @@
 # HARDWARE REFERENCE & BRING-UP NOTES
 
-Technical reference documentation for the FlySky FS-i6S hardware. This document details the pinout, touchscreen interface, electronic power management, register mappings, and system architecture for the FS-i6S platform.
+Technical hardware reference across Ferrox-supported transmitters (STM32F407/429 and STM32F072/APM32F072).
 
 ---
 
-## 1. Microcontroller & Memory
+## 0. STM32F4 RF Module & External Bay UART Matrix
+
+All 11 STM32F4 boards declare their physical connector (`BayConnectorKind`) and OEM internal module (`InternalModuleKind`) in [`crates/ferrox-core/src/board/qx7_family.rs`](../crates/ferrox-core/src/board/qx7_family.rs). UART routing is resolved deterministically by `ferrox_core::uart::resolve_serial_route` and inspected live on-radio via **`System -> Diagnostics -> RF / UART`**:
+
+| Board(s) | External Bay Connector | Internal RF (`USART1` `PB6`/`PB7`) | External CRSF Half-Duplex | External CRSF Full-Duplex | External MPM / CC2500 / DSM |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Pocket, Zorro, GX12, T-Pro V2** | **8-pin Nano** | ELRS / CC2500 / MPM (`internal-*`) | `USART2` (`PD5`/`PD6` + `PD4` dir) on S.Port | `USART6` (`PC6`/`PC7`) | Split `USART6` TX (`PC6`, 100k 8E2) + `USART2` RX (`PD6`) |
+| **TX12, Boxer, QX7, T12, X9D+, X9E, AT9S Pro** | **5-pin JR** | ELRS / CC2500 / MPM (`internal-*`) | `USART2` (`PD5`/`PD6` + `PD4` dir) on JR Pin 5 | `USART6` (`PC6`/`PC7`) on JR Pins 1/2 | Split `USART6` TX (`PC6`, JR Pin 1) + `USART2` RX (`PD6`, JR Pin 5) |
+| **FlySky FS-i6X / FS-i6S** | **Aux Header** | Internal A7105 (AFHDS 2A SPI) | `USART2` (i6X) / `USART1` (i6S) half-duplex | Full-duplex on same USART | 100k 8E2 / 115.2k 8N1 on same USART |
+
+> **OEM Internal-Module Build Flags (`ferrox-f4`)**: For radios sold in multiple OEM RF variants (e.g. Pocket/TX12/Boxer/Zorro CC2500 or 4-in-1), pass `--features "pocket,internal-cc2500"` or `--features "zorro,internal-mpm"` to override the default `InternalModuleKind`.
+
+---
+
+## 1. FlySky FS-i6S / FS-i6X Microcontroller & Memory
 
 - **Primary MCU:** STMicroelectronics **STM32F072VB** (Cortex-M0 @ 48 MHz).
 - **Secondary Clone Variant:** Geehy **APM32F072VB** (pin- and register-compatible clone).

@@ -288,6 +288,7 @@ pub trait Qx7FamilyProfile: Copy + Clone + 'static {
 
     const DISPLAY_WIDTH: usize = 128;
     const DISPLAY_HEIGHT: usize = 64;
+    const BAY_CONNECTOR: crate::board::BayConnectorKind = crate::board::BayConnectorKind::Jr5Pin;
 }
 
 macro_rules! impl_qx7_board_profile {
@@ -377,6 +378,7 @@ macro_rules! impl_qx7_board_profile {
                 DiagPage::Analog7To11,
                 DiagPage::ExtSwitches,
                 DiagPage::EepromStorage,
+                DiagPage::RfUart,
             ];
 
             const EXT_PWR_LABEL: &'static str = "Ext Mod Pwr:";
@@ -407,10 +409,46 @@ macro_rules! impl_qx7_board_profile {
                 #[cfg(feature = "rf-dsm")]
                 RfProtocol::Dsm,
             ];
-            const DEFAULT_PROTOCOL: RfProtocol = if !Self::SUPPORTED_PROTOCOLS.is_empty() {
-                Self::SUPPORTED_PROTOCOLS[0]
-            } else {
-                RfProtocol::Crsf
+            const BAY_CONNECTOR: crate::board::BayConnectorKind =
+                <$spec as Qx7FamilyProfile>::BAY_CONNECTOR;
+            const INTERNAL_MODULE: crate::board::InternalModuleKind = {
+                #[cfg(feature = "internal-cc2500")]
+                {
+                    crate::board::InternalModuleKind::UartCc2500
+                }
+                #[cfg(all(not(feature = "internal-cc2500"), feature = "internal-mpm"))]
+                {
+                    crate::board::InternalModuleKind::UartMpm4In1
+                }
+                #[cfg(all(not(feature = "internal-cc2500"), not(feature = "internal-mpm")))]
+                {
+                    crate::board::InternalModuleKind::UartCrsf
+                }
+            };
+            const DEFAULT_PROTOCOL: RfProtocol = {
+                #[cfg(all(feature = "internal-cc2500", feature = "rf-cc2500"))]
+                {
+                    RfProtocol::Cc2500
+                }
+                #[cfg(all(
+                    not(all(feature = "internal-cc2500", feature = "rf-cc2500")),
+                    feature = "internal-mpm",
+                    feature = "rf-mpm"
+                ))]
+                {
+                    RfProtocol::Mpm
+                }
+                #[cfg(not(any(
+                    all(feature = "internal-cc2500", feature = "rf-cc2500"),
+                    all(feature = "internal-mpm", feature = "rf-mpm")
+                )))]
+                {
+                    if !Self::SUPPORTED_PROTOCOLS.is_empty() {
+                        Self::SUPPORTED_PROTOCOLS[0]
+                    } else {
+                        RfProtocol::Crsf
+                    }
+                }
             };
             const HAS_INTERNAL_AFHDS2A: bool = false;
             const HAS_INTERNAL_CRSF: bool = true;
@@ -459,11 +497,7 @@ macro_rules! impl_qx7_board_profile {
                     12..=15 => true, // CH1..CH4 primary flight channels
                     16..=29 => {
                         let ch_idx = (src - 12) as usize; // 4..17
-                        let aux_idx = ch_idx - 4; // 0..13
-                        if model.wing_tail_mix == 3 && ch_idx == 5 {
-                            return true;
-                        }
-                        if model.aux_channels[aux_idx] != 0 {
+                        if model.channels[ch_idx].source != 0 {
                             return true;
                         }
                         model

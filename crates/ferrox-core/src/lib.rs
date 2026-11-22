@@ -54,6 +54,8 @@ pub mod fat;
 pub mod hal;
 pub mod input;
 pub mod mixer;
+#[cfg(any(feature = "multiswitch", test))]
+pub mod multiswitch;
 pub mod power;
 pub mod rf;
 pub mod runtime;

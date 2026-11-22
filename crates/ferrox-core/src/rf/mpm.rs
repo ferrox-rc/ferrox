@@ -1,172 +1,120 @@
-//! Multi-Protocol Module (MPM) and CC2500 Serial Protocol Driver.
+//! 4-in-1 Multi-Protocol Module (MPM) Catalog & Shared MULTI Serial Engine.
 //!
-//! Controls internal and external 4-in-1 / CC2500 MULTI-Modules via 100,000 baud 8E2 serial stream.
-//! Supports FrSky D16 (FCC & LBT), FrSky D8, Graupner HoTT, Futaba SFHSS, FlySky AFHDS 2A / V1,
-//! Spektrum DSMX, Corona, and Hitec protocols with frequency fine-tuning and bidirectional telemetry decoding.
+//! Controls internal and external 4-in-1 / CC2500 MULTI-Modules via 100,000 baud `8E2` serial stream.
+//! The genuine TI CC2500 protocol catalog lives separately in [`crate::rf::cc2500`]; both
+//! [`Cc2500Protocol`] and [`MpmProtocol`] delegate 26/27-byte MULTI framing and bidirectional
+//! telemetry decoding to this shared engine with zero duplicated state machines.
 
 #![allow(static_mut_refs)]
 
 use crate::mixer::NUM_CHANNELS;
+pub use crate::rf::cc2500::{Cc2500Protocol, MultiProtoSpec};
 
 /// UART baud index for 100,000 baud 8E2 (Even Parity, 2 Stop Bits) MULTI-Module stream.
 pub const BAUD_IDX_MULTI_100K_8E2: u8 = crate::uart::BAUD_IDX_MULTI_100K_8E2;
 
-/// MULTI-Module Protocol IDs:
-pub const MPM_PROTO_FLYSKY: u8 = 1; // FlySky AFHDS (V1)
-pub const MPM_PROTO_FRSKY_D: u8 = 3; // FrSky D8
-pub const MPM_PROTO_DSM: u8 = 6; // Spektrum DSM2 / DSMX
-pub const MPM_PROTO_FRSKY_X: u8 = 15; // FrSky D16 V1 / X (FCC & LBT)
-pub const MPM_PROTO_SFHSS: u8 = 21; // Futaba SFHSS
-pub const MPM_PROTO_FRSKY_V: u8 = 25; // FrSky V8
-pub const MPM_PROTO_AFHDS2A: u8 = 28; // FlySky AFHDS 2A
-pub const MPM_PROTO_CORONA: u8 = 36; // Corona
-pub const MPM_PROTO_HITEC: u8 = 39; // Hitec Optima/Minima
-pub const MPM_PROTO_HOTT: u8 = 57; // Graupner HoTT
-pub const MPM_PROTO_FRSKY_X2: u8 = 64; // FrSky D16 V2 / X2 (FCC & LBT)
+/// MULTI-Module Wire Protocol IDs:
+pub const MPM_PROTO_FLYSKY: u8 = 1;
+pub const MPM_PROTO_HUBSAN: u8 = 2;
+pub const MPM_PROTO_FRSKY_D: u8 = 3;
+pub const MPM_PROTO_DSM: u8 = 6;
+pub const MPM_PROTO_DEVO: u8 = 7;
+pub const MPM_PROTO_SYMAX: u8 = 10;
+pub const MPM_PROTO_SLT: u8 = 11;
+pub const MPM_PROTO_BAYANG: u8 = 14;
+pub const MPM_PROTO_FRSKY_X: u8 = 15;
+pub const MPM_PROTO_SFHSS: u8 = 21;
+pub const MPM_PROTO_FRSKY_V: u8 = 25;
+pub const MPM_PROTO_AFHDS2A: u8 = 28;
+pub const MPM_PROTO_CORONA: u8 = 36;
+pub const MPM_PROTO_HITEC: u8 = 39;
+pub const MPM_PROTO_REDPINE: u8 = 50;
+pub const MPM_PROTO_HOTT: u8 = 57;
+pub const MPM_PROTO_FRSKY_X2: u8 = 64;
+pub const MPM_PROTO_RLINK: u8 = 67;
+pub const MPM_PROTO_SKYARTEC: u8 = 70;
+pub const MPM_PROTO_RADIOLINK: u8 = 74;
+pub const MPM_PROTO_OMP: u8 = 76;
+pub const MPM_PROTO_MLINK: u8 = 77;
 
-#[repr(u8)]
+/// Authoritative 4-in-1 MPM protocol table (25 entries across CC2500/A7105/CYRF6936/NRF24L01).
+pub const MPM_PROTOCOLS: &[MultiProtoSpec] = &[
+    MultiProtoSpec { wire_id: MPM_PROTO_FRSKY_X, default_sub: 0, name: "FrSkyX" },
+    MultiProtoSpec { wire_id: MPM_PROTO_FRSKY_X, default_sub: 2, name: "FrSkyX LBT" },
+    MultiProtoSpec { wire_id: MPM_PROTO_FRSKY_X2, default_sub: 0, name: "FrSkyX2" },
+    MultiProtoSpec { wire_id: MPM_PROTO_FRSKY_X2, default_sub: 2, name: "FrSkyX2 LBT" },
+    MultiProtoSpec { wire_id: MPM_PROTO_FRSKY_D, default_sub: 0, name: "FrSkyD" },
+    MultiProtoSpec { wire_id: MPM_PROTO_FRSKY_V, default_sub: 0, name: "FrSkyV" },
+    MultiProtoSpec { wire_id: MPM_PROTO_AFHDS2A, default_sub: 0, name: "AFHDS2A" },
+    MultiProtoSpec { wire_id: MPM_PROTO_FLYSKY, default_sub: 0, name: "FlySky" },
+    MultiProtoSpec { wire_id: MPM_PROTO_DSM, default_sub: 1, name: "DSMX" },
+    MultiProtoSpec { wire_id: MPM_PROTO_DSM, default_sub: 0, name: "DSM2" },
+    MultiProtoSpec { wire_id: MPM_PROTO_SFHSS, default_sub: 0, name: "SFHSS" },
+    MultiProtoSpec { wire_id: MPM_PROTO_HOTT, default_sub: 0, name: "HoTT" },
+    MultiProtoSpec { wire_id: MPM_PROTO_CORONA, default_sub: 0, name: "Corona" },
+    MultiProtoSpec { wire_id: MPM_PROTO_HITEC, default_sub: 0, name: "Hitec" },
+    MultiProtoSpec { wire_id: MPM_PROTO_REDPINE, default_sub: 0, name: "Redpine" },
+    MultiProtoSpec { wire_id: MPM_PROTO_DEVO, default_sub: 0, name: "Devo" },
+    MultiProtoSpec { wire_id: MPM_PROTO_HUBSAN, default_sub: 0, name: "Hubsan" },
+    MultiProtoSpec { wire_id: MPM_PROTO_BAYANG, default_sub: 0, name: "Bayang" },
+    MultiProtoSpec { wire_id: MPM_PROTO_SYMAX, default_sub: 0, name: "SymaX" },
+    MultiProtoSpec { wire_id: MPM_PROTO_SLT, default_sub: 0, name: "SLT" },
+    MultiProtoSpec { wire_id: MPM_PROTO_RADIOLINK, default_sub: 0, name: "RadioLink" },
+    MultiProtoSpec { wire_id: MPM_PROTO_MLINK, default_sub: 0, name: "M-Link" },
+    MultiProtoSpec { wire_id: MPM_PROTO_OMP, default_sub: 0, name: "OMP" },
+    MultiProtoSpec { wire_id: MPM_PROTO_SKYARTEC, default_sub: 0, name: "Skyartec" },
+    MultiProtoSpec { wire_id: MPM_PROTO_RLINK, default_sub: 0, name: "RLINK" },
+];
+
+/// 4-in-1 Multi-Protocol Module selector (stored in `ModelConfig::rx_serial_proto` when `RfProtocol::Mpm`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Cc2500Protocol {
-    FrSkyD16 = 0,
-    FrSkyD8 = 1,
-    Sfhss = 2,
-    Corona = 3,
-    Hitec = 4,
-    FrSkyLbt = 5,
-    Hott = 6,
-    FlySky2a = 7,
-    FlySkyStd = 8,
-    Dsmx = 9,
-    FrSkyX2 = 10,
-    FrSkyX2Lbt = 11,
-}
+pub struct MpmProtocol(u8);
 
-impl Cc2500Protocol {
+impl MpmProtocol {
+    pub const COUNT: u8 = MPM_PROTOCOLS.len() as u8;
+
+    #[inline(always)]
     pub const fn from_u8(val: u8) -> Self {
-        match val {
-            0 => Self::FrSkyD16,
-            1 => Self::FrSkyD8,
-            2 => Self::Sfhss,
-            3 => Self::Corona,
-            4 => Self::Hitec,
-            5 => Self::FrSkyLbt,
-            6 => Self::Hott,
-            7 => Self::FlySky2a,
-            8 => Self::FlySkyStd,
-            9 => Self::Dsmx,
-            10 => Self::FrSkyX2,
-            11 => Self::FrSkyX2Lbt,
-            _ => Self::FrSkyD16,
+        if val < Self::COUNT {
+            Self(val)
+        } else {
+            Self(0)
         }
     }
 
+    #[inline(always)]
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub const fn spec(self) -> &'static MultiProtoSpec {
+        &MPM_PROTOCOLS[self.0 as usize]
+    }
+
+    #[inline(always)]
     pub const fn name(self) -> &'static str {
-        match self {
-            Self::FrSkyD16 => "FrSkyX",
-            Self::FrSkyLbt => "FrSkyX LBT",
-            Self::FrSkyX2 => "FrSkyX2",
-            Self::FrSkyX2Lbt => "FrSkyX2 LBT",
-            Self::FrSkyD8 => "FrSkyD",
-            Self::Hott => "HoTT",
-            Self::Sfhss => "SFHSS",
-            Self::FlySky2a => "AFHDS2A",
-            Self::FlySkyStd => "AFHDS",
-            Self::Dsmx => "DSMX",
-            Self::Corona => "Corona",
-            Self::Hitec => "Hitec",
-        }
+        self.spec().name
     }
 
-    pub const fn is_cc2500_native(self) -> bool {
-        matches!(
-            self,
-            Self::FrSkyD16
-                | Self::FrSkyLbt
-                | Self::FrSkyX2
-                | Self::FrSkyX2Lbt
-                | Self::FrSkyD8
-                | Self::Hott
-                | Self::Sfhss
-                | Self::Corona
-                | Self::Hitec
-        )
-    }
-
-    pub const fn next(self) -> Self {
-        self.next_for(true)
-    }
-
-    pub const fn prev(self) -> Self {
-        self.prev_for(true)
-    }
-
-    pub const fn next_for(self, is_mpm: bool) -> Self {
-        let mut cand = match self {
-            Self::FrSkyD16 => Self::FrSkyLbt,
-            Self::FrSkyLbt => Self::FrSkyX2,
-            Self::FrSkyX2 => Self::FrSkyX2Lbt,
-            Self::FrSkyX2Lbt => Self::FrSkyD8,
-            Self::FrSkyD8 => Self::Hott,
-            Self::Hott => Self::Sfhss,
-            Self::Sfhss => Self::FlySky2a,
-            Self::FlySky2a => Self::FlySkyStd,
-            Self::FlySkyStd => Self::Dsmx,
-            Self::Dsmx => Self::Corona,
-            Self::Corona => Self::Hitec,
-            Self::Hitec => Self::FrSkyD16,
-        };
-        if !is_mpm {
-            while !cand.is_cc2500_native() {
-                cand = cand.next_for(true);
-            }
-        }
-        cand
-    }
-
-    pub const fn prev_for(self, is_mpm: bool) -> Self {
-        let mut cand = match self {
-            Self::FrSkyD16 => Self::Hitec,
-            Self::FrSkyLbt => Self::FrSkyD16,
-            Self::FrSkyX2 => Self::FrSkyLbt,
-            Self::FrSkyX2Lbt => Self::FrSkyX2,
-            Self::FrSkyD8 => Self::FrSkyX2Lbt,
-            Self::Hott => Self::FrSkyD8,
-            Self::Sfhss => Self::Hott,
-            Self::FlySky2a => Self::Sfhss,
-            Self::FlySkyStd => Self::FlySky2a,
-            Self::Dsmx => Self::FlySkyStd,
-            Self::Corona => Self::Dsmx,
-            Self::Hitec => Self::Corona,
-        };
-        if !is_mpm {
-            while !cand.is_cc2500_native() {
-                cand = cand.prev_for(true);
-            }
-        }
-        cand
-    }
-
+    #[inline(always)]
     pub const fn mpm_proto_id(self) -> u8 {
-        match self {
-            Self::FrSkyD16 | Self::FrSkyLbt => MPM_PROTO_FRSKY_X,
-            Self::FrSkyX2 | Self::FrSkyX2Lbt => MPM_PROTO_FRSKY_X2,
-            Self::FrSkyD8 => MPM_PROTO_FRSKY_D,
-            Self::Sfhss => MPM_PROTO_SFHSS,
-            Self::Corona => MPM_PROTO_CORONA,
-            Self::Hitec => MPM_PROTO_HITEC,
-            Self::Hott => MPM_PROTO_HOTT,
-            Self::FlySky2a => MPM_PROTO_AFHDS2A,
-            Self::FlySkyStd => MPM_PROTO_FLYSKY,
-            Self::Dsmx => MPM_PROTO_DSM,
-        }
+        self.spec().wire_id
     }
 
+    #[inline(always)]
     pub const fn default_sub_proto(self) -> u8 {
-        match self {
-            Self::FrSkyLbt | Self::FrSkyX2Lbt => 2, // EU_16 (LBT)
-            Self::Dsmx => 1,                        // DSMX_22
-            _ => 0,
-        }
+        self.spec().default_sub
+    }
+
+    #[inline(always)]
+    pub const fn next(self) -> Self {
+        Self((self.0 + 1) % Self::COUNT)
+    }
+
+    #[inline(always)]
+    pub const fn prev(self) -> Self {
+        Self((self.0 + Self::COUNT - 1) % Self::COUNT)
     }
 }
 
@@ -267,12 +215,12 @@ pub fn get_telemetry() -> MpmTelemetry {
     unsafe { MPM_TELEM }
 }
 
-/// Periodic MPM serial frame transmission (`~111 Hz` / `9 ms` interval).
+/// Periodic MPM/CC2500 serial frame transmission (`~111 Hz` / `9 ms` interval).
 #[allow(clippy::too_many_arguments)]
 pub fn update_link(
     now_ms: u32,
     channels_us: &[u16; NUM_CHANNELS],
-    proto: Cc2500Protocol,
+    spec: &MultiProtoSpec,
     rx_num: u8,
     freq_tune: i8,
     bind_req: bool,
@@ -305,18 +253,18 @@ pub fn update_link(
 
         if now_ms.wrapping_sub(LAST_TX_MS) >= 9 {
             LAST_TX_MS = now_ms;
-            let mut frame = [0u8; 26];
-            pack_mpm_frame(
+            let mut frame = [0u8; 27];
+            let len = pack_mpm_frame(
                 channels_us,
-                proto,
-                proto.default_sub_proto(),
+                spec,
+                spec.default_sub,
                 rx_num,
                 freq_tune,
                 binding,
                 range_check,
                 &mut frame,
             );
-            crate::uart::write_bytes(&frame);
+            crate::uart::write_bytes(&frame[..len]);
             MPM_TELEM.packets_sent = MPM_TELEM.packets_sent.wrapping_add(1);
         }
     }
@@ -582,16 +530,16 @@ pub fn process_mpm_packet(pkt_type: u8, payload: &[u8], now_ms: u32, telem: &mut
 #[allow(clippy::too_many_arguments)]
 pub fn pack_mpm_frame(
     channels_us: &[u16; NUM_CHANNELS],
-    proto: Cc2500Protocol,
+    spec: &MultiProtoSpec,
     sub_proto: u8,
     rx_num: u8,
     freq_tune: i8,
     binding: bool,
     range_check: bool,
-    out: &mut [u8; 26],
-) {
-    let proto_id = proto.mpm_proto_id();
-    // MULTI-Module protocol uses 0x55 for protocols 0..31 and 0x54 for protocols 32..63 (bit 5).
+    out: &mut [u8; 27],
+) -> usize {
+    let proto_id = spec.wire_id;
+    // MULTI-Module uses 0x55 for bit5==0 (0..31, 64..95) and 0x54 for bit5==1 (32..63, 96..127).
     out[0] = if (proto_id & 0x20) != 0 { 0x54 } else { 0x55 };
 
     let mut b1 = proto_id & 0x1F;
@@ -613,7 +561,7 @@ pub fn pack_mpm_frame(
 
     for &us in channels_us[..16].iter() {
         let us_clamped = us.clamp(988, 2012) as u32;
-        let val11 = (((us_clamped - 988) * 1639) / 1024 + 172).min(2047);
+        let val11 = (((us_clamped - 988) * 1639) >> 10).saturating_add(172).min(2047);
         bit_acc |= val11 << bits_in_acc;
         bits_in_acc += 11;
         while bits_in_acc >= 8 && byte_idx < 26 {
@@ -622,6 +570,13 @@ pub fn pack_mpm_frame(
             bits_in_acc -= 8;
             byte_idx += 1;
         }
+    }
+
+    if proto_id >= 64 {
+        out[26] = (proto_id >> 6) & 0x03;
+        27
+    } else {
+        26
     }
 }
 
@@ -632,11 +587,11 @@ mod tests {
     #[test]
     fn test_pack_mpm_frame_structure() {
         let chs = [1500u16; NUM_CHANNELS];
-        let mut frame = [0u8; 26];
+        let mut frame = [0u8; 27];
 
-        pack_mpm_frame(
+        let len = pack_mpm_frame(
             &chs,
-            Cc2500Protocol::FrSkyD16,
+            Cc2500Protocol::FrSkyX.spec(),
             0,
             1,
             -15,
@@ -645,6 +600,7 @@ mod tests {
             &mut frame,
         );
 
+        assert_eq!(len, 26);
         assert_eq!(frame[0], 0x55);
         assert_eq!(frame[1], MPM_PROTO_FRSKY_X);
         assert_eq!(frame[2], 0x01); // Sub 0, RxNum 1
@@ -654,11 +610,11 @@ mod tests {
     #[test]
     fn test_pack_mpm_frame_binding_and_range() {
         let chs = [1500u16; NUM_CHANNELS];
-        let mut frame = [0u8; 26];
+        let mut frame = [0u8; 27];
 
-        pack_mpm_frame(
+        let len = pack_mpm_frame(
             &chs,
-            Cc2500Protocol::FrSkyD8,
+            Cc2500Protocol::FrSkyD.spec(),
             0,
             0,
             0,
@@ -667,6 +623,7 @@ mod tests {
             &mut frame,
         );
 
+        assert_eq!(len, 26);
         assert_eq!(frame[0], 0x55);
         assert_eq!(frame[1], MPM_PROTO_FRSKY_D | 0x80 | 0x20);
     }
@@ -674,60 +631,49 @@ mod tests {
     #[test]
     fn test_pack_mpm_frame_extended_proto_id() {
         let chs = [1500u16; NUM_CHANNELS];
-        let mut frame = [0u8; 26];
+        let mut frame = [0u8; 27];
 
-        pack_mpm_frame(
-            &chs,
-            Cc2500Protocol::Corona,
-            0,
-            0,
-            0,
-            false,
-            false,
-            &mut frame,
+        assert_eq!(
+            pack_mpm_frame(&chs, Cc2500Protocol::Corona.spec(), 0, 0, 0, false, false, &mut frame),
+            26
         );
         assert_eq!(frame[0], 0x54);
         assert_eq!(frame[1], MPM_PROTO_CORONA & 0x1F);
 
-        pack_mpm_frame(
-            &chs,
-            Cc2500Protocol::Hitec,
-            0,
-            0,
-            0,
-            false,
-            false,
-            &mut frame,
+        assert_eq!(
+            pack_mpm_frame(&chs, Cc2500Protocol::Hitec.spec(), 0, 0, 0, false, false, &mut frame),
+            26
         );
         assert_eq!(frame[0], 0x54);
         assert_eq!(frame[1], MPM_PROTO_HITEC & 0x1F);
 
-        pack_mpm_frame(
-            &chs,
-            Cc2500Protocol::Hott,
-            Cc2500Protocol::Hott.default_sub_proto(),
-            2,
-            0,
-            false,
-            false,
-            &mut frame,
-        );
-        assert_eq!(frame[0], 0x54);
-        assert_eq!(frame[1], MPM_PROTO_HOTT & 0x1F);
-        assert_eq!(frame[2], 2);
-
-        pack_mpm_frame(
-            &chs,
-            Cc2500Protocol::FlySky2a,
-            0,
-            0,
-            0,
-            false,
-            false,
-            &mut frame,
+        // FrSkyX2 (ID = 64) emits 27-byte extended frame with byte 26 = 1
+        assert_eq!(
+            pack_mpm_frame(
+                &chs,
+                Cc2500Protocol::FrSkyX2Lbt.spec(),
+                Cc2500Protocol::FrSkyX2Lbt.default_sub_proto(),
+                2,
+                0,
+                false,
+                false,
+                &mut frame,
+            ),
+            27
         );
         assert_eq!(frame[0], 0x55);
-        assert_eq!(frame[1], MPM_PROTO_AFHDS2A);
+        assert_eq!(frame[1], 0);
+        assert_eq!(frame[2], (2 << 4) | 2);
+        assert_eq!(frame[26], 1);
+
+        // Verify MpmProtocol table bounds & cycling
+        assert_eq!(MpmProtocol::COUNT, 25);
+        let mut m = MpmProtocol::from_u8(0);
+        for _ in 0..MpmProtocol::COUNT {
+            assert!(!m.name().is_empty());
+            m = m.next();
+        }
+        assert_eq!(m.as_u8(), 0);
     }
 
     #[test]

@@ -44,9 +44,9 @@ pub fn update_radio_setup(
         match items[ctrl.selected_item] {
             RadioSetupItem::ThrottleTrim => {
                 buzzer.click();
-                storage.radio.throttle_trim = (storage.radio.throttle_trim + 1) % 3;
-                trims.throttle_enabled = storage.radio.throttle_trim != 0;
-                storage::save_radio_config(storage);
+                storage.active_model.trim_mode = (storage.active_model.trim_mode + 1) % 3;
+                trims.throttle_enabled = storage.active_model.trim_mode != 0;
+                storage::save_active_model(storage);
             }
             RadioSetupItem::Beeper => {
                 storage.radio.audio_enabled = if storage.radio.audio_enabled == 0 {
@@ -203,7 +203,7 @@ fn render_radio_setup_item(
 ) {
     match item {
         RadioSetupItem::ThrottleTrim => {
-            let val_str = match storage.radio.throttle_trim {
+            let val_str = match storage.active_model.trim_mode {
                 1 => "IDLE",
                 2 => "LINEAR",
                 _ => "OFF (Lock)",
@@ -929,16 +929,28 @@ pub fn update_rx_setup(
                 }
             }
             idx if is_mpm_family && idx == 1 + ext_off => {
-                let is_mpm = current_proto == RfProtocol::Mpm;
-                let cur = crate::rf::mpm::Cc2500Protocol::from_u8(
-                    storage.active_model.rx_serial_proto,
-                );
-                if keys.up {
-                    storage.active_model.rx_serial_proto = cur.next_for(is_mpm) as u8;
-                    buzzer.play_tone(2200, 30);
-                } else if keys.down {
-                    storage.active_model.rx_serial_proto = cur.prev_for(is_mpm) as u8;
-                    buzzer.play_tone(2200, 30);
+                if current_proto == RfProtocol::Mpm {
+                    let cur = crate::rf::mpm::MpmProtocol::from_u8(
+                        storage.active_model.rx_serial_proto,
+                    );
+                    if keys.up {
+                        storage.active_model.rx_serial_proto = cur.next().as_u8();
+                        buzzer.play_tone(2200, 30);
+                    } else if keys.down {
+                        storage.active_model.rx_serial_proto = cur.prev().as_u8();
+                        buzzer.play_tone(2200, 30);
+                    }
+                } else {
+                    let cur = crate::rf::cc2500::Cc2500Protocol::from_u8(
+                        storage.active_model.rx_serial_proto,
+                    );
+                    if keys.up {
+                        storage.active_model.rx_serial_proto = cur.next() as u8;
+                        buzzer.play_tone(2200, 30);
+                    } else if keys.down {
+                        storage.active_model.rx_serial_proto = cur.prev() as u8;
+                        buzzer.play_tone(2200, 30);
+                    }
                 }
             }
             idx if is_mpm_family && idx == 3 + ext_off => {
@@ -1070,19 +1082,27 @@ pub fn update_rx_setup(
                 }
                 match idx - ext_off {
                     1 => {
-                        let proto_mode = crate::rf::mpm::Cc2500Protocol::from_u8(
-                            storage.active_model.rx_serial_proto,
-                        );
+                        let proto_name = if current_proto == RfProtocol::Mpm {
+                            crate::rf::mpm::MpmProtocol::from_u8(
+                                storage.active_model.rx_serial_proto,
+                            )
+                            .name()
+                        } else {
+                            crate::rf::cc2500::Cc2500Protocol::from_u8(
+                                storage.active_model.rx_serial_proto,
+                            )
+                            .name()
+                        };
                         let mut buf = [0u8; 16];
                         let val_str = if ctrl.editing && idx == ctrl.selected_item {
-                            let s = proto_mode.name().as_bytes();
+                            let s = proto_name.as_bytes();
                             let len = s.len().min(14);
                             buf[0] = b'[';
                             buf[1..1 + len].copy_from_slice(&s[..len]);
                             buf[1 + len] = b']';
-                            core::str::from_utf8(&buf[..2 + len]).unwrap_or(proto_mode.name())
+                            core::str::from_utf8(&buf[..2 + len]).unwrap_or(proto_name)
                         } else {
-                            proto_mode.name()
+                            proto_name
                         };
                         widgets::draw_list_row_right(
                             lcd,

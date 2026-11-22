@@ -212,6 +212,56 @@ pub fn update_diag_anas(
                 lcd.draw_str_4x6(2, 13, "STATUS: NO EEPROM FOUND", false);
             }
         }
+        DiagPage::RfUart => {
+            widgets::draw_header(lcd, "RF / UART STATUS");
+            let route = crate::uart::active_route();
+            let bay = ActiveBoard::BAY_CONNECTOR.short_name();
+            if route.external_bay {
+                lcd.draw_str_4x6(2, 13, "TARGET: EXT", false);
+                lcd.draw_str_4x6(50, 13, bay, false);
+            } else {
+                lcd.draw_str_4x6(2, 13, "TARGET: INTERNAL (U1)", false);
+            }
+
+            let bus_str = if !route.external_bay {
+                "BUS: USART1 FULL-DUP"
+            } else {
+                match route.duplex {
+                    crate::hal::SerialDuplex::FullDuplex => "BUS: USART6 P1/P2 FD",
+                    crate::hal::SerialDuplex::HalfDuplexSport => "BUS: USART2 P5 SPORT",
+                    crate::hal::SerialDuplex::SplitTxPin1RxPin5 => "BUS: TX:U6 P1 RX:U2 P5",
+                }
+            };
+            lcd.draw_str_4x6(2, 22, bus_str, false);
+
+            let baud_str = match route.baud_idx {
+                0 | 6 => "115.2k",
+                1 => "400k",
+                2 => "420k",
+                3 => "921.6k",
+                4 => "1.87M",
+                5 => "100k",
+                _ => "400k",
+            };
+            let fmt_str = match route.framing {
+                crate::hal::SerialFraming::Format8N1 => "8N1",
+                crate::hal::SerialFraming::Format8E2 => "8E2",
+            };
+            lcd.draw_str_4x6(2, 31, "FRAME:", false);
+            lcd.draw_str_4x6(30, 31, baud_str, false);
+            lcd.draw_str_4x6(62, 31, fmt_str, false);
+
+            let mut rx_buf = [0u8; 4];
+            let mut tx_buf = [0u8; 4];
+            let rxb = (crate::uart::rx_byte_count() % 10_000) as u16;
+            let txe = (crate::uart::tx_error_count() % 10_000) as u16;
+            u16_to_dec_4(rxb, &mut rx_buf);
+            u16_to_dec_4(txe, &mut tx_buf);
+            lcd.draw_str_4x6(2, 41, "RXB:", false);
+            lcd.draw_str_4x6(22, 41, core::str::from_utf8(&rx_buf).unwrap_or("0000"), false);
+            lcd.draw_str_4x6(54, 41, "TXE:", false);
+            lcd.draw_str_4x6(74, 41, core::str::from_utf8(&tx_buf).unwrap_or("0000"), false);
+        }
     }
 
     widgets::draw_footer(lcd, "[UP/DN/OK] Page  [ESC] Back");
@@ -226,14 +276,16 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         len += 1;
     }
 
-    let tags: [(&[u8], bool); 10] = [
+    let tags: [(&[u8], bool); 12] = [
         (b"A2", cfg!(feature = "rf-afhds2a")),
         (b"CR", cfg!(feature = "rf-crsf")),
         (b"CC", cfg!(feature = "rf-cc2500")),
+        (b"MP", cfg!(feature = "rf-mpm")),
         (b"DS", cfg!(feature = "rf-dsm")),
         (b"FP", cfg!(feature = "dsm-fwd-prog")),
         (b"SR", cfg!(feature = "soaring")),
         (b"LS", cfg!(feature = "logical-switches")),
+        (b"MS", cfg!(feature = "multiswitch")),
         (b"VX", cfg!(feature = "voice-audio")),
         (b"SD", cfg!(feature = "sd-logging")),
         (b"TC", cfg!(feature = "touch")),

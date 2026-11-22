@@ -144,7 +144,45 @@ impl StorageBus for NullStorageBus {
     }
 }
 
-/// Asynchronous serial communication port driver (e.g., CRSF UART).
+/// Serial wire framing format.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SerialFraming {
+    Format8N1,
+    Format8E2,
+}
+
+/// Physical duplex & bus topology for RF UART routing.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SerialDuplex {
+    /// Full-duplex TX+RX on a single USART (Internal USART1 PB6/PB7 or External USART6 PC6/PC7).
+    FullDuplex,
+    /// Single-wire half-duplex S.Port on External Bay Pin 5 (USART2 PD5/PD6 + PD4 dir).
+    HalfDuplexSport,
+    /// Split External Bay: Pin 1 TX (USART6 PC6) + Pin 5 RX (USART2 PD5/PD6 held in RX).
+    SplitTxPin1RxPin5,
+}
+
+/// Explicit typed RF serial route descriptor resolved by `ferrox_core::uart::resolve_serial_route`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SerialRouteConfig {
+    pub external_bay: bool,
+    pub baud_idx: u8,
+    pub framing: SerialFraming,
+    pub duplex: SerialDuplex,
+}
+
+impl SerialRouteConfig {
+    pub const fn default_internal_crsf() -> Self {
+        Self {
+            external_bay: false,
+            baud_idx: 2,
+            framing: SerialFraming::Format8N1,
+            duplex: SerialDuplex::FullDuplex,
+        }
+    }
+}
+
+/// Asynchronous serial communication port driver (e.g., CRSF / MPM / CC2500 / DSM UART).
 pub trait SerialPort {
     /// Initialize UART peripheral and power supply pin.
     fn init(&mut self, active_high: bool);
@@ -161,11 +199,37 @@ pub trait SerialPort {
     /// Write a slice of bytes to the transmit buffer/DMA.
     fn write_bytes(&mut self, bytes: &[u8]);
 
+    /// Submit a complete frame without blocking; returns `false` if TX is busy so caller can retry.
+    fn try_write_bytes(&mut self, bytes: &[u8]) -> bool {
+        self.write_bytes(bytes);
+        true
+    }
+
+    /// Cumulative failed TX waits or DMA errors since boot.
+    fn tx_error_count(&self) -> u32 {
+        0
+    }
+
+    /// Cumulative RX bytes received by the active UART ISR since boot.
+    fn rx_byte_count(&self) -> u32 {
+        0
+    }
+
     /// Read a single byte from the receive buffer, if available.
     fn read_byte(&mut self) -> Option<u8>;
 
     /// Set internal vs external module physical route (0 = Internal, 1 = External).
     fn set_port_route(&mut self, _route: u8) {}
+
+    /// Apply an explicit typed route configuration atomically (overrides `baud_idx` heuristics on F4).
+    fn configure_route(&mut self, enabled: bool, cfg: SerialRouteConfig) {
+        self.set_port_route(if cfg.external_bay { 1 } else { 0 });
+        self.set_uart_enabled(
+            enabled,
+            cfg.baud_idx,
+            cfg.duplex == SerialDuplex::HalfDuplexSport,
+        );
+    }
 }
 
 /// Dummy serial port for tests.

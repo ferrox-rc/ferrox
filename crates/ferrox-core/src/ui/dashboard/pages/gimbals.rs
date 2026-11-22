@@ -122,7 +122,7 @@ pub fn render_primary_sticks(
 
         // CH3: Throttle (T)
         lcd.draw_str_6x10(2, 28, "T", false);
-        let thr_trim = if storage.radio.throttle_trim != 0 {
+        let thr_trim = if storage.active_model.trim_mode != 0 {
             trims.values.throttle
         } else {
             0

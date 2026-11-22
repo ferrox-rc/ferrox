@@ -56,7 +56,7 @@ pub const NUM_MODELS: usize = 20;
 
 /// 8-byte framing envelope magic ("FX" in little-endian = 0x58, 0x46 -> 0x4658)
 pub const SLOT_MAGIC: u16 = 0x4658;
-pub const SCHEMA_VERSION: u8 = 1;
+pub const SCHEMA_VERSION: u8 = 2;
 pub const HEADER_SIZE: usize = 8;
 
 pub const PAGE_SIZE: usize = 64;
@@ -207,56 +207,51 @@ impl AdcInputMode {
     }
 }
 
-/// Persistent system/radio-level configuration (140 bytes, 4-byte aligned for STM32F0 Flash programming).
+/// Persistent system/radio-level configuration (SCHEMA_VERSION = 2, 160 bytes, 4-byte aligned).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct RadioConfig {
     pub magic: u32,                // 0..4 ("FSKY")
-    pub version: u32,              // 4..8 (5)
-    pub active_model: u8,          // 8 (0..19, active model index)
-    pub throttle_trim: u8,         // 9 (0: Off/Lock, 1: Idle T-Trim, 2: Linear)
-    pub audio_enabled: u8,         // 10 (0: Muted, 1: Enabled)
-    pub backlight_timeout: u8,     // 11 (0: Always On, 1: 15s, 2: 30s, 3: 60s)
-    pub backlight_brightness: u8,  // 12 (1..10)
-    pub vbat_warn_deci: u8,        // 13 (40..50 = 4.0V..5.0V, default 44 = 4.4V)
-    pub lcd_contrast: u8,          // 14 (15..55, default 37 / 0x25)
-    pub usb_mode: u8,              // 15 (0: Off, 1: Joystick, 2: Serial, 3: Composite)
-    pub sticks: [ChannelCalib; 4], // 16..48 (32 bytes: Roll, Pitch, Throttle, Yaw)
-    pub aux_pots: [PotCalib; 11],  // 48..114 (66 bytes: SA..SD, VRA..VRB, VRC..VRG)
-    pub ext_module_pwr: u8,        // 114 (0: Active HIGH / N-type, 1: Active LOW / P-type)
-    pub tone_style: u8,            // 115 (0: Simple / Standard, 1: Rich / Melodic)
-    pub servo_rate_hz: u16,        // 116..118 (50..400 Hz, default 50 Hz for analog servo safety)
-    pub rx_out_mode: u8,           // 118 (0: PWM, 1: PPM, default 0)
-    pub rx_serial_proto: u8,       // 119 (0: i-BUS, 1: S.BUS, default 0)
-    pub ext_switches: u8,          // 120 (0: Disabled, 1: Enabled / PC12+PC15)
-    pub ext_adc: u8,               // 121 (0: Disabled, 1: Enabled / Header P7 AD11-AD15 or PC1-PC5)
-    pub adc_modes: [u8; 11],       // 122..133: Input modes for the 11 auxiliary analog channels
-    pub stick_mode: u8,            // 133 (0: Mode 1, 1: Mode 2, 2: Mode 3, 3: Mode 4)
-    pub _reserved_telem: [u8; 4], // 134..138: Reserved / legacy telemetry slots (now in ModelConfig)
-    pub trainer_config: u8,       // 138: Bit 0: PPM Out on PF10, Bit 1: PPM In on PF9
-    pub rear_left_func: u8,       // 139: 0: RC Switch (SWE), 1: Timer Reset, 2: Trims Modifier
-    pub rear_right_func: u8,      // 140: 0: RC Switch (SWF), 1: Instant Trim, 2: Trims Modifier
-    pub touch_disabled: u8,       // 141: 0: Touch Enabled, 1: Touch Disabled
-    pub j4_sg_sh_en: u8,          // 142: 0: SWD Debug, 1: SG/SH Buttons on PA13/PA14
-    pub switch_beep: u8,          // 143: 0: Muted, 1: Beep on switch toggle
-    pub gimbal_type: u8,          // 144: 0: Standard Potentiometer, 1: Hall Effect
-    pub stick_invert_mask: u8, // 145: 4 bits (bit 0: RH, bit 1: RV, bit 2: LV, bit 3: LH), default 0x03 (RH+RV inverted)
-    pub _pad_align: [u8; 2],   // 146..148: Align to 148 bytes (4-byte word boundary)
+    pub version: u32,              // 4..8 (CONFIG_VERSION)
+    pub sticks: [ChannelCalib; 4], // 8..40 (32 bytes: Roll, Pitch, Throttle, Yaw)
+    pub aux_pots: [PotCalib; 11],  // 40..106 (66 bytes: SA..SD, VRA..VRB, VRC..VRG)
+    pub servo_rate_hz: u16,        // 106..108 (50..400 Hz, default 50 Hz)
+    pub active_model: u8,          // 108 (0..19, active model index)
+    pub audio_enabled: u8,         // 109 (0: Muted, 1: Enabled)
+    pub backlight_timeout: u8,     // 110 (0: Always On, 1: 15s, 2: 30s, 3: 60s)
+    pub backlight_brightness: u8,  // 111 (1..10)
+    pub vbat_warn_deci: u8,        // 112 (40..50 = 4.0V..5.0V)
+    pub lcd_contrast: u8,          // 113 (15..55, default 37)
+    pub usb_mode: u8,              // 114 (0: Off, 1: Joystick, 2: Serial, 3: Composite)
+    pub ext_module_pwr: u8,        // 115 (0: Active HIGH / N-type, 1: Active LOW / P-type)
+    pub tone_style: u8,            // 116 (0: Simple, 1: Rich)
+    pub rx_out_mode: u8,           // 117 (0: PWM, 1: PPM)
+    pub rx_serial_proto: u8,       // 118 (0: i-BUS, 1: S.BUS)
+    pub ext_switches: u8,          // 119 (0: Disabled, 1: Enabled)
+    pub ext_adc: u8,               // 120 (0: Disabled, 1: Enabled)
+    pub adc_modes: [u8; 11],       // 121..132: Input modes for the 11 auxiliary analog channels
+    pub stick_mode: u8,            // 132 (0: Mode 1, 1: Mode 2, 2: Mode 3, 3: Mode 4)
+    pub trainer_config: u8,        // 133: Bit 0: PPM Out, Bit 1: PPM In, Bit 2: DSM SAT In
+    pub rear_left_func: u8,        // 134: 0: RC Switch (SWE), 1: Timer Reset, 2: Trims Modifier
+    pub rear_right_func: u8,       // 135: 0: RC Switch (SWF), 1: Instant Trim, 2: Trims Modifier
+    pub touch_disabled: u8,        // 136: 0: Touch Enabled, 1: Touch Disabled
+    pub j4_sg_sh_en: u8,           // 137: 0: SWD Debug, 1: SG/SH Buttons
+    pub switch_beep: u8,           // 138: 0: Muted, 1: Beep on switch toggle
+    pub gimbal_type: u8,           // 139: 0: Potentiometer, 1: Hall Effect
+    pub stick_invert_mask: u8,     // 140: 4 bits (bit 0: RH, 1: RV, 2: LV, 3: LH), default 0x03
+    pub voice_cfg: u8,             // 141: Low nibble = volume step, High nibble = language index
+    pub voice_interval: u8,        // 142: Periodic voice telemetry callout interval index (0..=4)
+    pub _reserved: [u8; 17],       // 143..160: Zero-initialized tail for v1.x extensions
 }
+
+const _: () = assert!(core::mem::size_of::<RadioConfig>() == 160);
+const _: () = assert!(HEADER_SIZE + core::mem::size_of::<RadioConfig>() <= RADIO_SLOT_SIZE);
 
 impl RadioConfig {
     pub const fn default_factory() -> Self {
         Self {
             magic: FLASH_MAGIC,
             version: CONFIG_VERSION,
-            active_model: 0,
-            throttle_trim: 0,
-            audio_enabled: 1,
-            backlight_timeout: 0,
-            backlight_brightness: 10,
-            vbat_warn_deci: crate::board::ActiveBoard::VBAT_WARN_DEFAULT_DECI,
-            lcd_contrast: 37,
-            usb_mode: 0,
             sticks: [
                 ChannelCalib::new(
                     crate::adc::ADC_MIN,
@@ -336,16 +331,22 @@ impl RadioConfig {
                     crate::adc::ADC_MAX,
                 ), // VRG
             ],
+            servo_rate_hz: 50,
+            active_model: 0,
+            audio_enabled: 1,
+            backlight_timeout: 0,
+            backlight_brightness: 10,
+            vbat_warn_deci: crate::board::ActiveBoard::VBAT_WARN_DEFAULT_DECI,
+            lcd_contrast: 37,
+            usb_mode: 0,
             ext_module_pwr: 0,
             tone_style: 1,
-            servo_rate_hz: 50,
             rx_out_mode: 0,
             rx_serial_proto: 0,
             ext_switches: 0,
             ext_adc: 0,
-            adc_modes: [0; 11],            // Default hardware modes
-            stick_mode: 1,                 // Mode 2 default
-            _reserved_telem: [0, 1, 2, 3], // Default: RxBat, RSSI/LQ, TxBat, Current/Link
+            adc_modes: [0; 11],
+            stick_mode: 1, // Mode 2 default
             trainer_config: 0,
             rear_left_func: 0,
             rear_right_func: 0,
@@ -354,7 +355,9 @@ impl RadioConfig {
             switch_beep: 1,
             gimbal_type: 0,
             stick_invert_mask: 0x03, // RH (bit 0) and RV (bit 1) inverted by default for factory pot gimbals
-            _pad_align: [0; 2],
+            voice_cfg: 0,
+            voice_interval: 0,
+            _reserved: [0; 17],
         }
     }
 
@@ -370,10 +373,9 @@ impl RadioConfig {
     ];
 
     /// Return WAV/PCM voice playback volume (`0..=100%`, default `80%`).
-    /// Stored in lower nibble of `_pad_align[0]`: `0` = default `80%`, `1..=10` = `10%..100%`, `11` = `0% (Muted)`.
     #[inline(always)]
     pub const fn voice_volume_pct(&self) -> u8 {
-        match self._pad_align[0] & 0x0F {
+        match self.voice_cfg & 0x0F {
             0 => 80,
             step @ 1..=10 => step * 10,
             _ => 0,
@@ -386,14 +388,13 @@ impl RadioConfig {
         let cur = self.voice_volume_pct();
         let next = if cur >= 100 { 0 } else { (cur + 20).min(100) };
         let vol_nib = if next == 0 { 11 } else { next / 10 };
-        self._pad_align[0] = (self._pad_align[0] & 0xF0) | (vol_nib & 0x0F);
+        self.voice_cfg = (self.voice_cfg & 0xF0) | (vol_nib & 0x0F);
     }
 
     /// Return active 2-letter EdgeTX voice pack language code (default `"en"`).
-    /// Stored in upper nibble of `_pad_align[0]`.
     #[inline(always)]
     pub const fn voice_lang(&self) -> &'static str {
-        let idx = ((self._pad_align[0] >> 4) & 0x0F) as usize;
+        let idx = ((self.voice_cfg >> 4) & 0x0F) as usize;
         if idx < Self::VOICE_LANGS.len() {
             Self::VOICE_LANGS[idx]
         } else {
@@ -404,20 +405,19 @@ impl RadioConfig {
     /// Cycle active voice pack language code through [`Self::VOICE_LANGS`].
     #[inline]
     pub fn cycle_voice_lang(&mut self) {
-        let cur = ((self._pad_align[0] >> 4) & 0x0F) as usize;
+        let cur = ((self.voice_cfg >> 4) & 0x0F) as usize;
         let next = if cur + 1 >= Self::VOICE_LANGS.len() {
             0
         } else {
             cur + 1
         };
-        self._pad_align[0] = (self._pad_align[0] & 0x0F) | ((next as u8) << 4);
+        self.voice_cfg = (self.voice_cfg & 0x0F) | ((next as u8) << 4);
     }
 
     /// Return periodic voice telemetry callout interval in seconds (`0` = OFF, default `15s`).
-    /// Stored in `_pad_align[1]`: `0` = `15s`, `1` = `30s`, `2` = `60s`, `3` = `0 (OFF)`, `4` = `10s`.
     #[inline(always)]
     pub const fn voice_interval_secs(&self) -> u8 {
-        match self._pad_align[1] {
+        match self.voice_interval {
             0 => 15,
             1 => 30,
             2 => 60,
@@ -442,7 +442,7 @@ impl RadioConfig {
     /// Cycle periodic voice telemetry callout interval (`15s -> 30s -> 60s -> OFF -> 10s -> 15s`).
     #[inline]
     pub fn cycle_voice_interval(&mut self) {
-        self._pad_align[1] = (self._pad_align[1] + 1) % 5;
+        self.voice_interval = (self.voice_interval + 1) % 5;
     }
 
     /// Check if a specific stick axis is inverted (0: RH, 1: RV, 2: LV, 3: LH).
@@ -635,60 +635,93 @@ impl LogicalSwitch {
     }
 }
 
-/// Complete profile for an individual aircraft/model (exactly 464 bytes).
+pub const NUM_MULTISWITCH_SLOTS: usize = 4;
+pub const NUM_MULTISWITCH_SWITCHES: usize = 8;
+pub const MULTISWITCH_LABEL_LEN: usize = 4;
+
+/// Default 4-char ASCII switch labels for a MultiSwitch slot (`"SW1 "`..`"SW8 "`).
+pub const fn default_multiswitch_labels() -> [[[u8; MULTISWITCH_LABEL_LEN]; NUM_MULTISWITCH_SWITCHES]; NUM_MULTISWITCH_SLOTS] {
+    let slot = [
+        *b"SW1 ", *b"SW2 ", *b"SW3 ", *b"SW4 ", *b"SW5 ", *b"SW6 ", *b"SW7 ", *b"SW8 ",
+    ];
+    [slot; NUM_MULTISWITCH_SLOTS]
+}
+
+/// Complete profile for an individual aircraft/model (SCHEMA_VERSION = 2, exactly 760 bytes).
+/// Fits cleanly inside `MODEL_SLOT_SIZE` (`768 B` = `8 B` header + `760 B` payload) with
+/// natural alignment and a 12-byte `_reserved` tail for v1.x extensions.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ModelConfig {
-    pub name: [u8; 10],                             // 0..10: 10-char ASCII name
-    pub model_type: u8, // 10: 0: Airplane, 1: Glider, 2: Heli, 3: Quad, 4: General
-    pub _pad0: u8,      // 11: align rx_id to 4 bytes
-    pub rx_id: u32,     // 12..16: Model Match bound receiver ID
-    pub trims: [i8; 4], // 16..20: Roll, Pitch, Throttle, Yaw (-25..+25)
-    pub channel_reverse: u32, // 20..24: Bitmask for CH1..CH18 inversion
-    pub dr_switch: u8,  // 24: 0: None, 1: SA, 2: SB, 3: SC, 4: SD, 5: SE, 6: SF
-    pub thr_curve_pts: u8, // 25: 5, 7, or 9 points mode
-    pub thr_curve_smooth: u8, // 26: 0: Linear, 1: Spline / Smooth
-    pub thr_curve: [u8; 17], // 27..44: Points buffer (0..100%, reserved up to 17)
-    pub _pad_crv: u8,   // 44..45
-    pub dr_high: [u8; 3], // 45..48: High rate (AIL, ELE, RUD: 50..100%)
-    pub dr_low: [u8; 3], // 48..51: Low rate (AIL, ELE, RUD: 30..100%)
-    pub expo_high: [i8; 3], // 51..54: High expo (-100..+100%)
-    pub expo_low: [i8; 3], // 54..57: Low expo (-100..+100%)
-    pub sd_log_mode: u8, // 57..58: SD telemetry logging (0: Off, 1: Armed, 2..=29: switch condition)
-    pub timer_secs: u16, // 58..60: Countdown timer in seconds (e.g. 300 = 5 min)
-    pub timer_source: u8, // 60: 0: Off, 1: THs (Thr>5%), 2: THt (Thr Latched), 3: Always On, 4..17: SA^..SFv
-    pub rf_power: u8,     // 61: AFHDS 2A RF power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
-    pub failsafe_thr: u16, // 62..64: Failsafe throttle pulse in µs (e.g. 1000)
-    pub aux_channels: [u8; 14], // 64..78: Source for CH5..CH18
-    pub wing_tail_mix: u8, // 78: 0: Normal, 1: Elevon/Delta, 2: V-Tail, 3: Flaperon, 4: Freeform
-    pub template_diff: i8, // 79: Differential / mix ratio (-100..+100)
-    pub mixes: [MixLine; NUM_MIX_LINES], // 80..336: 32 freeform mix rules (32 * 8 = 256 bytes)
-    pub failsafe_mode: u8, // 336: 0: Hold last, 1: Custom pulses
-    pub failsafe_timeout: u8, // 337: 10..50 (1.0s..5.0s)
-    pub rf_protocol: u8,  // 338: 0: AFHDS 2A, 1: CRSF / ELRS
-    pub crsf_baud: u8,    // 339: 0: 115.2k, 1: 416.6k, 2: 420k, 3: 921.6k, 4: 1.875M
-    pub arm_switch: u8,   // 340: 0: None, 1..44: SA^..SFv, L1..!L8
-    pub rx_out_mode: u8,  // 341: 0: PWM, 1: PPM (default 0)
-    pub servo_rate_hz: u16, // 342..344: 50..400 Hz (default 50 Hz)
-    pub rx_serial_proto: u8, // 344: 0: i-BUS, 1: S.BUS (default 0)
-    pub crsf_half_duplex: u8, // 345: 0: Full-Duplex (2-Wire), 1: Half-Duplex (1-Wire)
-    pub vario_switch: u8, // 346: 0: Off, 1..=44: switch condition
-    pub vario_climb_deadband: u8, // 347: Climb deadband in 0.1 m/s (default 2 = +0.2 m/s)
-    pub vario_sink_deadband: u8, // 348: Sink deadband in 0.1 m/s (default 5 = -0.5 m/s)
-    pub vario_sink_mode: u8, // 349: 0: Mute, 1: Pulse, 2: Continuous (default 1)
-    pub vario_motor_mute: u8, // 350: 0: Disabled, 1: Enabled (default 1)
-    pub crsf_arm_mode: u8, // 351: 0: CH5 (Standard 22B payload), 1: Switch (Extended 23B payload with arm flag)
-    pub gvars: [i16; 5],   // 352..362: Global Variables GV1..GV5 (-1000..+1000)
-    pub telem_slots: [u8; 4], // 362..366: Configurable telemetry dashboard sensor slots (1..4)
-    pub dsm_sub_proto: u8, // 366: Spektrum DSM sub-protocol (0: DSMX-11, 1: DSMX-22, 2: DSM2-11, 3: DSM2-22)
-    pub timer1_stop_src: u8, // 367: Timer 1 Stop switch (0: None, 1..=44: switch conditions)
-    pub timer1_reset_src: u8, // 368: Timer 1 Reset switch (0: None, 1..=44: switch conditions)
-    pub timer1_flags: u8,  // 369: Timer 1 bitflags (bit 0: latch, bit 1: arm reset, bit 2: audio)
-    pub timers_ext: [crate::timer::TimerConfig; 3], // 370..388: Independent Timer 2, 3, 4 configs (3 * 6 = 18 bytes)
-    pub freeform_ch1_4: [u8; 4], // 388..392: Direct source assignments for CH1..CH4 in Freeform mode
-    pub soaring: crate::soaring::SoaringConfig, // 392..416: F5J / F3K Soaring competition & glider config (24 bytes)
-    pub logical_switches: [LogicalSwitch; NUM_LOGICAL_SWITCHES], // 416..464: 8 Logical Switches L1..L8 (48 bytes)
+    // --- 4-byte aligned group (16 B) ---
+    pub rx_id: u32,           // 0..4: Model Match bound receiver ID
+    pub channel_reverse: u32, // 4..8: 18-bit channel reversing mask
+    pub motor_mask: u32,      // 8..12: 18-bit motor safety mask (default bit 2 = CH3)
+    pub bidir_mask: u32,      // 12..16: 18-bit bidirectional motor mask (neutral = 1500 µs)
+
+    // --- 2-byte aligned group (42 B) ---
+    pub gvars: [i16; 5],                                    // 16..26: Global Variables GV1..GV5 (-1000..+1000)
+    pub multiswitch_addresses: [i16; NUM_MULTISWITCH_SLOTS], // 26..34: CRSF MultiSwitch slot addresses (-1 = disabled)
+    pub timer_secs: u16,                                    // 34..36: Timer 1 target in seconds
+    pub failsafe_thr: u16,                                  // 36..38: Failsafe throttle pulse in µs
+    pub servo_rate_hz: u16,                                 // 38..40: Receiver servo refresh rate (50..400 Hz)
+    pub timers_ext: [crate::timer::TimerConfig; 3],         // 40..58: Independent Timers 2..4 (3 * 6 = 18 B)
+
+    // --- Identity, RF, Safety, Timers, Vario, Trims, Curves, Soaring (70 B) ---
+    pub name: [u8; 10],           // 58..68: 10-char ASCII model name
+    pub model_type: u8,           // 68: 0: Airplane, 1: Glider, 2: Heli, 3: Quad, 4: General, 5: Baitboat
+    pub rf_protocol: u8,          // 69: 0: AFHDS 2A, 1: CRSF, 2: CC2500, 3: DSM, 4: MPM
+    pub rf_module_target: u8,     // 70: 0: Internal Module, 1: External Bay
+    pub rf_power: u8,             // 71: AFHDS 2A RF power (0: 100mW, 1: 10mW, 2: 1mW, 3: 100uW)
+    pub crsf_baud: u8,            // 72: 0: 115.2k, 1: 416.6k, 2: 420k, 3: 921.6k, 4: 1.875M
+    pub crsf_half_duplex: u8,     // 73: 0: Full-Duplex, 1: Half-Duplex (S.Port Pin 5)
+    pub crsf_arm_mode: u8,        // 74: 0: CH5, 1: Switch (ELRS 4.0)
+    pub dsm_sub_proto: u8,        // 75: DSM sub-protocol (0..3)
+    pub mpm_rx_num: u8,           // 76: MPM/CC2500 Receiver Number (0..15)
+    pub mpm_range_check: u8,      // 77: MPM/CC2500 Range Check active (transient, cleared on boot)
+    pub mpm_freq_tune: i8,        // 78: MPM/CC2500 RF frequency fine-tuning (-127..+127)
+    pub rx_out_mode: u8,          // 79: AFHDS2A PWM/PPM or MPM/CC2500 sub-protocol index
+    pub rx_serial_proto: u8,      // 80: AFHDS2A i-BUS/S.BUS or MPM/CC2500 sub-type index
+    pub failsafe_mode: u8,        // 81: 0: Hold last, 1: Custom pulses
+    pub failsafe_timeout: u8,     // 82: 10..50 (1.0s..5.0s)
+    pub arm_switch: u8,           // 83: 0: None, 1..=44: SA^..SWMv, L1..!L8
+    pub sd_log_mode: u8,          // 84: SD telemetry logging (0: Off, 1: Armed, 2..=45: switch)
+    pub timer_source: u8,         // 85: Timer 1 start source
+    pub timer1_stop_src: u8,      // 86: Timer 1 stop switch
+    pub timer1_reset_src: u8,     // 87: Timer 1 reset switch
+    pub timer1_flags: u8,         // 88: Timer 1 bitflags
+    pub vario_switch: u8,         // 89: 0: Off, 1..=45: switch/mode
+    pub vario_climb_deadband: u8, // 90: Climb deadband in 0.1 m/s
+    pub vario_sink_deadband: u8,  // 91: Sink deadband in 0.1 m/s
+    pub vario_sink_mode: u8,      // 92: 0: Mute, 1: Pulse, 2: Continuous
+    pub vario_motor_mute: u8,     // 93: 0: Disabled, 1: Enabled
+    pub telem_slots: [u8; 4],     // 94..98: Custom telemetry dashboard 4 tiles
+    pub trims: [i8; 4],           // 98..102: Roll, Pitch, Throttle, Yaw (-25..+25)
+    pub trim_map: [u8; 4],        // 102..106: Target input axis for each physical trim (1..4, 0=off)
+    pub trim_mode: u8,            // 106: Throttle trim mode (0: Off/Lock, 1: Idle T-Trim, 2: Linear)
+    pub thr_curve_pts: u8,        // 107: 5, 7, or 9 points
+    pub thr_curve_smooth: u8,     // 108: 0: Linear, 1: Catmull-Rom Spline
+    pub thr_curve: [u8; 9],       // 109..118: Curve points (0..100%)
+    pub soaring: crate::soaring::SoaringConfig, // 118..130 (Wait: let's check exact offset!)
+
+    // --- Mixer v2 arrays (488 B) ---
+    pub channels: [crate::mixer::ChannelCfg; crate::mixer::NUM_CHANNELS], // 72 B
+    pub input_mods: [crate::mixer::InputMod; crate::mixer::NUM_INPUT_MODS], // 64 B
+    pub mixers: [crate::mixer::MixerInst; crate::mixer::NUM_PREDEF_MIXERS], // 32 B
+    pub chan_mods: [crate::mixer::ChanMod; crate::mixer::NUM_CHAN_MODS],    // 16 B
+    pub mixes: [MixLine; NUM_MIX_LINES],                                    // 256 B
+    pub logical_switches: [LogicalSwitch; NUM_LOGICAL_SWITCHES],            // 48 B
+
+    // --- PR #37 MultiSwitch (132 B) ---
+    pub multiswitch_momentary: [u8; NUM_MULTISWITCH_SLOTS], // 4 B
+    pub multiswitch_labels: [[[u8; MULTISWITCH_LABEL_LEN]; NUM_MULTISWITCH_SWITCHES]; NUM_MULTISWITCH_SLOTS], // 128 B
+
+    // --- Reserved v1.x extension tail (10 B) ---
+    pub _reserved: [u8; 10],
 }
+
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 760);
+const _: () = assert!(HEADER_SIZE + core::mem::size_of::<ModelConfig>() <= MODEL_SLOT_SIZE);
 
 impl ModelConfig {
     pub const fn default_for_index(idx: usize) -> Self {
@@ -696,151 +729,275 @@ impl ModelConfig {
         let digit1 = b'0' + (num / 10);
         let digit2 = b'0' + (num % 10);
         Self {
-            name: [
-                b'M', b'O', b'D', b'E', b'L', b' ', digit1, digit2, b' ', b' ',
-            ],
-            model_type: 0,
-            _pad0: 0,
             rx_id: 0,
-            trims: [0, 0, 0, 0],
             channel_reverse: 0,
-            dr_switch: 0,
-            thr_curve_pts: 5,
-            thr_curve_smooth: 0,
-            thr_curve: [0, 25, 50, 75, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            _pad_crv: 0,
-            dr_high: [100, 100, 100],
-            dr_low: [70, 70, 70],
-            expo_high: [0, 0, 0],
-            expo_low: [0, 0, 0],
-            sd_log_mode: 0,
-            timer_secs: 300,
-            timer_source: 1,
-            rf_power: 0,
-            failsafe_thr: 1000,
-            aux_channels: [7, 8, 5, 6, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0],
-            wing_tail_mix: 0,
-            template_diff: 0,
-            mixes: [MixLine::disabled(); NUM_MIX_LINES],
-            failsafe_mode: 0,
-            failsafe_timeout: 20,
-            rf_protocol: 0,
-            crsf_baud: 2,
-            arm_switch: 0,
-            servo_rate_hz: 50,
-            rx_out_mode: 0,
-            rx_serial_proto: 0,
-            crsf_half_duplex: 0,
-            vario_switch: 0,
-            vario_climb_deadband: 2,
-            vario_sink_deadband: 5,
-            vario_sink_mode: 1,
-            vario_motor_mute: 1,
-            crsf_arm_mode: 0,
+            motor_mask: 1 << 2, // CH3 is default motor channel
+            bidir_mask: 0,
             gvars: [0; 5],
-            telem_slots: [0, 1, 2, 3],
-            dsm_sub_proto: 0,
-            timer1_stop_src: 0,
-            timer1_reset_src: 0,
-            timer1_flags: crate::timer::TimerConfig::FLAG_AUDIO_BEEPS,
+            multiswitch_addresses: [-1; NUM_MULTISWITCH_SLOTS],
+            timer_secs: 300,
+            failsafe_thr: 1000,
+            servo_rate_hz: 50,
             timers_ext: [
                 crate::timer::TimerConfig::disabled(),
                 crate::timer::TimerConfig::disabled(),
                 crate::timer::TimerConfig::disabled(),
             ],
-            freeform_ch1_4: [0; 4],
+            name: [
+                b'M', b'O', b'D', b'E', b'L', b' ', digit1, digit2, b' ', b' ',
+            ],
+            model_type: 0,
+            rf_protocol: crate::board::ActiveBoard::DEFAULT_PROTOCOL as u8,
+            rf_module_target: 0,
+            rf_power: 0,
+            crsf_baud: 2,
+            crsf_half_duplex: 0,
+            crsf_arm_mode: 0,
+            dsm_sub_proto: 0,
+            mpm_rx_num: 0,
+            mpm_range_check: 0,
+            mpm_freq_tune: 0,
+            rx_out_mode: 0,
+            rx_serial_proto: 0,
+            failsafe_mode: 0,
+            failsafe_timeout: 20,
+            arm_switch: 0,
+            sd_log_mode: 0,
+            timer_source: 1,
+            timer1_stop_src: 0,
+            timer1_reset_src: 0,
+            timer1_flags: crate::timer::TimerConfig::FLAG_AUDIO_BEEPS,
+            vario_switch: 0,
+            vario_climb_deadband: 2,
+            vario_sink_deadband: 5,
+            vario_sink_mode: 1,
+            vario_motor_mute: 1,
+            telem_slots: [0, 1, 2, 3],
+            trims: [0, 0, 0, 0],
+            trim_map: [1, 2, 3, 4], // Roll, Pitch, Thr, Yaw
+            trim_mode: 0,           // OFF (Lock)
+            thr_curve_pts: 5,
+            thr_curve_smooth: 0,
+            thr_curve: [0, 25, 50, 75, 100, 0, 0, 0, 0],
             soaring: crate::soaring::SoaringConfig::default_factory(),
+            channels: [
+                crate::mixer::ChannelCfg::new(1),  // CH1: Roll
+                crate::mixer::ChannelCfg::new(2),  // CH2: Pitch
+                crate::mixer::ChannelCfg::new(58), // CH3: Curved Throttle (THC)
+                crate::mixer::ChannelCfg::new(4),  // CH4: Yaw
+                crate::mixer::ChannelCfg::new(7),  // CH5: SA
+                crate::mixer::ChannelCfg::new(8),  // CH6: SB
+                crate::mixer::ChannelCfg::new(5),  // CH7: VRA
+                crate::mixer::ChannelCfg::new(6),  // CH8: VRB
+                crate::mixer::ChannelCfg::new(9),  // CH9: SC
+                crate::mixer::ChannelCfg::new(10), // CH10: SD
+                crate::mixer::ChannelCfg::new(0),  // CH11..CH18: None
+                crate::mixer::ChannelCfg::new(0),
+                crate::mixer::ChannelCfg::new(0),
+                crate::mixer::ChannelCfg::new(0),
+                crate::mixer::ChannelCfg::new(0),
+                crate::mixer::ChannelCfg::new(0),
+                crate::mixer::ChannelCfg::new(0),
+                crate::mixer::ChannelCfg::new(0),
+            ],
+            input_mods: [
+                crate::mixer::InputMod::default_axis(1), // Roll DR/Expo
+                crate::mixer::InputMod::default_axis(2), // Pitch DR/Expo
+                crate::mixer::InputMod::default_axis(4), // Yaw DR/Expo
+                crate::mixer::InputMod::disabled(),
+                crate::mixer::InputMod::disabled(),
+                crate::mixer::InputMod::disabled(),
+                crate::mixer::InputMod::disabled(),
+                crate::mixer::InputMod::disabled(),
+            ],
+            mixers: [crate::mixer::MixerInst::disabled(); crate::mixer::NUM_PREDEF_MIXERS],
+            chan_mods: [crate::mixer::ChanMod::disabled(); crate::mixer::NUM_CHAN_MODS],
+            mixes: [MixLine::disabled(); NUM_MIX_LINES],
             logical_switches: [LogicalSwitch::disabled(); NUM_LOGICAL_SWITCHES],
+            multiswitch_momentary: [0; NUM_MULTISWITCH_SLOTS],
+            multiswitch_labels: default_multiswitch_labels(),
+            _reserved: [0; 10],
         }
     }
 
-    /// Get MPM Receiver Number (`0..15`, stored in low nibble of `_pad0`).
+    /// Get MPM/CC2500 Receiver Number (`0..15`).
     #[inline(always)]
     pub const fn mpm_rx_num(&self) -> u8 {
-        self._pad0 & 0x0F
+        self.mpm_rx_num & 0x0F
     }
 
-    /// Set MPM Receiver Number (`0..15`, stored in low nibble of `_pad0`).
+    /// Set MPM/CC2500 Receiver Number (`0..15`).
     #[inline(always)]
     pub fn set_mpm_rx_num(&mut self, rx_num: u8) {
-        self._pad0 = (self._pad0 & 0xF0) | (rx_num & 0x0F);
+        self.mpm_rx_num = rx_num & 0x0F;
     }
 
-    /// Check if MPM reduced-power Range Check mode is active (bit 7 of `_pad0`).
+    /// Check if MPM/CC2500 reduced-power Range Check mode is active.
     #[inline(always)]
     pub const fn mpm_range_check(&self) -> bool {
-        (self._pad0 & 0x80) != 0
+        self.mpm_range_check != 0
     }
 
-    /// Set MPM reduced-power Range Check mode (bit 7 of `_pad0`).
+    /// Set MPM/CC2500 reduced-power Range Check mode.
     #[inline(always)]
     pub fn set_mpm_range_check(&mut self, enabled: bool) {
-        if enabled {
-            self._pad0 |= 0x80;
-        } else {
-            self._pad0 &= !0x80;
-        }
+        self.mpm_range_check = if enabled { 1 } else { 0 };
     }
 
-    /// Get RF Module Target (0 = Internal Module, 1 = External Module Bay).
-    /// Stored in bit 6 of `_pad0`.
+    /// Get RF Module Target (`0` = Internal Module, `1` = External Module Bay).
     #[inline(always)]
     pub const fn rf_module_target(&self) -> u8 {
-        (self._pad0 >> 6) & 0x01
+        self.rf_module_target & 0x01
     }
 
-    /// Set RF Module Target (0 = Internal Module, 1 = External Module Bay).
+    /// Set RF Module Target (`0` = Internal Module, `1` = External Module Bay).
     #[inline(always)]
     pub fn set_rf_module_target(&mut self, target: u8) {
-        self._pad0 = (self._pad0 & !0x40) | ((target & 0x01) << 6);
+        self.rf_module_target = target & 0x01;
     }
 
-    /// Get MPM RF Frequency Fine-Tuning offset (`-127..+127`, stored in `_pad_crv`).
+    /// Get MPM/CC2500 RF Frequency Fine-Tuning offset (`-127..+127`).
     #[inline(always)]
     pub const fn mpm_freq_tune(&self) -> i8 {
-        self._pad_crv as i8
+        self.mpm_freq_tune
     }
 
-    /// Set MPM RF Frequency Fine-Tuning offset (`-127..+127`, stored in `_pad_crv`).
+    /// Set MPM/CC2500 RF Frequency Fine-Tuning offset (`-127..+127`).
     #[inline(always)]
     pub fn set_mpm_freq_tune(&mut self, tune: i8) {
-        self._pad_crv = tune.clamp(-127, 127) as u8;
+        self.mpm_freq_tune = tune.clamp(-127, 127);
     }
 
-    /// Read source assigned to a logical channel (0..17 for CH1..CH18).
-    /// In Freeform mode, CH1..CH4 use `freeform_ch1_4[0..4]`.
-    /// In standard wing modes, CH1..CH4 default to their stick sources (1: Roll, 2: Pitch, 3: Thr, 4: Yaw).
-    /// CH5..CH18 use `aux_channels[0..13]`.
-    #[inline]
+    /// Read source assigned to a logical channel (`0..17` for CH1..CH18).
+    #[inline(always)]
     pub fn channel_source(&self, ch_idx: usize) -> u8 {
-        match ch_idx {
-            0..=3 => {
-                if self.wing_tail_mix == 4 {
-                    self.freeform_ch1_4[ch_idx]
-                } else {
-                    (ch_idx + 1) as u8 // 1: Roll, 2: Pitch, 3: Thr, 4: Yaw
-                }
-            }
-            4..=17 => self.aux_channels[ch_idx - 4],
-            _ => 0,
+        if ch_idx < crate::mixer::NUM_CHANNELS {
+            self.channels[ch_idx].source
+        } else {
+            0
         }
     }
 
-    /// Set source assigned to a logical channel (0..17 for CH1..CH18).
-    /// In Freeform mode, CH1..CH4 update `freeform_ch1_4[0..4]`.
-    /// CH5..CH18 update `aux_channels[0..13]`.
-    #[inline]
+    /// Set source assigned to a logical channel (`0..17` for CH1..CH18).
+    #[inline(always)]
     pub fn set_channel_source(&mut self, ch_idx: usize, src: u8) {
-        match ch_idx {
-            0..=3 => {
-                if self.wing_tail_mix == 4 {
-                    self.freeform_ch1_4[ch_idx] = src;
-                }
+        if ch_idx < crate::mixer::NUM_CHANNELS {
+            self.channels[ch_idx].source = src;
+        }
+    }
+
+    /// Check if channel `ch_idx` (`0..17`) is flagged as a motor channel.
+    #[inline(always)]
+    pub const fn is_motor_channel(&self, ch_idx: usize) -> bool {
+        ch_idx < crate::mixer::NUM_CHANNELS && (self.motor_mask & (1u32 << ch_idx)) != 0
+    }
+
+    /// Check if channel `ch_idx` (`0..17`) is a bidirectional motor channel (neutral = 1500 µs).
+    #[inline(always)]
+    pub const fn is_bidir_motor(&self, ch_idx: usize) -> bool {
+        ch_idx < crate::mixer::NUM_CHANNELS && (self.bidir_mask & (1u32 << ch_idx)) != 0
+    }
+
+    /// Set channel motor safety mode: `0 = Off`, `1 = Motor (Unidirectional)`, `2 = Motor (Bidirectional)`.
+    #[inline]
+    pub fn set_motor_mode(&mut self, ch_idx: usize, mode: u8) {
+        if ch_idx >= crate::mixer::NUM_CHANNELS {
+            return;
+        }
+        let bit = 1u32 << ch_idx;
+        match mode {
+            1 => {
+                self.motor_mask |= bit;
+                self.bidir_mask &= !bit;
             }
-            4..=17 => {
-                self.aux_channels[ch_idx - 4] = src;
+            2 => {
+                self.motor_mask |= bit;
+                self.bidir_mask |= bit;
             }
-            _ => {}
+            _ => {
+                self.motor_mask &= !bit;
+                self.bidir_mask &= !bit;
+            }
+        }
+    }
+
+    /// Get channel motor safety mode (`0 = Off`, `1 = Motor`, `2 = Bidir`).
+    #[inline(always)]
+    pub const fn motor_mode(&self, ch_idx: usize) -> u8 {
+        if !self.is_motor_channel(ch_idx) {
+            0
+        } else if self.is_bidir_motor(ch_idx) {
+            2
+        } else {
+            1
+        }
+    }
+
+    /// Return the primary predefined mixer kind (instance 0), if any.
+    #[inline(always)]
+    pub const fn primary_mixer_kind(&self) -> crate::mixer::MixerKind {
+        crate::mixer::MixerKind::from_u8(self.mixers[0].kind)
+    }
+
+    /// Apply a standard aircraft/vehicle predefined mixer preset to instance 0 and wire CH1..CH6.
+    pub fn apply_mixer_preset(&mut self, kind: crate::mixer::MixerKind) {
+        use crate::mixer::{MixerInst, MixerKind, MIXER_OUT_SRC_BASE};
+        self.mixers[0] = MixerInst::default_for_kind(kind);
+        match kind {
+            MixerKind::None => {
+                self.channels[0].source = 1;  // Roll
+                self.channels[1].source = 2;  // Pitch
+                self.channels[2].source = 58; // THC
+                self.channels[3].source = 4;  // Yaw
+                self.motor_mask = 1 << 2;
+                self.bidir_mask = 0;
+            }
+            MixerKind::Delta => {
+                self.channels[0].source = MIXER_OUT_SRC_BASE;     // Left Elevon
+                self.channels[1].source = MIXER_OUT_SRC_BASE + 1; // Right Elevon
+                self.channels[2].source = 58;                     // THC
+                self.channels[3].source = 4;                      // Yaw
+                self.motor_mask = 1 << 2;
+                self.bidir_mask = 0;
+            }
+            MixerKind::VTail | MixerKind::MTail => {
+                self.channels[0].source = 1;                      // Roll
+                self.channels[1].source = MIXER_OUT_SRC_BASE;     // Left V/M-Tail
+                self.channels[2].source = 58;                     // THC
+                self.channels[3].source = MIXER_OUT_SRC_BASE + 1; // Right V/M-Tail
+                self.motor_mask = 1 << 2;
+                self.bidir_mask = 0;
+            }
+            MixerKind::Flaperon => {
+                self.channels[0].source = MIXER_OUT_SRC_BASE;     // Left Flaperon
+                self.channels[1].source = 2;                      // Pitch
+                self.channels[2].source = 58;                     // THC
+                self.channels[3].source = 4;                      // Yaw
+                self.channels[5].source = MIXER_OUT_SRC_BASE + 1; // Right Flaperon (CH6)
+                self.motor_mask = 1 << 2;
+                self.bidir_mask = 0;
+            }
+            MixerKind::DiffThrust => {
+                self.channels[0].source = MIXER_OUT_SRC_BASE;     // Left Motor
+                self.channels[1].source = MIXER_OUT_SRC_BASE + 1; // Right Motor
+                self.channels[2].source = 58;
+                self.channels[3].source = 4;
+                self.motor_mask = (1 << 0) | (1 << 1);
+                self.bidir_mask = 0;
+            }
+            MixerKind::Tank => {
+                self.channels[0].source = MIXER_OUT_SRC_BASE;     // Left Track
+                self.channels[1].source = MIXER_OUT_SRC_BASE + 1; // Right Track
+                self.channels[2].source = 3;
+                self.channels[3].source = 4;
+                self.motor_mask = (1 << 0) | (1 << 1);
+                self.bidir_mask = (1 << 0) | (1 << 1);
+            }
+            MixerKind::Crow => {
+                self.channels[0].source = MIXER_OUT_SRC_BASE;     // AilL
+                self.channels[5].source = MIXER_OUT_SRC_BASE + 1; // AilR (CH6)
+                self.channels[1].source = 2;                      // Pitch (add EleC via mix or source)
+            }
         }
     }
 
@@ -936,11 +1093,11 @@ impl RadioStorage {
         &mut self.active_model
     }
 
-    /// Check if a mix source ID (0..57, matching `SOURCE_NAMES`) is available on this radio.
+    /// Check if a mix source ID (`0..=71`) is available on this radio.
     /// Filters out unconfigured switches, potentiometers, and unmapped channels.
     #[inline]
     pub fn is_source_available(&self, src: u8) -> bool {
-        if (50..=57).contains(&src) {
+        if (50..=58).contains(&src) || (60..=71).contains(&src) {
             return true;
         }
         crate::board::ActiveBoard::is_source_available(&self.radio, &self.active_model, src)
@@ -960,15 +1117,8 @@ impl RadioStorage {
         if ch == 0 || ch > 18 {
             return false;
         }
-        if ch <= 4 {
-            return true; // CH1..CH4 primary controls
-        }
-        let ch_idx = (ch - 1) as usize; // 4..17
-        let aux_idx = ch_idx - 4; // 0..13
-        if self.active_model.wing_tail_mix == 3 && ch == 6 {
-            return true; // Flaperon right aileron
-        }
-        if self.active_model.aux_channels[aux_idx] != 0 {
+        let ch_idx = (ch - 1) as usize;
+        if self.active_model.channels[ch_idx].source != 0 {
             return true;
         }
         self.active_model.mixes.iter().any(|m| m.target_ch == ch)
@@ -1276,9 +1426,6 @@ impl RadioStorage {
         if self.radio.ext_module_pwr > 1 {
             self.radio.ext_module_pwr = 0;
         }
-        if self.radio.throttle_trim > 2 {
-            self.radio.throttle_trim = 0;
-        }
         if self.radio.tone_style > 1 {
             self.radio.tone_style = 1;
         }
@@ -1315,14 +1462,14 @@ impl RadioStorage {
         if self.radio.stick_invert_mask > 0x0F {
             self.radio.stick_invert_mask = 0x03; // Default RH+RV inverted
         }
-        if (self.radio._pad_align[0] & 0x0F) > 11 {
-            self.radio._pad_align[0] &= 0xF0; // Default 80% voice volume
+        if (self.radio.voice_cfg & 0x0F) > 11 {
+            self.radio.voice_cfg &= 0xF0; // Default 80% voice volume
         }
-        if ((self.radio._pad_align[0] >> 4) as usize) >= RadioConfig::VOICE_LANGS.len() {
-            self.radio._pad_align[0] &= 0x0F; // Default "en" voice language
+        if ((self.radio.voice_cfg >> 4) as usize) >= RadioConfig::VOICE_LANGS.len() {
+            self.radio.voice_cfg &= 0x0F; // Default "en" voice language
         }
-        if self.radio._pad_align[1] > 4 {
-            self.radio._pad_align[1] = 0; // Default 15s voice callout interval
+        if self.radio.voice_interval > 4 {
+            self.radio.voice_interval = 0; // Default 15s voice callout interval
         }
 
         for stick in self.radio.sticks.iter_mut() {
@@ -1350,11 +1497,6 @@ impl RadioStorage {
                 *mode = 0; // Default
             }
         }
-        for slot in self.radio._reserved_telem.iter_mut() {
-            if *slot > 22 {
-                *slot = 22; // OFF
-            }
-        }
         if self.radio.trainer_config > 7 {
             self.radio.trainer_config = 0;
         } else if (self.radio.trainer_config & 0x06) == 0x06 {
@@ -1378,6 +1520,9 @@ impl RadioStorage {
         if m.rf_protocol > crate::board::RfProtocol::MAX_VALUE {
             m.rf_protocol = crate::board::ActiveBoard::DEFAULT_PROTOCOL as u8;
         }
+        if m.rf_module_target > 1 {
+            m.rf_module_target = 0;
+        }
         if m.dsm_sub_proto > 3 {
             m.dsm_sub_proto = 0;
         }
@@ -1387,45 +1532,32 @@ impl RadioStorage {
         if m.crsf_half_duplex > 1 {
             m.crsf_half_duplex = 0;
         }
-        for axis in 0..3 {
-            if m.dr_high[axis] < 30 || m.dr_high[axis] > 100 {
-                m.dr_high[axis] = 100;
-            }
-            if m.dr_low[axis] < 30 || m.dr_low[axis] > 100 {
-                m.dr_low[axis] = 70;
-            }
-            if m.expo_high[axis] < -100 || m.expo_high[axis] > 100 {
-                m.expo_high[axis] = 0;
-            }
-            if m.expo_low[axis] < -100 || m.expo_low[axis] > 100 {
-                m.expo_low[axis] = 0;
+        if m.trim_mode > 2 {
+            m.trim_mode = 0;
+        }
+        for tm in m.trim_map.iter_mut() {
+            if *tm > 4 {
+                *tm = 0;
             }
         }
-        if m.dr_switch > 6 {
-            m.dr_switch = 0;
+        for ch in m.channels.iter_mut() {
+            ch.sanitize();
         }
-        if m.wing_tail_mix > 4 {
-            m.wing_tail_mix = 0;
+        for im in m.input_mods.iter_mut() {
+            im.sanitize();
         }
-        if m.template_diff < -100 || m.template_diff > 100 {
-            m.template_diff = 0;
+        for mx in m.mixers.iter_mut() {
+            mx.sanitize();
+        }
+        for cm in m.chan_mods.iter_mut() {
+            cm.sanitize();
         }
         if m.failsafe_thr < 900 || m.failsafe_thr > 2100 {
             m.failsafe_thr = 1000;
         }
-        for src in m.aux_channels.iter_mut() {
-            if *src > 57 {
-                *src = 0;
-            }
-        }
-        for src in m.freeform_ch1_4.iter_mut() {
-            if *src > 57 {
-                *src = 0;
-            }
-        }
         for mix in m.mixes.iter_mut() {
             if mix.target_ch > 18
-                || mix.source > 57
+                || mix.source > 71
                 || mix.weight_src > 41
                 || mix.mode > 2
                 || mix.switch > 44
@@ -1436,9 +1568,14 @@ impl RadioStorage {
         for gv in m.gvars.iter_mut() {
             *gv = (*gv).clamp(-1000, 1000);
         }
+        for addr in m.multiswitch_addresses.iter_mut() {
+            if *addr < -1 || *addr > 255 {
+                *addr = -1;
+            }
+        }
         if m.thr_curve_pts != 5 && m.thr_curve_pts != 7 && m.thr_curve_pts != 9 {
             m.thr_curve_pts = 5;
-            m.thr_curve = [0, 25, 50, 75, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            m.thr_curve = [0, 25, 50, 75, 100, 0, 0, 0, 0];
         }
         if m.arm_switch > 44 {
             m.arm_switch = 0;
@@ -1487,7 +1624,11 @@ impl RadioStorage {
         if m.rx_out_mode > 1 {
             m.rx_out_mode = 0;
         }
-        let max_serial_proto = if m.rf_protocol == 2 { 9 } else { 1 };
+        let max_serial_proto = match m.rf_protocol {
+            2 => crate::rf::cc2500::Cc2500Protocol::COUNT - 1,
+            4 => crate::rf::mpm::MpmProtocol::COUNT - 1,
+            _ => 1,
+        };
         if m.rx_serial_proto > max_serial_proto {
             m.rx_serial_proto = 0;
         }
@@ -1564,11 +1705,11 @@ impl RadioStorage {
     }
 }
 
-const _: () = assert!(core::mem::size_of::<RadioConfig>() == 148);
+const _: () = assert!(core::mem::size_of::<RadioConfig>() == 160);
 const _: () = assert!(core::mem::size_of::<MixLine>() == 8);
 const _: () = assert!(core::mem::size_of::<LogicalSwitch>() == 6);
-const _: () = assert!(core::mem::size_of::<ModelConfig>() == 464);
-const _: () = assert!(core::mem::size_of::<RadioStorage>() == 612);
+const _: () = assert!(core::mem::size_of::<ModelConfig>() == 760);
+const _: () = assert!(core::mem::size_of::<RadioStorage>() == 920);
 
 static mut GLOBAL_STORAGE: RadioStorage = RadioStorage::empty();
 
@@ -1763,285 +1904,8 @@ impl EepromI2c {
     }
 }
 
-/// Legacy RadioConfig v1 (140 bytes) from solo FS-i6X v0.27.0 release.
-/// Used for transparent, lossless migration to v2 (148 bytes).
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct LegacyRadioConfig140 {
-    pub magic: u32,                // 0..4 ("FSKY")
-    pub version: u32,              // 4..8 (5)
-    pub active_model: u8,          // 8 (0..19, active model index)
-    pub throttle_trim: u8,         // 9 (0: Off/Lock, 1: Idle T-Trim, 2: Linear)
-    pub audio_enabled: u8,         // 10 (0: Muted, 1: Enabled)
-    pub backlight_timeout: u8,     // 11 (0: Always On, 1: 15s, 2: 30s, 3: 60s)
-    pub backlight_brightness: u8,  // 12 (1..10)
-    pub vbat_warn_deci: u8,        // 13 (40..50 = 4.0V..5.0V, default 44 = 4.4V)
-    pub lcd_contrast: u8,          // 14 (15..55, default 37 / 0x25)
-    pub usb_mode: u8,              // 15 (0: Off, 1: Joystick, 2: Serial, 3: Composite)
-    pub sticks: [ChannelCalib; 4], // 16..48 (32 bytes: Roll, Pitch, Throttle, Yaw)
-    pub aux_pots: [PotCalib; 10],  // 48..108 (60 bytes: SA..SD, VRA..VRB, VRC..VRF)
-    pub ext_module_pwr: u8,        // 108 (0: Active HIGH / N-type, 1: Active LOW / P-type)
-    pub tone_style: u8,            // 109 (0: Simple / Standard, 1: Rich / Melodic)
-    pub servo_rate_hz: u16,        // 110..112 (50..400 Hz, default 50 Hz for analog servo safety)
-    pub rx_out_mode: u8,           // 112 (0: PWM, 1: PPM, default 0)
-    pub rx_serial_proto: u8,       // 113 (0: i-BUS, 1: S.BUS, default 0)
-    pub ext_switches: u8,          // 114 (0: Disabled, 1: Enabled / PC12+PC15)
-    pub ext_adc: u8,               // 115 (0: Disabled, 1: Enabled / Header P7 AD12-AD15 or PC1-PC4)
-    pub adc_modes: [u8; 10],       // 116..126: Input modes for the 10 auxiliary analog channels
-    pub stick_mode: u8,            // 126 (0: Mode 1, 1: Mode 2, 2: Mode 3, 3: Mode 4)
-    pub _reserved_telem: [u8; 4], // 127..131: Reserved (previously global telem_slots, now per-model)
-    pub trainer_config: u8,       // 131: Bit 0: PPM Out on PF10, Bit 1: PPM In on PF9
-    pub rear_left_func: u8,       // 132: 0: RC Switch (SWE), 1: Timer Reset, 2: Trims Modifier
-    pub rear_right_func: u8,      // 133: 0: RC Switch (SWF), 1: Instant Trim, 2: Trims Modifier
-    pub touch_disabled: u8,       // 134: 0: Touch Enabled, 1: Touch Disabled
-    pub j4_sg_sh_en: u8,          // 135: 0: SWD Debug, 1: SG/SH Buttons on PA13/PA14
-    pub switch_beep: u8,          // 136: 0: Muted, 1: Beep on switch toggle
-    pub gimbal_type: u8,          // 137: 0: Standard Potentiometer, 1: Hall Effect
-    pub stick_invert_mask: u8,    // 138: 4 bits (bit 0: RH, bit 1: RV, bit 2: LV, bit 3: LH)
-    pub _pad_align: [u8; 1],      // 139..140: Align to 140 bytes
-}
-
-const _: () = assert!(core::mem::size_of::<LegacyRadioConfig140>() == 140);
-
-pub fn unpack_legacy_radio_140(v1: &LegacyRadioConfig140) -> RadioConfig {
-    let mut v2 = RadioConfig::default_factory();
-    v2.magic = v1.magic;
-    v2.version = v1.version;
-    v2.active_model = v1.active_model;
-    v2.throttle_trim = v1.throttle_trim;
-    v2.audio_enabled = v1.audio_enabled;
-    v2.backlight_timeout = v1.backlight_timeout;
-    v2.backlight_brightness = v1.backlight_brightness;
-    v2.vbat_warn_deci = v1.vbat_warn_deci;
-    v2.lcd_contrast = v1.lcd_contrast;
-    v2.usb_mode = v1.usb_mode;
-    v2.sticks = v1.sticks;
-    for i in 0..10 {
-        v2.aux_pots[i] = v1.aux_pots[i];
-    }
-    // 11th pot (VRG) keeps default_factory() calibration
-    v2.ext_module_pwr = v1.ext_module_pwr;
-    v2.tone_style = v1.tone_style;
-    v2.servo_rate_hz = v1.servo_rate_hz;
-    v2.rx_out_mode = v1.rx_out_mode;
-    v2.rx_serial_proto = v1.rx_serial_proto;
-    v2.ext_switches = v1.ext_switches;
-    v2.ext_adc = v1.ext_adc;
-    for i in 0..10 {
-        v2.adc_modes[i] = v1.adc_modes[i];
-    }
-    v2.stick_mode = v1.stick_mode;
-    v2._reserved_telem = v1._reserved_telem;
-    v2.trainer_config = v1.trainer_config;
-    v2.rear_left_func = v1.rear_left_func;
-    v2.rear_right_func = v1.rear_right_func;
-    v2.touch_disabled = v1.touch_disabled;
-    v2.j4_sg_sh_en = v1.j4_sg_sh_en;
-    v2.switch_beep = v1.switch_beep;
-    v2.gimbal_type = v1.gimbal_type;
-    v2.stick_invert_mask = v1.stick_invert_mask;
-    v2
-}
-
-/// Legacy ModelConfig from solo FS-i6X v0.27.0 (368 bytes, with i6X-specific field order).
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct LegacyModelConfigI6x368 {
-    pub name: [u8; 10],
-    pub model_type: u8,
-    pub _pad0: u8,
-    pub rx_id: u32,
-    pub trims: [i8; 4],
-    pub channel_reverse: u32,
-    pub dr_switch: u8,
-    pub thr_curve_pts: u8,
-    pub thr_curve_smooth: u8,
-    pub thr_curve: [u8; 17],
-    pub _pad_crv: u8,
-    pub dr_high: [u8; 3],
-    pub dr_low: [u8; 3],
-    pub expo_high: [i8; 3],
-    pub expo_low: [i8; 3],
-    pub _pad1: u8,
-    pub timer_secs: u16,
-    pub timer_source: u8,
-    pub rf_power: u8,
-    pub failsafe_thr: u16,
-    pub aux_channels: [u8; 14],
-    pub wing_tail_mix: u8,
-    pub template_diff: i8,
-    pub mixes: [MixLine; NUM_MIX_LINES],
-    pub failsafe_mode: u8,
-    pub failsafe_timeout: u8,
-    pub rf_protocol: u8,
-    pub crsf_baud: u8,
-    pub arm_switch: u8,
-    pub rx_out_mode: u8,
-    pub servo_rate_hz: u16,
-    pub rx_serial_proto: u8,
-    pub crsf_half_duplex: u8,
-    pub crsf_arm_mode: u8,
-    pub _pad_end: [u8; 1],
-    pub gvars: [i16; 5],
-    pub vario_switch: u8,
-    pub vario_climb_deadband: u8,
-    pub vario_sink_deadband: u8,
-    pub vario_sink_mode: u8,
-    pub vario_motor_mute: u8,
-    pub _pad_vario: [u8; 1],
-    pub telem_slots: [u8; 4],
-}
-
-const _: () = assert!(core::mem::size_of::<LegacyModelConfigI6x368>() == 368);
-
-pub fn unpack_legacy_i6x_368_model(src: &LegacyModelConfigI6x368) -> ModelConfig {
-    let mut dst = ModelConfig::default_for_index(0);
-    dst.name = src.name;
-    dst.model_type = src.model_type;
-    dst.rx_id = src.rx_id;
-    dst.trims = src.trims;
-    dst.channel_reverse = src.channel_reverse;
-    dst.dr_switch = src.dr_switch;
-    dst.thr_curve_pts = src.thr_curve_pts;
-    dst.thr_curve_smooth = src.thr_curve_smooth;
-    dst.thr_curve = src.thr_curve;
-    dst.dr_high = src.dr_high;
-    dst.dr_low = src.dr_low;
-    dst.expo_high = src.expo_high;
-    dst.expo_low = src.expo_low;
-    dst.timer_secs = src.timer_secs;
-    dst.timer_source = src.timer_source;
-    dst.rf_power = src.rf_power;
-    dst.failsafe_thr = src.failsafe_thr;
-    dst.aux_channels = src.aux_channels;
-    dst.wing_tail_mix = src.wing_tail_mix;
-    dst.template_diff = src.template_diff;
-    dst.mixes = src.mixes;
-    dst.failsafe_mode = src.failsafe_mode;
-    dst.failsafe_timeout = src.failsafe_timeout;
-    dst.rf_protocol = src.rf_protocol;
-    dst.crsf_baud = src.crsf_baud;
-    dst.arm_switch = src.arm_switch;
-    dst.rx_out_mode = src.rx_out_mode;
-    dst.servo_rate_hz = src.servo_rate_hz;
-    dst.rx_serial_proto = src.rx_serial_proto;
-    dst.crsf_half_duplex = src.crsf_half_duplex;
-    dst.crsf_arm_mode = src.crsf_arm_mode;
-    dst.gvars = src.gvars;
-    dst.vario_switch = src.vario_switch;
-    dst.vario_climb_deadband = src.vario_climb_deadband;
-    dst.vario_sink_deadband = src.vario_sink_deadband;
-    dst.vario_sink_mode = src.vario_sink_mode;
-    dst.vario_motor_mute = src.vario_motor_mute;
-    dst.telem_slots = src.telem_slots;
-    dst
-}
-
-/// Legacy ModelConfig v1 (128 bytes) from prior releases.
-/// Used for transparent, lossless migration to v2 (348 bytes).
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct LegacyModelConfigV1 {
-    pub name: [u8; 10],
-    pub model_type: u8,
-    pub _pad0: u8,
-    pub rx_id: u32,
-    pub trims: [i8; 4],
-    pub channel_reverse: u32,
-    pub dr_switch: u8,
-    pub thr_curve_pts: u8,
-    pub thr_curve_smooth: u8,
-    pub thr_curve: [u8; 9],
-    pub dr_high: [u8; 3],
-    pub dr_low: [u8; 3],
-    pub expo_high: [i8; 3],
-    pub expo_low: [i8; 3],
-    pub timer_secs: u16,
-    pub timer_source: u8,
-    pub rf_power: u8,
-    pub failsafe_thr: u16,
-    pub aux_channels: [u8; 14],
-    pub wing_tail_mix: u8,
-    pub template_diff: i8,
-    pub mixes: [LegacyMixLineV1; 8],
-    pub failsafe_mode: u8,
-    pub failsafe_timeout: u8,
-    pub rf_protocol: u8,
-    pub crsf_baud: u8,
-    pub arm_switch: u8,
-    pub rx_out_mode: u8,
-    pub servo_rate_hz: u16,
-    pub rx_serial_proto: u8,
-    pub crsf_half_duplex: u8,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct LegacyMixLineV1 {
-    pub target_ch: u8,
-    pub source: u8,
-    pub weight: i8,
-    pub offset: i8,
-    pub switch: u8,
-    pub mode: u8,
-}
-
-const _: () = assert!(core::mem::size_of::<LegacyModelConfigV1>() == 128);
-const _: () = assert!(core::mem::size_of::<LegacyMixLineV1>() == 6);
-
-pub fn unpack_legacy_v1_model(v1: &LegacyModelConfigV1) -> ModelConfig {
-    let mut v2 = ModelConfig::default_for_index(0);
-    v2.name = v1.name;
-    v2.model_type = v1.model_type;
-    v2.rx_id = v1.rx_id;
-    v2.trims = v1.trims;
-    v2.channel_reverse = v1.channel_reverse;
-    v2.dr_switch = v1.dr_switch;
-    v2.thr_curve_pts = v1.thr_curve_pts;
-    v2.thr_curve_smooth = v1.thr_curve_smooth;
-    // Copy the first 9 curve points, rest are 0
-    v2.thr_curve[0..9].copy_from_slice(&v1.thr_curve);
-    v2.dr_high = v1.dr_high;
-    v2.dr_low = v1.dr_low;
-    v2.expo_high = v1.expo_high;
-    v2.expo_low = v1.expo_low;
-    v2.timer_secs = v1.timer_secs;
-    v2.timer_source = v1.timer_source;
-    v2.rf_power = v1.rf_power;
-    v2.failsafe_thr = v1.failsafe_thr;
-    v2.aux_channels = v1.aux_channels;
-    v2.wing_tail_mix = v1.wing_tail_mix;
-    v2.template_diff = v1.template_diff;
-
-    // Migrate first 8 mixer lines
-    for i in 0..8 {
-        v2.mixes[i] = MixLine {
-            target_ch: v1.mixes[i].target_ch,
-            source: v1.mixes[i].source,
-            weight_src: 0, // default fixed weight
-            weight: v1.mixes[i].weight,
-            offset: v1.mixes[i].offset,
-            switch: v1.mixes[i].switch,
-            mode: v1.mixes[i].mode,
-            _reserved: 0,
-        };
-    }
-    // Remaining lines 8..32 remain disabled
-
-    v2.failsafe_mode = v1.failsafe_mode;
-    v2.failsafe_timeout = v1.failsafe_timeout;
-    v2.rf_protocol = v1.rf_protocol;
-    v2.crsf_baud = v1.crsf_baud;
-    v2.arm_switch = v1.arm_switch;
-    v2.rx_out_mode = v1.rx_out_mode;
-    v2.servo_rate_hz = v1.servo_rate_hz;
-    v2.rx_serial_proto = v1.rx_serial_proto;
-    v2.crsf_half_duplex = v1.crsf_half_duplex;
-
-    v2
-}
-
 /// Helper to read a raw C struct from an EEPROM slot with 8-byte framing and CRC16 verification.
+/// Under `SCHEMA_VERSION = 2` (v1.0.0), any v1 slot fails `hdr.is_valid` and resets cleanly to v2 defaults.
 pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
     #[cfg(test)]
     {
@@ -2052,149 +1916,18 @@ pub fn load_slot<T: Copy>(addr: u16, dst: &mut T) -> Result<(), StorageError> {
 
     #[cfg(not(test))]
     {
-        // 1. Read 8-byte slot header
         let mut hdr_bytes = [0u8; HEADER_SIZE];
         EepromI2c::read(addr, &mut hdr_bytes)?;
         let hdr = SlotHeader::parse(&hdr_bytes);
 
         let expected_size = core::mem::size_of::<T>();
-
-        // Check if this is a RadioConfig request and the slot holds legacy v1 (140 bytes from i6X)
-        if expected_size == core::mem::size_of::<RadioConfig>()
-            && hdr.len == 140
-            && hdr.magic == SLOT_MAGIC
-            && hdr.flags == 0
-        {
-            let mut v1 = core::mem::MaybeUninit::<LegacyRadioConfig140>::uninit();
-            let v1_bytes =
-                unsafe { core::slice::from_raw_parts_mut(v1.as_mut_ptr() as *mut u8, 140) };
-            EepromI2c::read(addr + HEADER_SIZE as u16, v1_bytes)?;
-
-            let computed_crc = crc16(v1_bytes);
-            if computed_crc != hdr.crc16 {
-                return Err(StorageError::CrcMismatch);
-            }
-
-            let legacy_radio = unsafe { v1.assume_init() };
-            let v2_radio = unpack_legacy_radio_140(&legacy_radio);
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    &v2_radio as *const RadioConfig as *const T,
-                    dst as *mut T,
-                    1,
-                );
-            }
-            let _ = save_slot(addr, &v2_radio);
-            return Ok(());
-        }
-
-        // Check if this is a ModelConfig request and the slot holds legacy v1 (128 bytes)
-        if expected_size == core::mem::size_of::<ModelConfig>()
-            && hdr.len == 128
-            && hdr.magic == SLOT_MAGIC
-            && hdr.flags == 0
-        {
-            // Read 128 bytes of legacy model
-            let mut v1 = core::mem::MaybeUninit::<LegacyModelConfigV1>::uninit();
-            let v1_bytes =
-                unsafe { core::slice::from_raw_parts_mut(v1.as_mut_ptr() as *mut u8, 128) };
-            EepromI2c::read(addr + HEADER_SIZE as u16, v1_bytes)?;
-
-            // Verify CRC-16 of legacy payload
-            let computed_crc = crc16(v1_bytes);
-            if computed_crc != hdr.crc16 {
-                return Err(StorageError::CrcMismatch);
-            }
-
-            let legacy_model = unsafe { v1.assume_init() };
-            let v2_model = unpack_legacy_v1_model(&legacy_model);
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    &v2_model as *const ModelConfig as *const T,
-                    dst as *mut T,
-                    1,
-                );
-            }
-
-            // In-place upgrade: re-save slot as v2 (392 bytes) with updated CRC-16 envelope
-            let _ = save_slot(addr, &v2_model);
-
-            return Ok(());
-        }
-
-        // Check if this is a ModelConfig request and the slot holds legacy 348, 364, 368, 392, or 416 bytes
-        if expected_size == core::mem::size_of::<ModelConfig>()
-            && (hdr.len == 348
-                || hdr.len == 364
-                || hdr.len == 368
-                || hdr.len == 392
-                || hdr.len == 416)
-            && hdr.magic == SLOT_MAGIC
-            && hdr.flags == 0
-        {
-            let old_len = hdr.len as usize;
-            let mut buf = [0u8; core::mem::size_of::<ModelConfig>()];
-            EepromI2c::read(addr + HEADER_SIZE as u16, &mut buf[..old_len])?;
-            let computed_crc = crc16(&buf[..old_len]);
-            if computed_crc != hdr.crc16 {
-                return Err(StorageError::CrcMismatch);
-            }
-
-            let mut model = if hdr.len == 368 && !crate::board::ActiveBoard::HAS_TOUCH {
-                // Solo FS-i6X v0.27.0 368-byte format (reordered vario vs crsf/gvars)
-                let legacy_i6x = unsafe {
-                    core::ptr::read_unaligned(buf.as_ptr() as *const LegacyModelConfigI6x368)
-                };
-                unpack_legacy_i6x_368_model(&legacy_i6x)
-            } else {
-                unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const ModelConfig) }
-            };
-
-            if hdr.len <= 348 {
-                model.vario_sink_mode = 1;
-                model.vario_motor_mute = 1;
-            }
-            if hdr.len <= 364 {
-                model.telem_slots = [0, 1, 2, 3];
-            }
-            if hdr.len <= 368 {
-                model.timer1_stop_src = 0;
-                model.timer1_reset_src = 0;
-                model.timer1_flags = crate::timer::TimerConfig::FLAG_AUDIO_BEEPS;
-                model.timers_ext = [
-                    crate::timer::TimerConfig::disabled(),
-                    crate::timer::TimerConfig::disabled(),
-                    crate::timer::TimerConfig::disabled(),
-                ];
-                model.freeform_ch1_4 = [0; 4];
-            }
-            if hdr.len <= 392 {
-                model.soaring = crate::soaring::SoaringConfig::default_factory();
-            }
-            if hdr.len <= 416 {
-                model.logical_switches = [LogicalSwitch::disabled(); NUM_LOGICAL_SWITCHES];
-            }
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    &model as *const ModelConfig as *const T,
-                    dst as *mut T,
-                    1,
-                );
-            }
-            let _ = save_slot(addr, &model);
-            return Ok(());
-        }
-
         hdr.is_valid(expected_size)?;
 
-        // 2. Read payload directly into destination struct
         let dst_bytes =
             unsafe { core::slice::from_raw_parts_mut(dst as *mut T as *mut u8, expected_size) };
         EepromI2c::read(addr + HEADER_SIZE as u16, dst_bytes)?;
 
-        // 3. Verify CRC-16
-        let computed_crc = crc16(dst_bytes);
-        if computed_crc != hdr.crc16 {
+        if crc16(dst_bytes) != hdr.crc16 {
             return Err(StorageError::CrcMismatch);
         }
 
@@ -2580,9 +2313,11 @@ mod tests {
 
     #[test]
     fn test_model_config_size_and_rf_power() {
-        assert_eq!(core::mem::size_of::<ModelConfig>(), 464);
-        assert_eq!(core::mem::size_of::<RadioConfig>(), 148);
-        assert_eq!(core::mem::size_of::<RadioStorage>(), 612);
+        assert_eq!(core::mem::size_of::<ModelConfig>(), 760);
+        assert_eq!(core::mem::size_of::<RadioConfig>(), 160);
+        assert_eq!(core::mem::size_of::<RadioStorage>(), 920);
+        assert!(HEADER_SIZE + core::mem::size_of::<ModelConfig>() <= MODEL_SLOT_SIZE);
+        assert!(HEADER_SIZE + core::mem::size_of::<RadioConfig>() <= RADIO_SLOT_SIZE);
 
         let default_m = ModelConfig::default_for_index(0);
         assert_eq!(default_m.rf_power, 0);
@@ -2633,85 +2368,34 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_v1_migration() {
-        let v1 = LegacyModelConfigV1 {
-            name: *b"PLANE 01  ",
-            model_type: 1, // Glider
-            _pad0: 0,
-            rx_id: 0x1234_5678,
-            trims: [5, -3, 2, 0],
-            channel_reverse: 0x05,
-            dr_switch: 2,
-            thr_curve_pts: 9,
-            thr_curve_smooth: 1,
-            thr_curve: [0, 10, 25, 40, 55, 70, 80, 90, 100],
-            dr_high: [90, 85, 80],
-            dr_low: [60, 55, 50],
-            expo_high: [20, -10, 0],
-            expo_low: [10, -5, 0],
-            timer_secs: 420,
-            timer_source: 2,
-            rf_power: 1,
-            failsafe_thr: 980,
-            aux_channels: [7, 8, 5, 6, 9, 10, 11, 12, 0, 0, 0, 0, 0, 0],
-            wing_tail_mix: 2,
-            template_diff: 15,
-            mixes: [LegacyMixLineV1 {
-                target_ch: 1,
-                source: 2,
-                weight: 50,
-                offset: -10,
-                switch: 3,
-                mode: 1,
-            }; 8],
-            failsafe_mode: 1,
-            failsafe_timeout: 30,
-            rf_protocol: 1,
-            crsf_baud: 3,
-            arm_switch: 4,
-            rx_out_mode: 1,
-            servo_rate_hz: 200,
-            rx_serial_proto: 1,
-            crsf_half_duplex: 1,
+    fn test_schema_v2_rejects_v1_slot_header() {
+        let v1_hdr = SlotHeader {
+            magic: SLOT_MAGIC,
+            version: 1,
+            flags: 0,
+            len: 464,
+            crc16: 0x1234,
         };
-        let v2 = unpack_legacy_v1_model(&v1);
-        assert_eq!(&v2.name, b"PLANE 01  ");
-        assert_eq!(v2.model_type, 1);
-        assert_eq!(v2.rx_id, 0x1234_5678);
-        assert_eq!(v2.trims, [5, -3, 2, 0]);
-        assert_eq!(v2.channel_reverse, 0x05);
-        assert_eq!(v2.dr_switch, 2);
-        assert_eq!(v2.thr_curve_pts, 9);
-        assert_eq!(v2.thr_curve_smooth, 1);
-        assert_eq!(&v2.thr_curve[0..9], &[0, 10, 25, 40, 55, 70, 80, 90, 100]);
-        assert_eq!(&v2.thr_curve[9..17], &[0; 8]);
-        assert_eq!(v2.timer_secs, 420);
-        assert_eq!(v2.template_diff, 15);
-        assert_eq!(v2.mixes.len(), 32);
-        for i in 0..8 {
-            assert_eq!(v2.mixes[i].target_ch, 1);
-            assert_eq!(v2.mixes[i].source, 2);
-            assert_eq!(v2.mixes[i].weight_src, 0);
-            assert_eq!(v2.mixes[i].weight, 50);
-            assert_eq!(v2.mixes[i].offset, -10);
-            assert_eq!(v2.mixes[i].switch, 3);
-            assert_eq!(v2.mixes[i].mode, 1);
-        }
-        for i in 8..32 {
-            assert_eq!(v2.mixes[i], MixLine::disabled());
-        }
-        assert_eq!(v2.gvars, [0; 5]);
-        assert_eq!(v2.telem_slots, [0, 1, 2, 3]);
+        assert_eq!(
+            v1_hdr.is_valid(core::mem::size_of::<ModelConfig>()),
+            Err(StorageError::VersionMismatch(1))
+        );
+        let v2_hdr = SlotHeader {
+            magic: SLOT_MAGIC,
+            version: SCHEMA_VERSION,
+            flags: 0,
+            len: core::mem::size_of::<ModelConfig>() as u16,
+            crc16: 0x1234,
+        };
+        assert!(v2_hdr.is_valid(core::mem::size_of::<ModelConfig>()).is_ok());
     }
 
     #[test]
     fn test_telem_slots_sanitize() {
         let mut storage = RadioStorage::default_factory();
         storage.active_model.telem_slots = [0, 11, 22, 23];
-        storage.radio._reserved_telem = [0, 11, 22, 23];
         storage.sanitize();
         assert_eq!(storage.active_model.telem_slots, [0, 11, 22, 22]);
-        assert_eq!(storage.radio._reserved_telem, [0, 11, 22, 22]);
     }
 
     #[test]
@@ -2959,119 +2643,6 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_radio_140_migration() {
-        let legacy140 = LegacyRadioConfig140 {
-            magic: FLASH_MAGIC,
-            version: CONFIG_VERSION,
-            active_model: 2,
-            throttle_trim: 1,
-            audio_enabled: 1,
-            backlight_timeout: 2,
-            backlight_brightness: 8,
-            vbat_warn_deci: 46,
-            lcd_contrast: 40,
-            usb_mode: 1,
-            sticks: [ChannelCalib::new(100, 2048, 3900); 4],
-            aux_pots: [PotCalib::new(200, 2000, 3800); 10],
-            ext_module_pwr: 1,
-            tone_style: 1,
-            servo_rate_hz: 100,
-            rx_out_mode: 1,
-            rx_serial_proto: 1,
-            ext_switches: 1,
-            ext_adc: 1,
-            adc_modes: [2; 10],
-            stick_mode: 2,
-            _reserved_telem: [1, 2, 3, 4],
-            trainer_config: 3,
-            rear_left_func: 1,
-            rear_right_func: 2,
-            touch_disabled: 0,
-            j4_sg_sh_en: 1,
-            switch_beep: 1,
-            gimbal_type: 1,
-            stick_invert_mask: 0x05,
-            _pad_align: [0; 1],
-        };
-        let v2 = unpack_legacy_radio_140(&legacy140);
-        assert_eq!(v2.active_model, 2);
-        assert_eq!(v2.throttle_trim, 1);
-        assert_eq!(v2.vbat_warn_deci, 46);
-        assert_eq!(v2.sticks[0].center, 2048);
-        assert_eq!(v2.aux_pots[9].center, 2000);
-        assert_eq!(v2.aux_pots[10].center, crate::adc::ADC_CENTER); // 11th pot gets default
-        assert_eq!(v2.ext_module_pwr, 1);
-        assert_eq!(v2.ext_switches, 1);
-        assert_eq!(v2.adc_modes[0], 2);
-        assert_eq!(v2.adc_modes[10], 0);
-        assert_eq!(v2.gimbal_type, 1);
-        assert_eq!(v2.stick_invert_mask, 0x05);
-    }
-
-    #[test]
-    fn test_legacy_i6x_368_model_migration() {
-        let legacy_i6x = LegacyModelConfigI6x368 {
-            name: *b"I6X MIGRAT",
-            model_type: 3,
-            _pad0: 0,
-            rx_id: 0xAABB_CCDD,
-            trims: [1, -2, 3, -4],
-            channel_reverse: 0x0A,
-            dr_switch: 3,
-            thr_curve_pts: 7,
-            thr_curve_smooth: 1,
-            thr_curve: [0, 15, 30, 50, 70, 85, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            _pad_crv: 0,
-            dr_high: [100, 100, 100],
-            dr_low: [70, 70, 70],
-            expo_high: [30, 30, 30],
-            expo_low: [0, 0, 0],
-            _pad1: 0,
-            timer_secs: 600,
-            timer_source: 1,
-            rf_power: 0,
-            failsafe_thr: 1000,
-            aux_channels: [7, 8, 5, 6, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0],
-            wing_tail_mix: 0,
-            template_diff: 0,
-            mixes: [MixLine::disabled(); NUM_MIX_LINES],
-            failsafe_mode: 0,
-            failsafe_timeout: 20,
-            rf_protocol: 1,
-            crsf_baud: 2,
-            arm_switch: 2,
-            rx_out_mode: 0,
-            servo_rate_hz: 50,
-            rx_serial_proto: 0,
-            crsf_half_duplex: 0,
-            crsf_arm_mode: 1,
-            _pad_end: [0; 1],
-            gvars: [100, -200, 300, -400, 500],
-            vario_switch: 4,
-            vario_climb_deadband: 3,
-            vario_sink_deadband: 6,
-            vario_sink_mode: 2,
-            vario_motor_mute: 1,
-            _pad_vario: [0; 1],
-            telem_slots: [1, 2, 3, 4],
-        };
-        let v2 = unpack_legacy_i6x_368_model(&legacy_i6x);
-        assert_eq!(&v2.name, b"I6X MIGRAT");
-        assert_eq!(v2.rx_id, 0xAABB_CCDD);
-        assert_eq!(v2.crsf_arm_mode, 1);
-        assert_eq!(v2.gvars, [100, -200, 300, -400, 500]);
-        assert_eq!(v2.vario_switch, 4);
-        assert_eq!(v2.vario_climb_deadband, 3);
-        assert_eq!(v2.vario_sink_deadband, 6);
-        assert_eq!(v2.vario_sink_mode, 2);
-        assert_eq!(v2.vario_motor_mute, 1);
-        assert_eq!(v2.telem_slots, [1, 2, 3, 4]);
-        assert_eq!(v2.timer1_stop_src, 0);
-        assert_eq!(v2.timer1_reset_src, 0);
-        assert_eq!(v2.freeform_ch1_4, [0; 4]);
-    }
-
-    #[test]
     fn test_sd_raw_gap_mbr_validation() {
         // 1. Standard 1 MiB aligned FAT32 SD card (Partition 1 at LBA 2048)
         let mut mbr = [0u8; 512];
@@ -3124,20 +2695,22 @@ mod tests {
     #[test]
     fn test_sanitize_extended_bounds() {
         let mut storage = RadioStorage::default_factory();
-        storage.active_model.aux_channels[0] = 57;
-        storage.active_model.aux_channels[1] = 58;
-        storage.active_model.freeform_ch1_4[0] = 57;
-        storage.active_model.freeform_ch1_4[1] = 58;
+        storage.active_model.channels[0].source = 71;
+        storage.active_model.channels[1].source = 72;
+        storage.active_model.channels[4].source = 58;
         storage.active_model.mixes[0].switch = 44;
         storage.active_model.mixes[1].switch = 45;
+        storage.active_model.multiswitch_addresses[0] = 16;
+        storage.active_model.multiswitch_addresses[1] = 999;
 
         storage.sanitize();
 
-        assert_eq!(storage.active_model.aux_channels[0], 57);
-        assert_eq!(storage.active_model.aux_channels[1], 0);
-        assert_eq!(storage.active_model.freeform_ch1_4[0], 57);
-        assert_eq!(storage.active_model.freeform_ch1_4[1], 0);
+        assert_eq!(storage.active_model.channels[0].source, 71);
+        assert_eq!(storage.active_model.channels[1].source, 0);
+        assert_eq!(storage.active_model.channels[4].source, 58);
         assert_eq!(storage.active_model.mixes[0].switch, 44);
         assert_eq!(storage.active_model.mixes[1].switch, 0);
+        assert_eq!(storage.active_model.multiswitch_addresses[0], 16);
+        assert_eq!(storage.active_model.multiswitch_addresses[1], -1);
     }
 }

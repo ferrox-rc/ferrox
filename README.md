@@ -171,8 +171,6 @@ Comprehensive guides, hardware references, and protocol specifications are avail
 ### User & Tester Guides
 - 📖 **[User Guide & Operations Manual](docs/USER_GUIDE.md)**: Screen navigation, menu trees, flight timers, trainer port setup, and DFU flashing.
 - 🧑‍✈️ **[Pilot & Hardware Tester Field Guide](docs/TESTER_FIELD_GUIDE.md)**: Flashing via EdgeTX bootloader, 5-minute sanity test checklist, and rollback procedures.
-- 🗺️ **[Development Roadmap & Status](docs/ROADMAP.md)**: Subsystem status, completed milestones, and planned features.
-- ⚖️ **[Firmware Comparison & Heritage](docs/FIRMWARE_COMPARISON.md)**: Ecosystem context, OpenI6X heritage, and Ferrox architectural evolution.
 
 ### Hardware & Peripherals
 - 🔌 **[Hardware Reference & Pinouts](docs/HARDWARE_REFERENCE.md)**: Schematics, pin mappings, power latch, touch protocol, and bus timings.
@@ -182,7 +180,6 @@ Comprehensive guides, hardware references, and protocol specifications are avail
 
 ### Protocols & Subsystems
 - 📡 **[CRSF / ExpressLRS Subsystem Guide](docs/CRSF_ELRS_GUIDE.md)**: High-speed UART DMA, parameter synchronization, and on-radio configurator.
-- 🔬 **[CRSF Protocol Wire Specification](docs/CRSF_PROTOCOL_SPEC.md)**: Packet structure, CRC calculation, and frame verification.
 - 📶 **[AFHDS 2A Protocol Specification](docs/RF_PROTOCOL.md)**: A7105 SPI driver, FHSS frequency hopping, and 18-channel i-BUS packet format.
 - 🎛️ **[Flight Control & 18-Channel Matrix Mixing](docs/MIXER.md)**: Freeform mixer pipelines, expo math, curves, and wing templates.
 - 🎮 **[USB Subsystem & Simulator Manual](docs/USB_SUBSYSTEM.md)**: Direct PAC USB 2.0 driver, 100 Hz HID Gamepad descriptors, and CDC-ACM serial.
@@ -190,7 +187,6 @@ Comprehensive guides, hardware references, and protocol specifications are avail
 ### Architecture & Verification
 - 📐 **[System Architecture & Timing Model](docs/ARCHITECTURE.md)**: Hardware interrupt model, real-time concurrency, lock-free queues, and memory budgets.
 - 🧪 **[Testing Methodology & Verification](docs/TESTING.md)**: Dual-target host test harness, peripheral mocking, and CI automated verification.
-- 🧱 **[HAL Abstraction Plan](docs/HAL_ABSTRACTION_PLAN.md)**: Multi-architecture hardware abstraction layer design across STM32 families.
 
 ---
 

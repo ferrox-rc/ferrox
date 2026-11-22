@@ -6,8 +6,8 @@ use crate::display::St7567;
 #[cfg(any(feature = "logical-switches", test))]
 use crate::menu::format::LOGICAL_FUNC_NAMES;
 use crate::menu::format::{
-    ascii_as_str, i8_to_dec, u8_to_dec, AXIS_NAMES, DR_SWITCH_NAMES, MODE_NAMES, SOURCE_NAMES,
-    SWITCH_COND_NAMES, TEMPLATE_NAMES, WEIGHT_SRC_NAMES,
+    ascii_as_str, i8_to_dec, u8_to_dec, AXIS_NAMES, MODE_NAMES, SOURCE_NAMES, SWITCH_COND_NAMES,
+    WEIGHT_SRC_NAMES,
 };
 use crate::menu::widgets;
 use crate::menu::{MenuController, MenuState, NavKeys};
@@ -51,27 +51,27 @@ pub fn update_dual_rate(
             buzzer.click();
         }
     } else {
-        // Editing value
+        // Editing value on input_mods[axis] (0: Roll, 1: Pitch, 2: Yaw)
         match ctrl.selected_item {
             0 => {
-                // Switch (0..6)
                 if let Some(dr) = keys.dr_change {
-                    if storage.is_dr_switch_available(dr) {
-                        storage.active_model.dr_switch = dr;
+                    if storage.is_switch_cond_available(dr) {
+                        storage.active_model.input_mods[axis].switch = dr;
                         buzzer.play_tone(2400, 40);
                     }
                 } else if keys.up {
-                    storage.active_model.dr_switch =
-                        storage.next_available_dr_switch(storage.active_model.dr_switch);
+                    let cur = storage.active_model.input_mods[axis].switch;
+                    storage.active_model.input_mods[axis].switch =
+                        storage.next_available_switch_cond(cur, SWITCH_COND_NAMES.len());
                     buzzer.play_tone(2200, 20);
                 } else if keys.down {
-                    storage.active_model.dr_switch =
-                        storage.prev_available_dr_switch(storage.active_model.dr_switch);
+                    let cur = storage.active_model.input_mods[axis].switch;
+                    storage.active_model.input_mods[axis].switch =
+                        storage.prev_available_switch_cond(cur, SWITCH_COND_NAMES.len());
                     buzzer.play_tone(2200, 20);
                 }
             }
             1 => {
-                // Axis (0..2)
                 if keys.up || keys.down {
                     ctrl.sub_idx = (ctrl.sub_idx + 1) % 3;
                     buzzer.play_tone(2200, 20);
@@ -79,8 +79,8 @@ pub fn update_dual_rate(
             }
             2 => {
                 adjust_clamped_u8(
-                    &mut storage.active_model.dr_high[axis],
-                    50,
+                    &mut storage.active_model.input_mods[axis].rate_hi,
+                    10,
                     100,
                     5,
                     keys.up,
@@ -90,8 +90,8 @@ pub fn update_dual_rate(
             }
             3 => {
                 adjust_clamped_u8(
-                    &mut storage.active_model.dr_low[axis],
-                    30,
+                    &mut storage.active_model.input_mods[axis].rate_lo,
+                    10,
                     100,
                     5,
                     keys.up,
@@ -101,7 +101,7 @@ pub fn update_dual_rate(
             }
             4 => {
                 adjust_clamped_i8(
-                    &mut storage.active_model.expo_high[axis],
+                    &mut storage.active_model.input_mods[axis].expo_hi,
                     -100,
                     100,
                     5,
@@ -112,7 +112,7 @@ pub fn update_dual_rate(
             }
             5 => {
                 adjust_clamped_i8(
-                    &mut storage.active_model.expo_low[axis],
+                    &mut storage.active_model.input_mods[axis].expo_lo,
                     -100,
                     100,
                     5,
@@ -131,7 +131,7 @@ pub fn update_dual_rate(
     }
 
     // Render Header
-    widgets::draw_header(lcd, "DUAL RATE / EXPO");
+    widgets::draw_header(lcd, "INPUTS / D/R EXPO");
 
     for slot in 0..4 {
         let idx = ctrl.scroll_offset + slot;
@@ -212,28 +212,34 @@ fn render_dr_expo_row(
 ) {
     let mut b5 = [0u8; 5];
     let mut b6 = [0u8; 6];
+    let im = storage.active_model.input_mods[axis];
     match idx {
         0 => {
-            let sw_name = DR_SWITCH_NAMES[(storage.active_model.dr_switch as usize).min(6)];
+            let sw_idx = (im.switch as usize).min(SWITCH_COND_NAMES.len() - 1);
+            let sw_name = if im.switch == 0 {
+                "ALWAYS"
+            } else {
+                SWITCH_COND_NAMES[sw_idx]
+            };
             widgets::draw_list_row(lcd, slot, is_sel, "Switch:", Some(sw_name), 60);
         }
         1 => {
-            widgets::draw_list_row(lcd, slot, is_sel, "Channel:", Some(AXIS_NAMES[axis]), 60);
+            widgets::draw_list_row(lcd, slot, is_sel, "Input:", Some(AXIS_NAMES[axis]), 60);
         }
         2 => {
-            let str_val = u8_to_dec(storage.active_model.dr_high[axis], &mut b5);
+            let str_val = u8_to_dec(im.rate_hi, &mut b5);
             widgets::draw_list_row(lcd, slot, is_sel, "Hi Rate:", Some(str_val), 60);
         }
         3 => {
-            let str_val = u8_to_dec(storage.active_model.dr_low[axis], &mut b5);
+            let str_val = u8_to_dec(im.rate_lo, &mut b5);
             widgets::draw_list_row(lcd, slot, is_sel, "Lo Rate:", Some(str_val), 60);
         }
         4 => {
-            let str_val = i8_to_dec(storage.active_model.expo_high[axis], &mut b6);
+            let str_val = i8_to_dec(im.expo_hi, &mut b6);
             widgets::draw_list_row(lcd, slot, is_sel, "Hi Expo:", Some(str_val), 60);
         }
         5 => {
-            let str_val = i8_to_dec(storage.active_model.expo_low[axis], &mut b6);
+            let str_val = i8_to_dec(im.expo_lo, &mut b6);
             widgets::draw_list_row(lcd, slot, is_sel, "Lo Expo:", Some(str_val), 60);
         }
         _ => {}
@@ -337,7 +343,7 @@ pub fn update_throttle_curve(
                     // Transition 5 -> 7
                     // Resample the 5-point curve at 7 evenly spaced fractional indices (0/6, 1/6, ..., 6/6)
                     let c = storage.active_model.thr_curve;
-                    let mut new_crv = [0u8; 17];
+                    let mut new_crv = [0u8; 9];
                     for (i, pt) in new_crv.iter_mut().enumerate().take(7) {
                         let in_pct = (i as u16 * 1000) / 6;
                         *pt =
@@ -349,7 +355,7 @@ pub fn update_throttle_curve(
                     // Transition 7 -> 9
                     // Resample the 7-point curve at 9 evenly spaced fractional indices (0/8, 1/8, ..., 8/8)
                     let c = storage.active_model.thr_curve;
-                    let mut new_crv = [0u8; 17];
+                    let mut new_crv = [0u8; 9];
                     for (i, pt) in new_crv.iter_mut().enumerate().take(9) {
                         let in_pct = (i as u16 * 1000) / 8;
                         *pt =
@@ -360,7 +366,7 @@ pub fn update_throttle_curve(
                 } else {
                     // Transition 9 -> 5 (sample evenly: indices 0, 2, 4, 6, 8)
                     let c = storage.active_model.thr_curve;
-                    let mut new_crv = [0u8; 17];
+                    let mut new_crv = [0u8; 9];
                     new_crv[0] = c[0];
                     new_crv[1] = c[2];
                     new_crv[2] = c[4];
@@ -495,10 +501,11 @@ pub fn update_wing_mixer(
     storage: &mut RadioStorage,
     buzzer: &mut Buzzer,
 ) {
-    let template = storage.active_model.wing_tail_mix;
-    let has_diff = template == 1 || template == 3;
-    let gvar_item_idx = if has_diff { 2 } else { 1 };
-    let mix_items = if has_diff { 35 } else { 34 };
+    let kind = storage.active_model.primary_mixer_kind();
+    let params = kind.params();
+    let has_param = !params.is_empty();
+    let gvar_item_idx = if has_param { 2 } else { 1 };
+    let mix_items = if has_param { 35 } else { 34 };
 
     if ctrl.editing {
         if keys.cancel {
@@ -507,12 +514,18 @@ pub fn update_wing_mixer(
             buzzer.click();
             return;
         }
-        if keys.up && storage.active_model.template_diff <= 95 {
-            storage.active_model.template_diff += 5;
-            buzzer.play_tone(2200, 20);
-        } else if keys.down && storage.active_model.template_diff >= -95 {
-            storage.active_model.template_diff -= 5;
-            buzzer.play_tone(2200, 20);
+        if has_param {
+            let p_desc = params[0];
+            let step = if (p_desc.max - p_desc.min) <= 5 { 1 } else { 5 };
+            adjust_clamped_i8(
+                &mut storage.active_model.mixers[0].p[0],
+                p_desc.min,
+                p_desc.max,
+                step,
+                keys.up,
+                keys.down,
+                buzzer,
+            );
         }
         if keys.ok {
             ctrl.editing = false;
@@ -539,9 +552,12 @@ pub fn update_wing_mixer(
         if keys.ok {
             buzzer.click();
             if ctrl.selected_item == 0 {
-                // Cycle Wing Template (0..4)
-                storage.active_model.wing_tail_mix = (storage.active_model.wing_tail_mix + 1) % 5;
-            } else if has_diff && ctrl.selected_item == 1 {
+                // Cycle Predefined Mixer preset (0..MixerKind::COUNT)
+                let next_kind = crate::mixer::MixerKind::from_u8(
+                    (storage.active_model.mixers[0].kind + 1) % crate::mixer::MixerKind::COUNT,
+                );
+                storage.active_model.apply_mixer_preset(next_kind);
+            } else if has_param && ctrl.selected_item == 1 {
                 ctrl.editing = true;
             } else if ctrl.selected_item == gvar_item_idx {
                 // Open Global Variables Editor
@@ -565,7 +581,7 @@ pub fn update_wing_mixer(
         }
     }
 
-    widgets::draw_header(lcd, "WING & MIXER");
+    widgets::draw_header(lcd, "MIXERS & LINES");
 
     for slot in 0..4 {
         let idx = ctrl.scroll_offset + slot;
@@ -577,14 +593,14 @@ pub fn update_wing_mixer(
             slot,
             idx,
             idx == ctrl.selected_item,
-            has_diff,
+            has_param,
             gvar_item_idx,
             storage,
         );
     }
 
     let footer = if ctrl.editing {
-        "[OK] Done   [UP/DN] Diff"
+        "[OK] Done   [UP/DN] Value"
     } else {
         "[OK] Select/Edit   [ESC] Back"
     };
@@ -597,7 +613,7 @@ fn render_wing_mixer_row(
     slot: usize,
     idx: usize,
     is_sel: bool,
-    has_diff: bool,
+    has_param: bool,
     gvar_item_idx: usize,
     storage: &RadioStorage,
 ) {
@@ -608,14 +624,15 @@ fn render_wing_mixer_row(
 
     let mut b6 = [0u8; 6];
     let mut ch_buf = [0u8; 4];
+    let kind = storage.active_model.primary_mixer_kind();
     if idx == 0 {
-        let t_idx = (storage.active_model.wing_tail_mix as usize).min(4);
-        lcd.draw_str_6x10(4, y, "Wing:", is_sel);
-        lcd.draw_str_6x10(36, y, TEMPLATE_NAMES[t_idx], is_sel);
-    } else if has_diff && idx == 1 {
-        let d_str = i8_to_dec(storage.active_model.template_diff, &mut b6);
-        lcd.draw_str_6x10(4, y, "Diff:", is_sel);
-        lcd.draw_str_6x10(36, y, d_str, is_sel);
+        lcd.draw_str_6x10(4, y, "Mix:", is_sel);
+        lcd.draw_str_6x10(32, y, kind.name(), is_sel);
+    } else if has_param && idx == 1 {
+        let p_desc = kind.params()[0];
+        let d_str = i8_to_dec(storage.active_model.mixers[0].p[0], &mut b6);
+        lcd.draw_str_6x10(4, y, p_desc.name, is_sel);
+        lcd.draw_str_6x10(48, y, d_str, is_sel);
     } else if idx == gvar_item_idx {
         lcd.draw_str_6x10(4, y, "GVars: [Edit GV1..5]", is_sel);
     } else {
@@ -656,9 +673,8 @@ pub fn update_mixer_line_edit(
         if ctrl.editing {
             ctrl.editing = false;
         } else {
-            let template = storage.active_model.wing_tail_mix;
-            let has_diff = template == 1 || template == 3;
-            let first_mix_row = if has_diff { 3 } else { 2 };
+            let has_param = !storage.active_model.primary_mixer_kind().params().is_empty();
+            let first_mix_row = if has_param { 3 } else { 2 };
             let target_row = first_mix_row + mix_idx;
             ctrl.state = MenuState::WingMixer;
             ctrl.selected_item = target_row;
@@ -879,9 +895,8 @@ pub fn update_global_vars(
     } else {
         if keys.cancel {
             storage::save_active_model(storage);
-            let template = storage.active_model.wing_tail_mix;
-            let has_diff = template == 1 || template == 3;
-            let gvar_item_idx = if has_diff { 2 } else { 1 };
+            let has_param = !storage.active_model.primary_mixer_kind().params().is_empty();
+            let gvar_item_idx = if has_param { 2 } else { 1 };
             ctrl.state = MenuState::WingMixer;
             ctrl.selected_item = gvar_item_idx;
             ctrl.scroll_offset = gvar_item_idx.saturating_sub(GVAR_COUNT);

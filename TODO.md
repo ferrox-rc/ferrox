@@ -4,8 +4,8 @@ This roadmap tracks unresolved issues, safety fixes, and feature requests report
 
 ## 🏁 Release Checkpoints
 
-1. **`v1.0.0-rc10` $\rightarrow$ `v1.0.0` (Production Gate):** All **Priority 0** safety, hardware stability, dual-module UART routing, and `CC2500`/`MPM 4-in-1` split blockers are implemented in `v1.0.0-rc10` ahead of tagging `v1.0.0`.
-2. **`v1.0.1` (Patch Release — High-Priority Docs Review, Bug Fixes & Parity Polish):** Full documentation review, low-risk zero-EEPROM-migration bug fixes, and board-table parity items (`AUX_SOURCES` stick mapping on STM32F4 for Issue #40, battery calibration menu, timer latch/trigger fix, horizontal roller edit polarity consistency, and F5J 10s step & `"ZOOM"` label).
+1. **`v1.0.0-rc12` $\rightarrow$ `v1.0.0` (Production Gate):** Consolidates the division-free ±1024 Q10 mixer & clean `SCHEMA_VERSION = 2` storage, PR #38 Tank mixer & `AUX_SOURCES` stick parity (#40), PR #37 CRSF MultiSwitch `Set4`, declarative RF/UART board profiles + on-radio `RF / UART` diagnostic page (#45/#47/#48), and the full documentation prune ahead of tagging `v1.0.0`.
+2. **`v1.0.1` (Patch Release — Post-Release Polish):** Low-risk bug fixes and community polish items (battery calibration menu, timer latch/trigger polish, horizontal roller edit polarity consistency, and F5J 10s step & `"ZOOM"` label).
 3. **`v1.1.0` (Minor Release — Controls, Mixer & UI Capabilities):** Structural input/mixer/UI enhancements (unrestricted `CH1..CH18` channel assignment without requiring `Freeform` template, Logical Switches `L1..L8` as universal triggers, momentary switch software latch/toggle mode, telemetry dashboard Timers 1–4 picker, separate Vario volume & pot-assigned master volume from #43, and dedicated F5J competition HUD).
 
 ---

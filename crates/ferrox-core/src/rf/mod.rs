@@ -5,6 +5,7 @@
 
 pub mod a7105;
 pub mod afhds2a;
+pub mod cc2500;
 pub mod mpm;
 pub mod spi;
 

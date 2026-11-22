@@ -4,38 +4,30 @@ Comprehensive reference for input conditioning (Dual Rates & Exponential), auxil
 
 ---
 
-## 1. Overview & Control Pipeline
+## 1. Overview & 11-Stage Q10 Control Pipeline (`v1.0.0-rc12`)
 
-The mixing system in `ferrox` implements an interrupt-safe, deterministic, zero-heap 4-stage pipeline that runs every main execution cycle (~500 Hz):
+The mixing engine in [`crates/ferrox-core/src/mixer/`](../crates/ferrox-core/src/mixer/) implements an interrupt-safe, deterministic, zero-heap, **division-free ±1024 (Q10) fixed-point 11-stage pipeline** running every main loop tick (~500 Hz):
+
+1. **Physical Acquisition & Logical Switches**: Sticks (`Ail/Ele/Thr/Rud`), pots, switches (`SA..SH`), and `L1..L8` logical switches normalized to signed Q10 (`-1024..+1024`).
+2. **Input Conditioning**: Per-stick Dual Rate (`30..100%`) and cubic Expo (`-100..+100%`) in Q10 (`>> 10` / `>> 20` shifts, zero integer division).
+3. **Throttle Curve (`SRC_THC = 58`)**: 5/7/9-point linear or Catmull-Rom spline evaluated in Q10 (`evaluate_curve_q10`).
+4. **Channel Base Assignment**: All 18 channels (`CH1..CH18`) source from any stick, `ThC`, pot, switch, or `Off`.
+5. **Predefined Mixers (`MixerKind`)**: Static registry supporting `Normal`, `Delta` (Elevon), `VTail`, `Flaperon`, `DiffThrust`, `Tank` (tracked-vehicle reverse-steering inversion, `--features tank-mix`), `MTail`, and `Crow` (butterfly), with proportional pair saturation (`proportional_saturate_pair`).
+6. **32 Freeform Mix Lines**: Unclamped `i32` accumulation supporting `Add`, `Multiply`, `Replace`, weights (`-125..+125%`), offsets, and switch/curve gating.
+7. **Digital Trims**: Roll, Pitch, Throttle (Off/Idle/Linear), and Yaw trims applied in Q10.
+8. **Subtrim & Endpoint Scaling**: Per-channel subtrim (`-125..+125`) and asymmetric min/max limits (`min..max`).
+9. **Channel Reversing**: 18-channel bitmask inversion symmetric around `1500 µs`.
+10. **Safety-After-Reverse Override**: Arm/Throttle-Cut safety overrides (`988 µs` for unidirectional motors, `1500 µs` for bidirectional) are applied *after* channel reversing so reversing CH3 can never invert a disarmed throttle to `2012 µs`.
+11. **Protocol Output**: Exact symmetric Q10-to-microseconds (`to_us`, `988..2012 µs`) and Q10-to-CRSF (`to_crsf`, `172..1811`) conversion.
 
 ```mermaid
 flowchart TD
-    subgraph S1 ["Stage 1: Physical Acquisition (11 Channels @ 500 Hz)"]
-        GIM["Gimbals: Roll, Pitch, Thr, Yaw (-1000..+1000)"]
-        POTS["Pots: VRA, VRB (-1000..+1000)"]
-        SW["Switches: SA..SD (Up / Mid / Down)"]
-    end
-
-    subgraph S2 ["Stage 2: Input Conditioning & Rates"]
-        DR["Dual Rates: High / Low (30%..100%) via Switch"]
-        EXPO["Cubic Integer Expo (-100%..+100%)"]
-        TC["Catmull-Rom Cubic Spline Throttle Curve"]
-    end
-
-    subgraph S3 ["Stage 3: Mixing & Templates"]
-        TPL["Aircraft Template: Normal / Elevon / V-Tail / Flaperon"]
-        AUX["Aux Source Mapping (CH5..CH18)"]
-        MIX["32 Freeform Mix Rules (Weight, Modulation, Offset, Mode, Switch)"]
-    end
-
-    subgraph S4 ["Stage 4: Outputs & Protocol Frame"]
-        TRIM["Digital Trims (Roll, Pitch, Thr, Yaw)"]
-        REV["18-Channel Reversing Bitmask"]
-        FAIL["Failsafe Supervisor (Hold vs Pre-set pulses)"]
-        RF["AFHDS 2A 18-Channel Interleaved Frame (988..2012 µs)"]
-    end
-
-    S1 --> S2 --> S3 --> S4
+    S1["1. Acquisition & Logical Switches (Q10 ±1024)"] --> S2["2. Dual Rate & Cubic Expo (Q10)"]
+    S2 --> S3["3. Throttle Curve (ThC = 58)"]
+    S3 --> S4["4. Channel Base & Predefined Mixers (Delta/VTail/Flaperon/Tank/Crow)"]
+    S4 --> S5["5. 32 Freeform Mix Lines (Unclamped i32)"]
+    S5 --> S6["6. Trims -> Subtrim/Endpoints -> Reverse"]
+    S6 --> S7["7. Safety-After-Reverse -> µs / CRSF Output"]
 ```
 
 ---

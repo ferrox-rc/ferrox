@@ -5,6 +5,25 @@ All notable changes to the `ferrox` project (unifying `flysky-i6s-rs` and `flysk
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc12] - 2026-11-21
+
+### Added
+- **Division-Free ±1024 Q10 Fixed-Point 11-Stage Mixer Engine (`crates/ferrox-core/src/mixer/`, `curve.rs`)**: Replaced the monolithic mixer with modular `fx`, `sources`, `switches`, `predefined`, and `pipeline` modules. Eliminated runtime divisions in curves/expo, added symmetric `to_us` / `to_crsf` conversion, proportional pair saturation, and a static `PredefMixer` registry (`Delta`, `VTail`, `Flaperon`, `DiffThrust`, `Tank`, `MTail`, `Crow`).
+- **Tank Mixer & `AUX_SOURCES` Stick Parity (#38, #40)**: Folded PR #38 tracked-vehicle mixer (`MixerKind::Tank` with reverse-steering inversion, `--features tank-mix`) into `mixer/predefined.rs` and added primary stick sources (`Ail/Ele/Thr/Rud`, `ThC = 58`) to `AUX_SOURCES` across all 11 STM32F4 boards.
+- **CRSF MultiSwitch `Set4` & Non-Blocking UART TX (#37) (`crsf/protocol.rs`, `multiswitch.rs`, `hal.rs`, `uart.rs`)**: Added CRSF `0x32`/`0xA1` double-CRC (`0xBA`/`0xD5`) `Set4` frame builder, `MultiSwitchController` (4×8 switch banks, momentary/toggle modes, non-blocking retry, `--features multiswitch`), and `SerialPort::try_write_bytes()` / `tx_error_count()` / `rx_byte_count()`.
+- **Declarative RF/UART Board Profiles & Diagnostic Page (#45, #47, #48) (`board/mod.rs`, `qx7_family.rs`, `uart.rs`, `ferrox-stm32f4/src/uart.rs`, `diag.rs`)**:
+  - Added `BayConnectorKind` (`Jr5Pin`, `Nano8Pin`, `AuxHeader`) and `InternalModuleKind` (`Elrs`, `Cc2500`, `Mpm`, `Afhds2a`, `None`) with OEM build feature overrides (`internal-elrs`, `internal-cc2500`, `internal-mpm`).
+  - Replaced `baud_idx` heuristics in `Stm32f4SerialPort` with host-tested `resolve_serial_route()` and `SerialPort::configure_route()`.
+  - Added on-radio **`System -> Diagnostics -> RF / UART`** page displaying bay connector, internal module, active USART/duplex, baud/framing, and live `RXB`/`TXE` counters.
+- **Dedicated `rf/cc2500.rs` & Table-Driven `rf/mpm.rs` Catalogs**: Fully separated 13 genuine TI CC2500 protocols (`Cc2500Protocol`) from 25 4-in-1 MPM protocols (`MpmProtocol`) with automatic 27-byte extended frame support for MULTI IDs `>= 64`.
+
+### Changed
+- **Clean `SCHEMA_VERSION = 2` Storage Layout (`storage.rs`)**: Upgraded to `SCHEMA_VERSION = 2` (`RadioConfig` 160 B, `ModelConfig` 760 B, exact 768 B model slot fit), embedding Mixer v2 and MultiSwitch banks while dropping ~400 lines of legacy v1 migration shims.
+- **Documentation Prune & `USER_GUIDE.md` Streamlining**: Removed obsolete pre-`v1.0.0-rc1` docs (`HAL_ABSTRACTION_PLAN.md`, `FIRMWARE_COMPARISON.md`, `ROADMAP.md`, `CRSF_PROTOCOL_SPEC.md`), updated technical docs for `SCHEMA_VERSION = 2` / Q10 mixer / multi-board RF/UART matrix, and streamlined `docs/USER_GUIDE.md` from 807 to ~210 crisp lines.
+
+### Fixed
+- **Safety-After-Reverse Throttle Interlock (`mixer/pipeline.rs`)**: Applied unidirectional (`988 µs`) and bidirectional (`1500 µs`) safety overrides *after* channel reversing so reversing CH3 never outputs `2012 µs` when disarmed.
+
 ## [1.0.0-rc11] - 2026-11-19
 
 ### Added

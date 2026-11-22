@@ -1,36 +1,37 @@
 # Testing Methodology & Verification Guide
 
-This document details the automated testing architecture, peripheral mocking patterns, adversarial state machine verification, and development workflow for `flysky-i6x-rs`.
+This document details the automated testing architecture, peripheral mocking patterns, adversarial state machine verification, and development workflow for Ferrox (`ferrox-core`, `ferrox-stm32f4`, `ferrox-stm32f0`).
 
 ---
 
 ## 1. Overview & Dual-Target Architecture
 
-`flysky-i6x-rs` is a bare-metal `#![no_std]` firmware targeting the ARM Cortex-M0 microcontroller (`STM32F072VB` / `APM32F072VB`, architecture `thumbv6m-none-eabi`). 
+Ferrox is a bare-metal `#![no_std]` firmware targeting ARM Cortex-M4F (`STM32F407` / `thumbv7em-none-eabihf`) and ARM Cortex-M0 (`STM32F072VB` / `APM32F072VB` / `thumbv6m-none-eabi`) RC transmitters.
 
 ### The Embedded Testing Challenge
 
 Traditional embedded unit testing suffers from several key bottlenecks:
-- **No Native OS Test Harness**: The bare-metal `thumbv6m-none-eabi` target has no standard library (`std`), memory allocator, or OS-level test runner. Bare `cargo test` fails on this target.
-- **Hardware Peripheral MMIO**: Subsystems that directly access peripheral memory-mapped registers (`USART2`, `ADC1`, `TIM16`, `GPIOE->ODR`, `IWDG`) cannot execute natively on a development host without hardware faults.
-- **QEMU Emulation Limitations**: While QEMU supports basic Cortex-M instructions, it does not accurately model custom board peripherals, ST7567 6800-bus LCDs, or real-time baud-rate timing, and incurs significant latency in CI/local iteration.
+- **No Native OS Test Harness**: Bare-metal `thumbv7em-none-eabihf` and `thumbv6m-none-eabi` targets have no standard library (`std`), heap allocator, or OS-level test runner.
+- **Hardware Peripheral MMIO**: Subsystems that directly access peripheral memory-mapped registers (`USART1/2/6`, `ADC1`, `TIM`, `GPIO`, `IWDG`) cannot execute natively on a development host without hardware faults.
+- **QEMU Emulation Limitations**: While QEMU supports basic Cortex-M instructions, it does not accurately model custom board peripherals, ST7567/UC1701 LCDs, or real-time baud-rate timing.
 
 ### The Dual-Target Solution
 
-To achieve **instant, sub-millisecond local feedback** with zero hardware required, `flysky-i6x-rs` employs a **zero-file-move dual-target architecture**:
+To achieve **instant, sub-millisecond local feedback** with zero hardware required, `ferrox-core` employs a **zero-file-move dual-target architecture**:
 
 ```text
 +-----------------------------------------------------------------------------------+
-|                                     src/lib.rs                                    |
-|                      #![cfg_attr(not(test), no_std)]                             |
+|                            crates/ferrox-core/src/lib.rs                          |
+|                         #![cfg_attr(not(test), no_std)]                           |
 +-----------------------------------------+-----------------------------------------+
                                           |
                    +----------------------+----------------------+
                    |                                             |
             Target Build                                  Host Test Build
-   (cargo build --release)                             (cargo test-host (runs `cargo test --lib --target x86_64-unknown-linux-gnu -- --test-threads=1`))
+   (cargo build -p ferrox-f4 --release)          (cargo test -p ferrox-core --lib
+                                                  --target x86_64-unknown-linux-gnu)
                    |                                             |
-        Target: thumbv6m-none-eabi                   Target: x86_64 / host OS
+        Target: thumbv7em / thumbv6m                 Target: x86_64 / host OS
         Profile: #![no_std]                          Profile: std enabled
         Peripheral Driver: Hardware MMIO             Peripheral Driver: Mock FIFO
         Hardware: Cortex-M0 (STM32F072)              Harness: Built-in Rust Test Runner

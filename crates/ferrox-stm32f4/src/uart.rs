@@ -38,6 +38,9 @@ pub struct Stm32f4SerialPort<H: Qx7HalDescriptor = PocketHal> {
     active_high_polarity: bool,
     last_baud_idx: u8,
     last_half_duplex: bool,
+    last_cfg: Option<ferrox_core::hal::SerialRouteConfig>,
+    rx_bytes: u32,
+    tx_errors: u32,
     _phantom: PhantomData<H>,
 }
 
@@ -50,6 +53,9 @@ impl<H: Qx7HalDescriptor> Stm32f4SerialPort<H> {
             active_high_polarity: true,
             last_baud_idx: 1,
             last_half_duplex: false,
+            last_cfg: None,
+            rx_bytes: 0,
+            tx_errors: 0,
             _phantom: PhantomData,
         }
     }
@@ -72,16 +78,165 @@ impl<H: Qx7HalDescriptor> Stm32f4SerialPort<H> {
         }
     }
 
-    fn select_bus_mode(route: u8, baud_idx: u8, half_duplex: bool) -> BusMode {
-        if route == 0 {
+    #[inline(always)]
+    fn bus_mode_from_route(cfg: ferrox_core::hal::SerialRouteConfig) -> BusMode {
+        if !cfg.external_bay {
             BusMode::InternalUsart1
-        } else if baud_idx == 5 || baud_idx == 6 {
-            BusMode::ExternalSplitMpm
-        } else if half_duplex {
-            BusMode::ExternalSportUsart2
         } else {
-            BusMode::ExternalFullUsart6
+            match cfg.duplex {
+                ferrox_core::hal::SerialDuplex::FullDuplex => BusMode::ExternalFullUsart6,
+                ferrox_core::hal::SerialDuplex::HalfDuplexSport => BusMode::ExternalSportUsart2,
+                ferrox_core::hal::SerialDuplex::SplitTxPin1RxPin5 => BusMode::ExternalSplitMpm,
+            }
         }
+    }
+
+    fn apply_route_config(
+        &mut self,
+        enabled: bool,
+        cfg: ferrox_core::hal::SerialRouteConfig,
+    ) {
+        use ferrox_core::hal::{SerialDuplex, SerialFraming};
+
+        self.last_baud_idx = cfg.baud_idx;
+        self.last_half_duplex = matches!(cfg.duplex, SerialDuplex::HalfDuplexSport);
+        self.route = u8::from(cfg.external_bay);
+        self.last_cfg = Some(cfg);
+
+        let usart1 = unsafe { &*pac::USART1::ptr() };
+        let usart2 = unsafe { &*pac::USART2::ptr() };
+        let usart6 = unsafe { &*pac::USART6::ptr() };
+        let dma2 = unsafe { &*pac::DMA2::ptr() };
+
+        // Disable all 3 USARTs and RX DMA streams before reconfiguring
+        unsafe {
+            usart1.cr1.write(|w| w.bits(0));
+            usart2.cr1.write(|w| w.bits(0));
+            usart6.cr1.write(|w| w.bits(0));
+            dma2.st[2].cr.write(|w| w.bits(0));
+            dma2.st[1].cr.write(|w| w.bits(0));
+        }
+        Self::set_sport_dir_rx();
+
+        if !enabled {
+            self.active = false;
+            return;
+        }
+
+        // APB2 = 84 MHz (USART1, USART6); APB1 = 42 MHz (USART2)
+        let (brr_apb2, brr_apb1) = match cfg.baud_idx {
+            0 => (729, 365), // 115200 baud
+            1 => (210, 105), // 400000 baud
+            2 => (200, 100), // 420000 baud
+            3 => (91, 46),   // 921600 baud
+            4 => (45, 22),   // 1875000 baud
+            5 => (840, 420), // 100000 baud (MPM / CC2500)
+            6 => (729, 365), // 115200 baud (DSM Satellite)
+            _ => (210, 105), // fallback 400k
+        };
+        let (cr1_extra, cr2_extra) = match cfg.framing {
+            SerialFraming::Format8N1 => (0u32, 0u32),
+            SerialFraming::Format8E2 => (
+                (1 << 12) | (1 << 10), // M=1 (9-bit), PCE=1 (even parity)
+                0x02 << 12,            // STOP=2 (2 stop bits)
+            ),
+        };
+
+        let mode = Self::bus_mode_from_route(cfg);
+        self.bus_mode = mode;
+
+        unsafe {
+            match mode {
+                BusMode::InternalUsart1 => {
+                    usart1.cr2.write(|w| w.bits(cr2_extra));
+                    let hdsel = if self.last_half_duplex { 1 << 3 } else { 0 };
+                    usart1.cr3.write(|w| w.bits((1 << 6) | hdsel));
+                    usart1.brr.write(|w| w.bits(brr_apb2));
+
+                    let stream2 = &dma2.st[2];
+                    let mut dma_timeout = 50_000u32;
+                    while (stream2.cr.read().bits() & 0x01) != 0 && dma_timeout > 0 {
+                        dma_timeout -= 1;
+                    }
+                    dma2.lifcr.write(|w| w.bits(0x3D << 16)); // Clear Stream 2 flags
+                    stream2
+                        .par
+                        .write(|w| w.bits(core::ptr::addr_of!(usart1.dr) as u32));
+                    stream2
+                        .m0ar
+                        .write(|w| w.bits(core::ptr::addr_of_mut!(RX_DMA_BUF) as u32));
+                    stream2.ndtr.write(|w| w.bits(RX_BUF_SIZE as u32));
+                    // CHSEL = 4 (USART1_RX), MINC = 1, CIRC = 1, PL = 01, EN = 1
+                    stream2.cr.write(|w| {
+                        w.bits((4 << 25) | (0x01 << 16) | (1 << 10) | (1 << 8) | (1 << 0))
+                    });
+
+                    RX_TAIL = 0;
+                    usart1
+                        .cr1
+                        .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
+                }
+                BusMode::ExternalSportUsart2 => {
+                    // External CRSF Half-Duplex on JR Pin 5 (S.Port):
+                    // USART2 (PD5 TX / PD6 RX) with external PD4 direction buffer.
+                    // Uses RXNE polling (avoids DMA1 Stream 5 conflict with DAC1 audio).
+                    usart2.cr2.write(|w| w.bits(cr2_extra));
+                    usart2.cr3.write(|w| w.bits(0));
+                    usart2.brr.write(|w| w.bits(brr_apb1));
+                    usart2
+                        .cr1
+                        .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
+                }
+                BusMode::ExternalFullUsart6 => {
+                    // External CRSF Full-Duplex on JR Pins 1/2: USART6 (PC6 TX / PC7 RX)
+                    usart6.cr2.write(|w| w.bits(cr2_extra));
+                    usart6.cr3.write(|w| w.bits(1 << 6)); // DMAR
+                    usart6.brr.write(|w| w.bits(brr_apb2));
+
+                    let stream1 = &dma2.st[1];
+                    let mut dma_timeout = 50_000u32;
+                    while (stream1.cr.read().bits() & 0x01) != 0 && dma_timeout > 0 {
+                        dma_timeout -= 1;
+                    }
+                    dma2.lifcr.write(|w| w.bits(0x3D << 6)); // Clear Stream 1 flags
+                    stream1
+                        .par
+                        .write(|w| w.bits(core::ptr::addr_of!(usart6.dr) as u32));
+                    stream1
+                        .m0ar
+                        .write(|w| w.bits(core::ptr::addr_of_mut!(RX_DMA_BUF) as u32));
+                    stream1.ndtr.write(|w| w.bits(RX_BUF_SIZE as u32));
+                    // CHSEL = 5 (USART6_RX), MINC = 1, CIRC = 1, PL = 01, EN = 1
+                    stream1.cr.write(|w| {
+                        w.bits((5 << 25) | (0x01 << 16) | (1 << 10) | (1 << 8) | (1 << 0))
+                    });
+
+                    RX_TAIL = 0;
+                    usart6
+                        .cr1
+                        .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
+                }
+                BusMode::ExternalSplitMpm => {
+                    // External MPM 4-in-1 / CC2500 / DSM:
+                    // TX on JR Pin 1 via USART6_TX (PC6), RX telemetry on JR Pin 5 via USART2_RX (PD6)
+                    usart6.cr2.write(|w| w.bits(cr2_extra));
+                    usart6.cr3.write(|w| w.bits(0));
+                    usart6.brr.write(|w| w.bits(brr_apb2));
+                    usart6
+                        .cr1
+                        .write(|w| w.bits((1 << 13) | (1 << 3) | cr1_extra)); // UE | TE
+
+                    usart2.cr2.write(|w| w.bits(cr2_extra));
+                    usart2.cr3.write(|w| w.bits(0));
+                    usart2.brr.write(|w| w.bits(brr_apb1));
+                    usart2
+                        .cr1
+                        .write(|w| w.bits((1 << 13) | (1 << 2) | cr1_extra)); // UE | RE
+                }
+            }
+        }
+
+        self.active = true;
     }
 }
 
@@ -205,141 +360,40 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
     }
 
     fn set_uart_enabled(&mut self, enabled: bool, baud_idx: u8, half_duplex: bool) {
-        self.last_baud_idx = baud_idx;
-        self.last_half_duplex = half_duplex;
+        use ferrox_core::hal::{SerialDuplex, SerialFraming, SerialRouteConfig};
+        let external_bay = self.route != 0;
+        let framing = if baud_idx == 5 {
+            SerialFraming::Format8E2
+        } else {
+            SerialFraming::Format8N1
+        };
+        let duplex = if external_bay && (baud_idx == 5 || baud_idx == 6) {
+            SerialDuplex::SplitTxPin1RxPin5
+        } else if half_duplex {
+            SerialDuplex::HalfDuplexSport
+        } else {
+            SerialDuplex::FullDuplex
+        };
+        self.apply_route_config(
+            enabled,
+            SerialRouteConfig {
+                external_bay,
+                baud_idx,
+                framing,
+                duplex,
+            },
+        );
+    }
 
-        let usart1 = unsafe { &*pac::USART1::ptr() };
-        let usart2 = unsafe { &*pac::USART2::ptr() };
-        let usart6 = unsafe { &*pac::USART6::ptr() };
-        let dma2 = unsafe { &*pac::DMA2::ptr() };
-
-        // Disable all 3 USARTs and RX DMA streams before reconfiguring
-        unsafe {
-            usart1.cr1.write(|w| w.bits(0));
-            usart2.cr1.write(|w| w.bits(0));
-            usart6.cr1.write(|w| w.bits(0));
-            dma2.st[2].cr.write(|w| w.bits(0));
-            dma2.st[1].cr.write(|w| w.bits(0));
-        }
-        Self::set_sport_dir_rx();
-
-        if !enabled {
-            self.active = false;
+    fn configure_route(&mut self, enabled: bool, cfg: ferrox_core::hal::SerialRouteConfig) {
+        if self.active == enabled && self.last_cfg == Some(cfg) {
             return;
         }
-
-        // APB2 = 84 MHz (USART1, USART6); APB1 = 42 MHz (USART2)
-        let (brr_apb2, brr_apb1, cr1_extra, cr2_extra) = match baud_idx {
-            0 => (729, 365, 0, 0), // 115200 baud
-            1 => (210, 105, 0, 0), // 400000 baud
-            2 => (200, 100, 0, 0), // 420000 baud
-            3 => (91, 46, 0, 0),   // 921600 baud
-            4 => (45, 22, 0, 0),   // 1875000 baud
-            5 => (
-                840,
-                420,
-                (1 << 12) | (1 << 10), // M=1 (9-bit), PCE=1 (even parity)
-                0x02 << 12,            // STOP=2 (2 stop bits)
-            ),
-            6 => (729, 365, 0, 0), // DSM Satellite 115200 8N1
-            _ => (210, 105, 0, 0), // fallback 400k
-        };
-
-        let mode = Self::select_bus_mode(self.route, baud_idx, half_duplex);
-        self.bus_mode = mode;
-
-        unsafe {
-            match mode {
-                BusMode::InternalUsart1 => {
-                    usart1.cr2.write(|w| w.bits(cr2_extra));
-                    let hdsel = if half_duplex { 1 << 3 } else { 0 };
-                    usart1.cr3.write(|w| w.bits((1 << 6) | hdsel));
-                    usart1.brr.write(|w| w.bits(brr_apb2));
-
-                    let stream2 = &dma2.st[2];
-                    let mut dma_timeout = 50_000u32;
-                    while (stream2.cr.read().bits() & 0x01) != 0 && dma_timeout > 0 {
-                        dma_timeout -= 1;
-                    }
-                    dma2.lifcr.write(|w| w.bits(0x3D << 16)); // Clear Stream 2 flags
-                    stream2
-                        .par
-                        .write(|w| w.bits(core::ptr::addr_of!(usart1.dr) as u32));
-                    stream2
-                        .m0ar
-                        .write(|w| w.bits(core::ptr::addr_of_mut!(RX_DMA_BUF) as u32));
-                    stream2.ndtr.write(|w| w.bits(RX_BUF_SIZE as u32));
-                    // CHSEL = 4 (USART1_RX), MINC = 1, CIRC = 1, PL = 01, EN = 1
-                    stream2.cr.write(|w| {
-                        w.bits((4 << 25) | (0x01 << 16) | (1 << 10) | (1 << 8) | (1 << 0))
-                    });
-
-                    RX_TAIL = 0;
-                    usart1
-                        .cr1
-                        .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
-                }
-                BusMode::ExternalSportUsart2 => {
-                    // External CRSF Half-Duplex on JR Pin 5 (S.Port):
-                    // USART2 (PD5 TX / PD6 RX) with external PD4 direction buffer.
-                    // Uses RXNE polling (avoids DMA1 Stream 5 conflict with DAC1 audio).
-                    usart2.cr2.write(|w| w.bits(cr2_extra));
-                    usart2.cr3.write(|w| w.bits(0));
-                    usart2.brr.write(|w| w.bits(brr_apb1));
-                    usart2
-                        .cr1
-                        .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
-                }
-                BusMode::ExternalFullUsart6 => {
-                    // External CRSF Full-Duplex on JR Pins 1/2: USART6 (PC6 TX / PC7 RX)
-                    usart6.cr2.write(|w| w.bits(cr2_extra));
-                    usart6.cr3.write(|w| w.bits(1 << 6)); // DMAR
-                    usart6.brr.write(|w| w.bits(brr_apb2));
-
-                    let stream1 = &dma2.st[1];
-                    let mut dma_timeout = 50_000u32;
-                    while (stream1.cr.read().bits() & 0x01) != 0 && dma_timeout > 0 {
-                        dma_timeout -= 1;
-                    }
-                    dma2.lifcr.write(|w| w.bits(0x3D << 6)); // Clear Stream 1 flags
-                    stream1
-                        .par
-                        .write(|w| w.bits(core::ptr::addr_of!(usart6.dr) as u32));
-                    stream1
-                        .m0ar
-                        .write(|w| w.bits(core::ptr::addr_of_mut!(RX_DMA_BUF) as u32));
-                    stream1.ndtr.write(|w| w.bits(RX_BUF_SIZE as u32));
-                    // CHSEL = 5 (USART6_RX), MINC = 1, CIRC = 1, PL = 01, EN = 1
-                    stream1.cr.write(|w| {
-                        w.bits((5 << 25) | (0x01 << 16) | (1 << 10) | (1 << 8) | (1 << 0))
-                    });
-
-                    RX_TAIL = 0;
-                    usart6
-                        .cr1
-                        .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
-                }
-                BusMode::ExternalSplitMpm => {
-                    // External MPM 4-in-1 / CC2500 / DSM:
-                    // TX on JR Pin 1 via USART6_TX (PC6), RX telemetry on JR Pin 5 via USART2_RX (PD6)
-                    usart6.cr2.write(|w| w.bits(cr2_extra));
-                    usart6.cr3.write(|w| w.bits(0));
-                    usart6.brr.write(|w| w.bits(brr_apb2));
-                    usart6
-                        .cr1
-                        .write(|w| w.bits((1 << 13) | (1 << 3) | cr1_extra)); // UE | TE
-
-                    usart2.cr2.write(|w| w.bits(cr2_extra));
-                    usart2.cr3.write(|w| w.bits(0));
-                    usart2.brr.write(|w| w.bits(brr_apb1));
-                    usart2
-                        .cr1
-                        .write(|w| w.bits((1 << 13) | (1 << 2) | cr1_extra)); // UE | RE
-                }
-            }
+        let target_route = u8::from(cfg.external_bay);
+        if self.route != target_route && self.active {
+            self.set_module_power(false);
         }
-
-        self.active = true;
+        self.apply_route_config(enabled, cfg);
     }
 
     fn set_module_power(&mut self, enabled: bool) {
@@ -371,8 +425,12 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) {
+        let _ = self.try_write_bytes(bytes);
+    }
+
+    fn try_write_bytes(&mut self, bytes: &[u8]) -> bool {
         if !self.active || bytes.is_empty() {
-            return;
+            return true;
         }
 
         match self.bus_mode {
@@ -384,13 +442,15 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                         timeout -= 1;
                     }
                     if timeout == 0 {
-                        return;
+                        self.tx_errors = self.tx_errors.saturating_add(1);
+                        return false;
                     }
                     unsafe {
                         let dr = core::ptr::addr_of!(usart1.dr) as *mut u8;
                         core::ptr::write_volatile(dr, b);
                     }
                 }
+                true
             }
             BusMode::ExternalSportUsart2 => {
                 let usart2 = unsafe { &*pac::USART2::ptr() };
@@ -402,7 +462,8 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                     }
                     if timeout == 0 {
                         Self::set_sport_dir_rx();
-                        return;
+                        self.tx_errors = self.tx_errors.saturating_add(1);
+                        return false;
                     }
                     unsafe {
                         let dr = core::ptr::addr_of!(usart2.dr) as *mut u8;
@@ -419,6 +480,12 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                 while (usart2.sr.read().bits() & (1 << 5)) != 0 {
                     let _ = usart2.dr.read().bits();
                 }
+                if tc_timeout == 0 {
+                    self.tx_errors = self.tx_errors.saturating_add(1);
+                    false
+                } else {
+                    true
+                }
             }
             BusMode::ExternalFullUsart6 | BusMode::ExternalSplitMpm => {
                 let usart6 = unsafe { &*pac::USART6::ptr() };
@@ -428,15 +495,25 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                         timeout -= 1;
                     }
                     if timeout == 0 {
-                        return;
+                        self.tx_errors = self.tx_errors.saturating_add(1);
+                        return false;
                     }
                     unsafe {
                         let dr = core::ptr::addr_of!(usart6.dr) as *mut u8;
                         core::ptr::write_volatile(dr, b);
                     }
                 }
+                true
             }
         }
+    }
+
+    fn tx_error_count(&self) -> u32 {
+        self.tx_errors
+    }
+
+    fn rx_byte_count(&self) -> u32 {
+        self.rx_bytes
     }
 
     fn read_byte(&mut self) -> Option<u8> {
@@ -444,7 +521,7 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
             return None;
         }
 
-        match self.bus_mode {
+        let byte = match self.bus_mode {
             BusMode::InternalUsart1 => {
                 let dma2 = unsafe { &*pac::DMA2::ptr() };
                 let ndtr = dma2.st[2].ndtr.read().bits() as usize;
@@ -483,6 +560,11 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                     None
                 }
             }
+        };
+
+        if byte.is_some() {
+            self.rx_bytes = self.rx_bytes.wrapping_add(1);
         }
+        byte
     }
 }

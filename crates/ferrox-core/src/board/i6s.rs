@@ -96,7 +96,11 @@ impl BoardProfile for I6sSpec {
         DiagPage::ExtSwitches,
         DiagPage::ExtAnalog,
         DiagPage::EepromStorage,
+        DiagPage::RfUart,
     ];
+    const BAY_CONNECTOR: crate::board::BayConnectorKind = crate::board::BayConnectorKind::AuxHeader;
+    const INTERNAL_MODULE: crate::board::InternalModuleKind =
+        crate::board::InternalModuleKind::SpiAfhds2a;
 
     const EXT_PWR_LABEL: &'static str = "H1 PF6 Pwr:";
     const EXT_ADC_LABEL: &'static str = "Ext ADC (PC):";
@@ -188,11 +192,7 @@ impl BoardProfile for I6sSpec {
             12..=15 => true,                     // CH1..CH4 primary flight channels
             16..=29 => {
                 let ch_idx = (src - 12) as usize; // 4..17
-                let aux_idx = ch_idx - 4; // 0..13
-                if model.wing_tail_mix == 3 && ch_idx == 5 {
-                    return true;
-                }
-                if model.aux_channels[aux_idx] != 0 {
+                if model.channels[ch_idx].source != 0 {
                     return true;
                 }
                 model
@@ -344,7 +344,7 @@ impl BoardProfile for I6sSpec {
             menu_active,
             storage.radio.rear_left_func,
             storage.radio.rear_right_func,
-            storage.radio.throttle_trim != 0,
+            storage.active_model.trim_mode != 0,
         )
     }
 

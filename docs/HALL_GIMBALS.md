@@ -1,6 +1,6 @@
 # Aftermarket Hall Effect Gimbal Guide
 
-Guide for installing, wiring, and configuring aftermarket Hall effect gimbals in `ferrox` (`flysky-i6x-rs`).
+Guide for installing, wiring, and configuring aftermarket Hall effect gimbals in Ferrox.
 
 ---
 

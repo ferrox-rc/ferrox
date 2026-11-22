@@ -1,33 +1,26 @@
-# STICK CALIBRATION & EEPROM STORAGE
+# STICK CALIBRATION & NON-VOLATILE STORAGE (`SCHEMA_VERSION = 2`)
 
-Technical documentation for the interactive 2-step calibration wizard and the non-volatile EEPROM configuration storage on the FlySky FS-i6S.
+Technical documentation for the interactive stick/pot calibration wizard and non-volatile configuration storage across Ferrox transmitters (STM32F4 SD/Flash/EEPROM and STM32F0 16 KB I2C EEPROM).
 
 ---
 
-## 1. Storage Architecture (`src/storage.rs`)
+## 1. Storage Architecture (`crates/ferrox-core/src/storage.rs`)
 
-Configuration and 20 model memories are persisted in an external 16 KB I2C EEPROM:
-- **I2C Bus & Pinout:** `I2C2` on `PB10` (SCL) and `PB11` (SDA) with Fast Mode Plus (Fm+ 1 MHz bus rate).
-- **Adaptive Address & Bus Probe:** Automatically probes `I2C2` (`PB10`/`PB11`) across slave addresses `0x50..=0x57` at boot, with secondary fallback to `I2C1` (`PB8`/`PB9`).
-- **Full Flash Reclamation:** Restores the entire internal 128 KB on-chip Flash to program code (`memory.x`), freeing 8 KB previously reserved for Flash emulation.
-- **Slot-Based Layout:**
-  - **Slot A (`0x0000`):** Primary `RadioConfig` (256-byte slot, CRC16 protected).
-  - **Slot B (`0x0100`):** Backup `RadioConfig` (256-byte slot, ping-pong failover).
-  - **Slots 1..20 (`0x0200 + i * 384`):** Dedicated 384-byte slots for 20 models, strictly aligned to 64-byte EEPROM page boundaries.
-- **Page Write Chunking:** Hardware writes are partitioned into 64-byte boundary chunks with ACK polling to observe the EEPROM's self-timed write cycle (≤5 ms).
-- **Diagnostics:** The detected EEPROM bus, I2C address, and read/write status are surfaced live on the LCD (`System Information` screen) and over USB serial (`storage`/`eeprom` command).
+Configuration and 20 model memories use a slot-based, CRC16-protected binary layout (`SCHEMA_VERSION = 2`):
+- **RadioConfig (`160 bytes`)**: Stored in ping-pong Slots A (`0x0000`) and B (`0x0100`, 256-byte slots). Naturally aligned `#[repr(C)]`, includes gimbal/pot calibrations, audio/voice config, display settings, and trainer/USB preferences.
+- **ModelConfig (`760 bytes`)**: Stored in Slots 1..20 (`0x0200 + i * 768`). Each slot holds an 8-byte `SlotHeader` (`magic`, `schema_version = 2`, `generation`, `crc16`) + 760-byte `ModelConfig` = **768 bytes exact**, aligned to 64-byte EEPROM page boundaries. Includes 18-channel Q10 mixer config, 32 mix lines, 8 logical switches, soaring config (12 B), and CRSF MultiSwitch banks (4×8 switches + 4-char labels).
+- **Clean Schema v2**: As of `v1.0.0-rc12`, legacy v1 slots are rejected cleanly with `StorageError::VersionMismatch(1)` and reset to factory defaults (zero runtime migration bloat).
+- **STM32F0 I2C EEPROM (`FS-i6S` / `FS-i6X`)**: External 16 KB I2C EEPROM on `I2C2` (`PB10`/`PB11`, Fm+ 1 MHz) with automatic address probe (`0x50..=0x57`) and 64-byte page write chunking.
 
-> [!NOTE]
-> Physical inspection of FS-i6S PCBs confirms the presence of the external I2C EEPROM chip on PB10/PB11 across production hardware. If an early prototype or revision lacking the chip is encountered, users can fork and revert to internal flash emulation.
+### Storage Constants (`SCHEMA_VERSION = 2`)
 
-### Storage Structures (`RadioStorage` v5)
-
-All storage structures are compiled with strict C-compatible alignment (`#[repr(C)]`) and compile-time size assertions (`core::mem::size_of`):
+All storage structures use `#[repr(C)]` with compile-time size assertions (`size_of::<RadioConfig>() == 160`, `size_of::<ModelConfig>() == 760`, `size_of::<RadioStorage>() == 920`):
 
 ```rust
-pub const FLASH_MAGIC: u32 = 0x4653_4B59; // "FSKY"
-pub const CONFIG_VERSION: u32 = 5;
+pub const SLOT_MAGIC: u16 = 0x4658; // "FX"
+pub const SCHEMA_VERSION: u8 = 2;
 pub const NUM_MODELS: usize = 20;
+pub const MODEL_SLOT_SIZE: usize = 768; // 8-byte SlotHeader + 760-byte ModelConfig
 
 #[repr(C)]
 pub struct ChannelCalib {
