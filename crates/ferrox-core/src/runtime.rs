@@ -360,6 +360,8 @@ pub struct BackgroundIdleManager {
     pub last_telem_log_ms: u32,
     #[cfg(feature = "voice-audio")]
     pub audio_callouts: crate::audio::CalloutScheduler,
+    #[cfg(feature = "multiswitch")]
+    pub prev_ms_ok: bool,
     pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
 }
 
@@ -436,6 +438,8 @@ impl BackgroundIdleManager {
             last_telem_log_ms: 0,
             #[cfg(feature = "voice-audio")]
             audio_callouts: crate::audio::CalloutScheduler::new(),
+            #[cfg(feature = "multiswitch")]
+            prev_ms_ok: false,
             board_idle: ActiveBoard::create_idle_state(),
         }
     }
@@ -643,6 +647,7 @@ impl BackgroundIdleManager {
             keys,
             crate::boot::scan_edgetx_keys(),
             menu_active,
+            storage,
             dashboard,
             menu_controller,
             buzzer,
@@ -653,9 +658,9 @@ impl BackgroundIdleManager {
         } else {
             // Dashboard page cycling via UP/DOWN keys
             if up_pressed {
-                dashboard.prev_page(buzzer);
+                dashboard.navigate(false, storage, buzzer);
             } else if down_pressed {
-                dashboard.next_page(buzzer);
+                dashboard.navigate(true, storage, buzzer);
             }
 
             if bind_key_raw {
@@ -672,6 +677,31 @@ impl BackgroundIdleManager {
                 self.bind_hold_ms = 0;
                 self.bind_was_held = false;
             }
+        }
+
+        #[cfg(feature = "multiswitch")]
+        {
+            let ok_raw = (keys & (1 << 10)) != 0;
+            if !menu_active {
+                if let Some(slot) = dashboard.multiswitch_key_slot(storage) {
+                    let sw = dashboard.multiswitch_selected as usize;
+                    let is_momentary =
+                        (storage.active_model().multiswitch_momentary[slot] & (1 << sw)) != 0;
+                    if is_momentary {
+                        if ok_raw != self.prev_ms_ok {
+                            pipeline.multiswitch.set_switch(slot, sw, ok_raw);
+                            if ok_raw {
+                                buzzer.click();
+                            }
+                        }
+                    } else if ok_raw && !self.prev_ms_ok {
+                        pipeline.multiswitch.toggle(slot, sw);
+                        buzzer.click();
+                    }
+                }
+            }
+            self.prev_ms_ok = ok_raw;
+            dashboard.multiswitch_states = pipeline.multiswitch.states;
         }
 
         // 6. Persist newly bound RX ID safely to Flash outside ISR (inhibit while armed)

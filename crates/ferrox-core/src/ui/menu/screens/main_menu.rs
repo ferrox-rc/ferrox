@@ -39,6 +39,12 @@ pub fn update(
         ctrl.main_menu_scroll = ctrl.scroll_offset;
 
         match items[ctrl.selected_item] {
+            #[cfg(feature = "multiswitch")]
+            MainMenuItem::MultiSwitch => {
+                ctrl.state = MenuState::MultiSwitchSetup;
+                ctrl.selected_item = 0;
+                ctrl.scroll_offset = 0;
+            }
             MainMenuItem::ModelSelect => {
                 ctrl.state = MenuState::ModelSelect;
                 ctrl.selected_item = storage.radio.active_model as usize;

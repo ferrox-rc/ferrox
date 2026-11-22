@@ -121,12 +121,14 @@ impl BoardIdleHook for Qx7IdleState {
         frame_keys
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_board_keys(
         &mut self,
         dt_ms: u16,
         keys: u16,
         edgetx_keys: u8,
         menu_active: bool,
+        storage: &RadioStorage,
         dashboard: &mut crate::ui::dashboard::DashboardController,
         menu_controller: &mut crate::ui::menu::MenuController,
         buzzer: &mut Buzzer,
@@ -149,9 +151,9 @@ impl BoardIdleHook for Qx7IdleState {
 
         if !menu_active {
             if up_pressed {
-                dashboard.prev_page(buzzer);
+                dashboard.navigate(false, storage, buzzer);
             } else if down_pressed {
-                dashboard.next_page(buzzer);
+                dashboard.navigate(true, storage, buzzer);
             }
         }
 
@@ -234,7 +236,12 @@ impl BoardIdleHook for Qx7IdleState {
             }
         }
 
-        if self.enter.update((keys & (1 << 10)) != 0, dt_ms) == PressEvent::Long && !menu_active {
+        let enter = self.enter.update((keys & (1 << 10)) != 0, dt_ms);
+        #[cfg(not(feature = "multiswitch"))]
+        let enter_opens_menu = true;
+        #[cfg(feature = "multiswitch")]
+        let enter_opens_menu = dashboard.multiswitch_key_slot(storage).is_none();
+        if enter == PressEvent::Long && !menu_active && enter_opens_menu {
             menu_controller.open_at(MenuState::MainMenu, buzzer);
         }
 
@@ -341,6 +348,8 @@ macro_rules! impl_qx7_board_profile {
                 MainMenuItem::DualRateExpo,
                 MainMenuItem::ThrottleCurve,
                 MainMenuItem::WingMixer,
+                #[cfg(feature = "multiswitch")]
+                MainMenuItem::MultiSwitch,
                 MainMenuItem::AuxChannels,
                 MainMenuItem::ChannelReverse,
                 MainMenuItem::RadioSetup,
@@ -714,7 +723,16 @@ mod tests {
         buzzer: &mut Buzzer,
     ) {
         let menu_active = menu.is_active();
-        assert!(idle.handle_board_keys(dt_ms, keys, edgetx_keys, menu_active, dash, menu, buzzer));
+        assert!(idle.handle_board_keys(
+            dt_ms,
+            keys,
+            edgetx_keys,
+            menu_active,
+            &RadioStorage::default_factory(),
+            dash,
+            menu,
+            buzzer,
+        ));
     }
 
     #[test]

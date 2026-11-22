@@ -432,10 +432,10 @@ pub fn compute_channels_compiled(
 
     // Stage 5: Channel source select (snapshot saved for deterministic Stage-6 CHx reads)
     let mut stage5_ch = [0i32; NUM_CHANNELS];
-    for i in 0..NUM_CHANNELS {
-        let src = model.channels[i].source;
+    for (slot, ch_cfg) in stage5_ch.iter_mut().zip(model.channels.iter()) {
+        let src = ch_cfg.source;
         if src != 0 {
-            stage5_ch[i] = evaluate_source_q10(
+            *slot = evaluate_source_q10(
                 src,
                 &sticks_q10,
                 &pots_q10[..pot_len],

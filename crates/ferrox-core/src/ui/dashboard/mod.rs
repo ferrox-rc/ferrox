@@ -27,6 +27,10 @@ pub struct DashboardController {
     pub min_rx_v_mv: u16,
     pub telem_seen: bool,
     pub max_pages: usize,
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_states: [u8; crate::multiswitch::MAX_PAGES],
+    #[cfg(feature = "multiswitch")]
+    pub multiswitch_selected: u8,
 }
 
 impl Default for DashboardController {
@@ -46,12 +50,59 @@ impl DashboardController {
             min_rx_v_mv: 0xFFFF,
             telem_seen: false,
             max_pages: 5,
+            #[cfg(feature = "multiswitch")]
+            multiswitch_states: [0; crate::multiswitch::MAX_PAGES],
+            #[cfg(feature = "multiswitch")]
+            multiswitch_selected: 0,
+        }
+    }
+
+    #[allow(unused_mut, unused_variables)]
+    pub fn configure_pages(&mut self, storage: &RadioStorage) {
+        let mut pages = 5usize;
+        #[cfg(feature = "multiswitch")]
+        {
+            pages += crate::multiswitch::enabled_count(&storage.active_model().multiswitch_addresses);
+        }
+        #[cfg(any(feature = "soaring", test))]
+        if storage.active_model().soaring.is_active() {
+            pages += 1;
+        }
+        self.max_pages = pages;
+        if self.page >= self.max_pages {
+            self.page = 0;
+        }
+    }
+
+    #[cfg(feature = "multiswitch")]
+    pub fn multiswitch_slot(&self, storage: &RadioStorage) -> Option<usize> {
+        if self.page < 5 {
+            None
+        } else {
+            crate::multiswitch::slot_at(&storage.active_model().multiswitch_addresses, self.page - 5)
+        }
+    }
+
+    #[cfg(feature = "multiswitch")]
+    pub fn multiswitch_key_slot(&self, storage: &RadioStorage) -> Option<usize> {
+        if crate::board::ActiveBoard::HAS_TOUCH
+            || crate::usb::is_sim_mode()
+            || crate::board::ActiveBoard::resolve_protocol(storage.active_model().rf_protocol)
+                != crate::board::RfProtocol::Crsf
+        {
+            None
+        } else {
+            self.multiswitch_slot(storage)
         }
     }
 
     /// Advance to the next dashboard page.
     pub fn next_page(&mut self, buzzer: &mut Buzzer) {
         self.page = (self.page + 1) % self.max_pages.max(1);
+        #[cfg(feature = "multiswitch")]
+        {
+            self.multiswitch_selected = 0;
+        }
         buzzer.play_tone(2200, 30);
     }
 
@@ -63,7 +114,35 @@ impl DashboardController {
         } else {
             self.page - 1
         };
+        #[cfg(feature = "multiswitch")]
+        {
+            self.multiswitch_selected = crate::multiswitch::SWITCH_COUNT - 1;
+        }
         buzzer.play_tone(2200, 30);
+    }
+
+    /// Navigate forward/backward across MultiSwitch tiles and dashboard pages.
+    pub fn navigate(&mut self, forward: bool, storage: &RadioStorage, buzzer: &mut Buzzer) {
+        #[cfg(feature = "multiswitch")]
+        if !crate::board::ActiveBoard::HAS_TOUCH && self.multiswitch_slot(storage).is_some() {
+            if forward && self.multiswitch_selected + 1 < crate::multiswitch::SWITCH_COUNT {
+                self.multiswitch_selected += 1;
+                buzzer.click();
+                return;
+            }
+            if !forward && self.multiswitch_selected > 0 {
+                self.multiswitch_selected -= 1;
+                buzzer.click();
+                return;
+            }
+        }
+        #[cfg(not(feature = "multiswitch"))]
+        let _ = storage;
+        if forward {
+            self.next_page(buzzer);
+        } else {
+            self.prev_page(buzzer);
+        }
     }
 
     /// Handle UP/DOWN key presses to cycle dashboard pages (0..3).
@@ -96,21 +175,7 @@ impl DashboardController {
         buzzer: &mut Buzzer,
         now_ms: u32,
     ) {
-        #[cfg(any(feature = "soaring", test))]
-        {
-            self.max_pages = if storage.active_model().soaring.is_active() {
-                6
-            } else {
-                5
-            };
-        }
-        #[cfg(not(any(feature = "soaring", test)))]
-        {
-            self.max_pages = 5;
-        }
-        if self.page >= self.max_pages {
-            self.page = 0;
-        }
+        self.configure_pages(storage);
 
         lcd.clear_buffer();
 
@@ -132,6 +197,20 @@ impl DashboardController {
 
         let blink_on = (self.blink_phase & 0x08) != 0;
         self.blink_phase = self.blink_phase.wrapping_add(1);
+
+        #[cfg(feature = "multiswitch")]
+        if let Some(slot) = self.multiswitch_slot(storage) {
+            pages::multiswitch::render(
+                lcd,
+                storage,
+                self.multiswitch_states[slot],
+                slot,
+                self.page,
+                self.max_pages,
+                self.multiswitch_selected,
+            );
+            return;
+        }
 
         match self.page {
             0 => pages::gimbals::render(

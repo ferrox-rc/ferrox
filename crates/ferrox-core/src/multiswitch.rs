@@ -5,10 +5,63 @@
 //! `crate::uart::try_write_bytes` without ever stalling the flight control loop.
 
 use crate::crsf::protocol::{build_set4, CRSF_SET4_FRAME_SIZE};
-use crate::storage::{ModelConfig, NUM_MULTISWITCH_SLOTS, NUM_MULTISWITCH_SWITCHES};
+use crate::storage::{
+    ModelConfig, MULTISWITCH_LABEL_LEN, NUM_MULTISWITCH_SLOTS, NUM_MULTISWITCH_SWITCHES,
+};
 
 /// Periodic keep-alive retransmission interval for active MultiSwitch slots (ms).
 pub const MULTISWITCH_KEEPALIVE_MS: u32 = 500;
+pub const SWITCH_COUNT: u8 = NUM_MULTISWITCH_SWITCHES as u8;
+pub const MAX_PAGES: usize = NUM_MULTISWITCH_SLOTS;
+pub type Addresses = [i16; MAX_PAGES];
+
+pub const fn enabled_count(addresses: &Addresses) -> usize {
+    let mut count = 0;
+    let mut slot = 0;
+    while slot < MAX_PAGES {
+        if addresses[slot] >= 0 && addresses[slot] <= 255 {
+            count += 1;
+        }
+        slot += 1;
+    }
+    count
+}
+
+pub fn slot_at(addresses: &Addresses, mut ordinal: usize) -> Option<usize> {
+    for (slot, &address) in addresses.iter().enumerate() {
+        if (0..=255).contains(&address) {
+            if ordinal == 0 {
+                return Some(slot);
+            }
+            ordinal -= 1;
+        }
+    }
+    None
+}
+
+/// Returns `(x, y, width, height)` for a function index in `0..8`.
+pub const fn switch_rect(index: u8) -> (i32, i32, u32, u32) {
+    (
+        1 + (index % 4) as i32 * 32,
+        14 + (index / 4) as i32 * 18,
+        30,
+        17,
+    )
+}
+
+pub fn label_text<'a>(
+    label: &[u8; MULTISWITCH_LABEL_LEN],
+    index: u8,
+    buf: &'a mut [u8; MULTISWITCH_LABEL_LEN],
+) -> &'a str {
+    for (out, &c) in buf.iter_mut().zip(label) {
+        *out = if (32..=126).contains(&c) { c } else { b' ' };
+    }
+    if buf.iter().all(|&c| c == b' ') {
+        buf[0] = b'1' + index;
+    }
+    crate::ui::format::ascii_as_str(buf).trim()
+}
 
 /// Per-model live MultiSwitch output state and non-blocking CRSF Set4 scheduler.
 #[derive(Copy, Clone, Debug)]

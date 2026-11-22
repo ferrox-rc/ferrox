@@ -8,6 +8,8 @@ pub mod dsm;
 pub mod main_menu;
 pub mod mixer;
 pub mod model;
+#[cfg(feature = "multiswitch")]
+pub mod multiswitch;
 pub mod setup;
 #[cfg(any(feature = "soaring", test))]
 pub mod soaring;
