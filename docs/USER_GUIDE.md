@@ -108,7 +108,7 @@ Ferrox automatically configures the right STM32F4 USART for both **8-pin Nano** 
 > **Schema v2 Notice (`v1.0.0-rc12+`)**: `v1.0.0-rc12` introduces a clean `SCHEMA_VERSION = 2` storage layout. Upgrading from `rc11` or earlier resets stored models to factory defaults — note your model settings before flashing and re-calibrate sticks after first boot.
 
 ### Option A: Ferrox Web Flasher (Recommended)
-Use the browser-based **Ferrox Web Flasher** to select your radio, toggle custom features (e.g., `tank-mix`, `multiswitch`, `internal-cc2500`, `soaring`), and flash over USB DFU without installing a Rust toolchain.
+Use the browser-based **Ferrox Web Flasher** to select your radio, toggle custom features (e.g., `multiswitch`, `internal-cc2500`, `soaring`), and flash over USB DFU without installing a Rust toolchain.
 
 ### Option B: EdgeTX SD Bootloader (STM32F4, No Drivers Needed)
 1. Build an EdgeTX-padded `.bin`:

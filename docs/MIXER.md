@@ -12,7 +12,7 @@ The mixing engine in [`crates/ferrox-core/src/mixer/`](../crates/ferrox-core/src
 2. **Input Conditioning**: Per-stick Dual Rate (`30..100%`) and cubic Expo (`-100..+100%`) in Q10 (`>> 10` / `>> 20` shifts, zero integer division).
 3. **Throttle Curve (`SRC_THC = 58`)**: 5/7/9-point linear or Catmull-Rom spline evaluated in Q10 (`evaluate_curve_q10`).
 4. **Channel Base Assignment**: All 18 channels (`CH1..CH18`) source from any stick, `ThC`, pot, switch, or `Off`.
-5. **Predefined Mixers (`MixerKind`)**: Static registry supporting `Normal`, `Delta` (Elevon), `VTail`, `Flaperon`, `DiffThrust`, `Tank` (tracked-vehicle reverse-steering inversion, `--features tank-mix`), `MTail`, and `Crow` (butterfly), with proportional pair saturation (`proportional_saturate_pair`).
+5. **Predefined Mixers (`MixerKind`)**: Static registry supporting `Normal`, `Delta` (Elevon), `VTail`, `Flaperon`, `DiffThrust`, `Tank` (tracked-vehicle reverse-steering inversion), `MTail`, and `Crow` (butterfly), with proportional pair saturation (`proportional_saturate_pair`).
 6. **32 Freeform Mix Lines**: Unclamped `i32` accumulation supporting `Add`, `Multiply`, `Replace`, weights (`-125..+125%`), offsets, and switch/curve gating.
 7. **Digital Trims**: Roll, Pitch, Throttle (Off/Idle/Linear), and Yaw trims applied in Q10.
 8. **Subtrim & Endpoint Scaling**: Per-channel subtrim (`-125..+125`) and asymmetric min/max limits (`min..max`).
