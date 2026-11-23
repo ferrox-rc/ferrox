@@ -169,6 +169,7 @@ pub struct SerialRouteConfig {
     pub baud_idx: u8,
     pub framing: SerialFraming,
     pub duplex: SerialDuplex,
+    pub tx_inverted: bool,
 }
 
 impl SerialRouteConfig {
@@ -178,6 +179,7 @@ impl SerialRouteConfig {
             baud_idx: 2,
             framing: SerialFraming::Format8N1,
             duplex: SerialDuplex::FullDuplex,
+            tx_inverted: false,
         }
     }
 }
@@ -229,6 +231,7 @@ pub trait SerialPort {
             cfg.baud_idx,
             cfg.duplex == SerialDuplex::HalfDuplexSport,
         );
+        self.set_module_power(enabled);
     }
 }
 

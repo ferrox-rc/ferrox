@@ -215,8 +215,6 @@ pub fn set_enabled(enabled: bool) {
     unsafe {
         if enabled != DSM_LINK_ENABLED {
             DSM_LINK_ENABLED = enabled;
-            crate::uart::set_uart_enabled(enabled, crate::uart::BAUD_IDX_MULTI_100K_8E2, false);
-            crate::uart::set_module_power(enabled);
             if !enabled {
                 DSM_TELEMETRY = DsmTelemetry::default();
                 MULTI_PARSER = MultiRxParser::new();

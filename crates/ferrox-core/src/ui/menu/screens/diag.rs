@@ -229,7 +229,13 @@ pub fn update_diag_anas(
                 match route.duplex {
                     crate::hal::SerialDuplex::FullDuplex => "BUS: USART6 P1/P2 FD",
                     crate::hal::SerialDuplex::HalfDuplexSport => "BUS: USART2 P5 SPORT",
-                    crate::hal::SerialDuplex::SplitTxPin1RxPin5 => "BUS: TX:U6 P1 RX:U2 P5",
+                    crate::hal::SerialDuplex::SplitTxPin1RxPin5 => {
+                        if route.tx_inverted {
+                            "BUS: TX:T8!P1 RX:U2 P5"
+                        } else {
+                            "BUS: TX:U6 P1 RX:U2 P5"
+                        }
+                    }
                 }
             };
             lcd.draw_str_4x6(2, 22, bus_str, false);
@@ -247,9 +253,11 @@ pub fn update_diag_anas(
                 crate::hal::SerialFraming::Format8N1 => "8N1",
                 crate::hal::SerialFraming::Format8E2 => "8E2",
             };
+            let pol_str = if route.tx_inverted { "INV" } else { "NRM" };
             lcd.draw_str_4x6(2, 31, "FRAME:", false);
             lcd.draw_str_4x6(30, 31, baud_str, false);
             lcd.draw_str_4x6(62, 31, fmt_str, false);
+            lcd.draw_str_4x6(80, 31, pol_str, false);
 
             let mut rx_buf = [0u8; 4];
             let mut tx_buf = [0u8; 4];

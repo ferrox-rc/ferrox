@@ -186,13 +186,11 @@ static mut PREV_BIND_REQ: bool = false;
 static mut RX_STATE: RxParseState = RxParseState::Idle;
 static mut RX_PAYLOAD: [u8; 40] = [0; 40];
 
-/// Enable or disable the MPM serial driver (`100,000 baud 8E2`) and module power rail.
+/// Enable or disable MPM protocol state (UART routing and module power are owned by `uart::configure_route`).
 pub fn set_enabled(enabled: bool) {
     unsafe {
         if enabled != MPM_ENABLED {
             MPM_ENABLED = enabled;
-            crate::uart::set_uart_enabled(enabled, BAUD_IDX_MULTI_100K_8E2, false);
-            crate::uart::set_module_power(enabled);
             if !enabled {
                 MPM_TELEM = MpmTelemetry::new();
                 LAST_TX_MS = 0;

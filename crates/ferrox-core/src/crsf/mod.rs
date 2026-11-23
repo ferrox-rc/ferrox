@@ -32,7 +32,7 @@ pub fn set_power_polarity(active_high: bool) {
     uart::set_power_polarity(active_high);
 }
 
-/// Enable or disable CRSF protocol, power external module, and configure baud rate and duplex mode.
+/// Enable or disable CRSF protocol state (UART routing and module power are owned by `uart::configure_route`).
 pub fn set_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
     unsafe {
         if enabled != CRSF_ENABLED
@@ -41,9 +41,6 @@ pub fn set_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
             CRSF_ENABLED = enabled;
             CURRENT_BAUD = baud_idx;
             CURRENT_HALF_DUPLEX = half_duplex;
-
-            uart::set_uart_enabled(enabled, baud_idx, half_duplex);
-            uart::set_module_power(enabled);
 
             if !enabled {
                 TELEMETRY = CrsfTelemetry::new();
@@ -3919,21 +3916,26 @@ mod tests {
         assert_eq!(uart::get_brr_for_baud(3), 52); // 921.6k
         assert_eq!(uart::get_brr_for_baud(4), 26); // 1.875M
 
-        // Test enabling CRSF with half-duplex and 1.8M baud
+        // Test configuring external CRSF half-duplex at 1.875M baud via configure_route
+        let hd_route = uart::resolve_serial_route(crate::board::RfProtocol::Crsf, true, true, 4);
+        uart::configure_route(true, hd_route);
         set_enabled(true, 4, true);
         assert!(is_enabled());
         assert!(uart::is_half_duplex());
 
-        // Test disabling CRSF resets state
+        // Test disabling CRSF resets CRSF state without clobbering UART route
         set_enabled(false, 2, false);
         assert!(!is_enabled());
-        assert!(!uart::is_half_duplex());
+        assert!(uart::is_half_duplex());
 
-        // Test enabling CRSF with full-duplex standard baud
+        // Test configuring full-duplex standard baud clears half-duplex flag
+        let fd_route = uart::resolve_serial_route(crate::board::RfProtocol::Crsf, true, false, 2);
+        uart::configure_route(true, fd_route);
         set_enabled(true, 2, false);
         assert!(is_enabled());
         assert!(!uart::is_half_duplex());
 
         set_enabled(false, 2, false);
+        uart::configure_route(false, fd_route);
     }
 }

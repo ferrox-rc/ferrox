@@ -772,7 +772,6 @@ pub fn update_rx_setup(
                                 buzzer.click();
                                 let next_target = if storage.active_model.rf_module_target() == 0 { 1 } else { 0 };
                                 storage.active_model.set_rf_module_target(next_target);
-                                crate::uart::set_port_route(next_target);
                                 storage::save_active_model(storage);
                             }
                             2 => {
