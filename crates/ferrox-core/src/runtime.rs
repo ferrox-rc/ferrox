@@ -240,6 +240,8 @@ impl FlightPipeline {
                         active_model.mpm_freq_tune(),
                         rf::is_binding(),
                         active_model.mpm_range_check(),
+                        active_model.rf_module_target() != 0,
+                        active_model.mpm_d16_bind_opt(),
                     );
                     rf::mpm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);
@@ -254,6 +256,8 @@ impl FlightPipeline {
                         active_model.mpm_freq_tune(),
                         rf::is_binding(),
                         active_model.mpm_range_check(),
+                        active_model.rf_module_target() != 0,
+                        active_model.mpm_d16_bind_opt(),
                     );
                     rf::mpm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);

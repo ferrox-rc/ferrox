@@ -177,12 +177,31 @@ enum RxParseState {
     },
 }
 
+/// Returns `true` if `wire_id` is a FrSky D16 protocol (`FrSkyX` or `FrSkyX2`) supporting
+/// Multi v1.3+ D16 bind options (Ch1-8 / Ch9-16, Telemetry ON / OFF).
+#[inline(always)]
+pub const fn is_d16_protocol(wire_id: u8) -> bool {
+    wire_id == MPM_PROTO_FRSKY_X || wire_id == MPM_PROTO_FRSKY_X2
+}
+
+/// Human-readable label for FrSky D16 bind option (`0..=3`).
+#[inline(always)]
+pub const fn d16_bind_opt_name(opt: u8) -> &'static str {
+    match opt & 0x03 {
+        0 => "1-8 Tel ON",
+        1 => "1-8 Tel OFF",
+        2 => "9-16 Tel ON",
+        _ => "9-16 Tel OFF",
+    }
+}
+
 static mut MPM_ENABLED: bool = false;
 static mut MPM_TELEM: MpmTelemetry = MpmTelemetry::new();
 static mut LAST_TX_MS: u32 = 0;
 static mut LAST_RX_PACKET_MS: u32 = 0;
 static mut BIND_START_MS: u32 = 0;
 static mut PREV_BIND_REQ: bool = false;
+static mut BIND_CONFIRMED_BY_MODULE: bool = false;
 static mut RX_STATE: RxParseState = RxParseState::Idle;
 static mut RX_PAYLOAD: [u8; 40] = [0; 40];
 
@@ -197,6 +216,7 @@ pub fn set_enabled(enabled: bool) {
                 LAST_RX_PACKET_MS = 0;
                 BIND_START_MS = 0;
                 PREV_BIND_REQ = false;
+                BIND_CONFIRMED_BY_MODULE = false;
                 RX_STATE = RxParseState::Idle;
             }
         }
@@ -223,6 +243,8 @@ pub fn update_link(
     freq_tune: i8,
     bind_req: bool,
     range_check: bool,
+    external_bay: bool,
+    d16_bind_opt: u8,
 ) {
     unsafe {
         if !MPM_ENABLED {
@@ -231,16 +253,19 @@ pub fn update_link(
 
         if bind_req && !PREV_BIND_REQ {
             BIND_START_MS = now_ms.max(1);
+            BIND_CONFIRMED_BY_MODULE = false;
         } else if !bind_req {
             BIND_START_MS = 0;
+            BIND_CONFIRMED_BY_MODULE = false;
         }
         PREV_BIND_REQ = bind_req;
 
-        // Auto-complete bind after 5 seconds so pilot doesn't stay stuck in bind mode
+        // Auto-complete bind after 10 seconds fallback so pilot doesn't stay stuck in bind mode
         let binding = if bind_req {
-            if BIND_START_MS != 0 && now_ms.wrapping_sub(BIND_START_MS) >= 5000 {
+            if BIND_START_MS != 0 && now_ms.wrapping_sub(BIND_START_MS) >= 10_000 {
                 crate::rf::set_bind_mode(false);
                 BIND_START_MS = 0;
+                BIND_CONFIRMED_BY_MODULE = false;
                 false
             } else {
                 true
@@ -251,7 +276,7 @@ pub fn update_link(
 
         if now_ms.wrapping_sub(LAST_TX_MS) >= 9 {
             LAST_TX_MS = now_ms;
-            let mut frame = [0u8; 27];
+            let mut frame = [0u8; 28];
             let len = pack_mpm_frame(
                 channels_us,
                 spec,
@@ -260,6 +285,8 @@ pub fn update_link(
                 freq_tune,
                 binding,
                 range_check,
+                external_bay,
+                d16_bind_opt,
                 &mut frame,
             );
             crate::uart::write_bytes(&frame[..len]);
@@ -361,13 +388,18 @@ fn feed_telemetry_byte(
 pub fn process_mpm_packet(pkt_type: u8, payload: &[u8], now_ms: u32, telem: &mut MpmTelemetry) {
     match pkt_type {
         // 0x01: Multi-Module status packet (flags, major, minor, revision, patch)
+        // Flags: 0x01=InputDetected, 0x02=SerialMode, 0x04=ProtoValid, 0x08=Binding
         0x01 => {
             if !payload.is_empty() {
-                // Bit 0 = Wait for bind; Bit 2 = Valid protocol
-                let in_bind = (payload[0] & 0x02) != 0;
-                if !in_bind && unsafe { BIND_START_MS != 0 && PREV_BIND_REQ } {
-                    // Module finished binding on its own
-                    crate::rf::set_bind_mode(false);
+                let in_bind = (payload[0] & 0x08) != 0;
+                unsafe {
+                    if in_bind && BIND_START_MS != 0 && PREV_BIND_REQ {
+                        BIND_CONFIRMED_BY_MODULE = true;
+                    } else if !in_bind && BIND_CONFIRMED_BY_MODULE && PREV_BIND_REQ {
+                        // Module confirmed bind entry and subsequently finished binding
+                        crate::rf::set_bind_mode(false);
+                        BIND_CONFIRMED_BY_MODULE = false;
+                    }
                 }
             }
         }
@@ -519,12 +551,15 @@ pub fn process_mpm_packet(pkt_type: u8, payload: &[u8], now_ms: u32, telem: &mut
     }
 }
 
-/// Format a 26-byte MULTI-Module CC2500/4-in-1 serial frame (100,000 baud 8E2):
-/// - Byte 0: `0x55` (protocols 0..31) or `0x54` (protocols 32..63)
+/// Format a 27- or 28-byte Multi v1.3+ CC2500/4-in-1 serial frame (100,000 baud 8E2):
+/// - Byte 0: `0x55` (`proto_id & 0x20 == 0`) or `0x54` (`proto_id & 0x20 != 0`)
 /// - Byte 1: `(bind << 7) | (auto_bind << 6) | (range_check << 5) | (proto_id & 0x1F)`
 /// - Byte 2: `(sub_proto << 4) | (rx_num & 0x0F)`
 /// - Byte 3: `option` (`-127..+127`, frequency fine tuning)
-/// - Bytes 4..26: 16 channels packed as 11-bit values (`0..2047`, 22 bytes total).
+/// - Bytes 4..26: 16 channels packed as 11-bit values (`0..2047`, 22 bytes total)
+/// - Byte 26 (Multi v1.3+): `(proto_id & 0xC0) | (rx_num & 0x30) | (external_bay << 3)`
+/// - Byte 27 (optional, when binding FrSky D16 `FrSkyX`/`FrSkyX2`): `d16_bind_opt & 0x03`
+///   (`0` = Ch1-8 Tel ON, `1` = Ch1-8 Tel OFF, `2` = Ch9-16 Tel ON, `3` = Ch9-16 Tel OFF).
 #[allow(clippy::too_many_arguments)]
 pub fn pack_mpm_frame(
     channels_us: &[u16; NUM_CHANNELS],
@@ -534,7 +569,9 @@ pub fn pack_mpm_frame(
     freq_tune: i8,
     binding: bool,
     range_check: bool,
-    out: &mut [u8; 27],
+    external_bay: bool,
+    d16_bind_opt: u8,
+    out: &mut [u8; 28],
 ) -> usize {
     let proto_id = spec.wire_id;
     // MULTI-Module uses 0x55 for bit5==0 (0..31, 64..95) and 0x54 for bit5==1 (32..63, 96..127).
@@ -570,11 +607,15 @@ pub fn pack_mpm_frame(
         }
     }
 
-    if proto_id >= 64 {
-        out[26] = (proto_id >> 6) & 0x03;
-        27
+    // Multi v1.3+ byte 26 (Multiprotocol.ino: protocol |= rx_ok_buff[26] & 0xC0,
+    // RX_num |= rx_ok_buff[26] & 0x30, bit 3 = invert telemetry for external bay).
+    out[26] = (proto_id & 0xC0) | (rx_num & 0x30) | if external_bay { 0x08 } else { 0x00 };
+
+    if binding && is_d16_protocol(proto_id) {
+        out[27] = d16_bind_opt & 0x03;
+        28
     } else {
-        26
+        27
     }
 }
 
@@ -585,7 +626,7 @@ mod tests {
     #[test]
     fn test_pack_mpm_frame_structure() {
         let chs = [1500u16; NUM_CHANNELS];
-        let mut frame = [0u8; 27];
+        let mut frame = [0u8; 28];
 
         let len = pack_mpm_frame(
             &chs,
@@ -595,21 +636,25 @@ mod tests {
             -15,
             false,
             false,
+            false,
+            0,
             &mut frame,
         );
 
-        assert_eq!(len, 26);
+        assert_eq!(len, 27);
         assert_eq!(frame[0], 0x55);
         assert_eq!(frame[1], MPM_PROTO_FRSKY_X);
         assert_eq!(frame[2], 0x01); // Sub 0, RxNum 1
         assert_eq!(frame[3] as i8, -15); // Frequency tuning
+        assert_eq!(frame[26], 0x00); // Internal: normal telemetry, proto < 64
     }
 
     #[test]
     fn test_pack_mpm_frame_binding_and_range() {
         let chs = [1500u16; NUM_CHANNELS];
-        let mut frame = [0u8; 27];
+        let mut frame = [0u8; 28];
 
+        // FrSkyD (D8) does not append D16 bind option byte 27
         let len = pack_mpm_frame(
             &chs,
             Cc2500Protocol::FrSkyD.spec(),
@@ -618,34 +663,78 @@ mod tests {
             0,
             true,
             true,
+            true,
+            3,
             &mut frame,
         );
 
-        assert_eq!(len, 26);
+        assert_eq!(len, 27);
         assert_eq!(frame[0], 0x55);
         assert_eq!(frame[1], MPM_PROTO_FRSKY_D | 0x80 | 0x20);
+        assert_eq!(frame[26], 0x08); // External bay telemetry invert bit
+
+        // FrSkyX (D16) appends byte 27 = d16_bind_opt when binding
+        let len_d16 = pack_mpm_frame(
+            &chs,
+            Cc2500Protocol::FrSkyX.spec(),
+            0,
+            1,
+            0,
+            true,
+            false,
+            true,
+            2, // Ch9-16 Telem ON
+            &mut frame,
+        );
+        assert_eq!(len_d16, 28);
+        assert_eq!(frame[1], MPM_PROTO_FRSKY_X | 0x80);
+        assert_eq!(frame[26], 0x08);
+        assert_eq!(frame[27], 2);
     }
 
     #[test]
     fn test_pack_mpm_frame_extended_proto_id() {
         let chs = [1500u16; NUM_CHANNELS];
-        let mut frame = [0u8; 27];
+        let mut frame = [0u8; 28];
 
         assert_eq!(
-            pack_mpm_frame(&chs, Cc2500Protocol::Corona.spec(), 0, 0, 0, false, false, &mut frame),
-            26
+            pack_mpm_frame(
+                &chs,
+                Cc2500Protocol::Corona.spec(),
+                0,
+                0,
+                0,
+                false,
+                false,
+                false,
+                0,
+                &mut frame
+            ),
+            27
         );
         assert_eq!(frame[0], 0x54);
         assert_eq!(frame[1], MPM_PROTO_CORONA & 0x1F);
+        assert_eq!(frame[26], 0x00);
 
         assert_eq!(
-            pack_mpm_frame(&chs, Cc2500Protocol::Hitec.spec(), 0, 0, 0, false, false, &mut frame),
-            26
+            pack_mpm_frame(
+                &chs,
+                Cc2500Protocol::Hitec.spec(),
+                0,
+                0,
+                0,
+                false,
+                false,
+                false,
+                0,
+                &mut frame
+            ),
+            27
         );
         assert_eq!(frame[0], 0x54);
         assert_eq!(frame[1], MPM_PROTO_HITEC & 0x1F);
 
-        // FrSkyX2 (ID = 64) emits 27-byte extended frame with byte 26 = 1
+        // FrSkyX2 (ID = 64 = 0x40) sets bits 7:6 of byte 26 = 0x40 (+ 0x08 external invert)
         assert_eq!(
             pack_mpm_frame(
                 &chs,
@@ -653,16 +742,19 @@ mod tests {
                 Cc2500Protocol::FrSkyX2Lbt.default_sub_proto(),
                 2,
                 0,
+                true,
                 false,
-                false,
+                true,
+                1, // Ch1-8 Telem OFF
                 &mut frame,
             ),
-            27
+            28
         );
         assert_eq!(frame[0], 0x55);
-        assert_eq!(frame[1], 0);
+        assert_eq!(frame[1], 0x80); // Bind flag + (64 & 0x1F == 0)
         assert_eq!(frame[2], (2 << 4) | 2);
-        assert_eq!(frame[26], 1);
+        assert_eq!(frame[26], 0x40 | 0x08);
+        assert_eq!(frame[27], 1);
 
         // Verify MpmProtocol table bounds & cycling
         assert_eq!(MpmProtocol::COUNT, 25);

@@ -826,10 +826,23 @@ impl ModelConfig {
         self.mpm_rx_num & 0x0F
     }
 
-    /// Set MPM/CC2500 Receiver Number (`0..15`).
+    /// Set MPM/CC2500 Receiver Number (`0..15`), preserving D16 bind option bits `5:4`.
     #[inline(always)]
     pub fn set_mpm_rx_num(&mut self, rx_num: u8) {
-        self.mpm_rx_num = rx_num & 0x0F;
+        self.mpm_rx_num = (self.mpm_rx_num & 0xF0) | (rx_num & 0x0F);
+    }
+
+    /// Get FrSky D16 (`FrSkyX` / `FrSkyX2`) bind option (`0` = Ch1-8 Tel ON, `1` = Ch1-8 Tel OFF,
+    /// `2` = Ch9-16 Tel ON, `3` = Ch9-16 Tel OFF), stored in bits `5:4` of `mpm_rx_num`.
+    #[inline(always)]
+    pub const fn mpm_d16_bind_opt(&self) -> u8 {
+        (self.mpm_rx_num >> 4) & 0x03
+    }
+
+    /// Set FrSky D16 bind option (`0..=3`), preserving Receiver Number bits `3:0`.
+    #[inline(always)]
+    pub fn set_mpm_d16_bind_opt(&mut self, opt: u8) {
+        self.mpm_rx_num = (self.mpm_rx_num & 0x0F) | ((opt & 0x03) << 4);
     }
 
     /// Check if MPM/CC2500 reduced-power Range Check mode is active.

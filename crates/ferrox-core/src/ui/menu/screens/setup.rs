@@ -675,10 +675,23 @@ pub fn update_rx_setup(
 
     let has_ext_bay = ActiveBoard::HAS_EXTERNAL_MODULE_BAY;
     let ext_off = usize::from(has_ext_bay);
+    let has_d16_opt = has_ext_bay
+        && match current_proto {
+            RfProtocol::Mpm => crate::rf::mpm::is_d16_protocol(
+                crate::rf::mpm::MpmProtocol::from_u8(storage.active_model.rx_serial_proto)
+                    .mpm_proto_id(),
+            ),
+            RfProtocol::Cc2500 => crate::rf::mpm::is_d16_protocol(
+                crate::rf::cc2500::Cc2500Protocol::from_u8(storage.active_model.rx_serial_proto)
+                    .mpm_proto_id(),
+            ),
+            _ => false,
+        };
+    let d16_off = usize::from(has_d16_opt);
     let item_count = match current_proto {
         RfProtocol::Afhds2a => 6,
         RfProtocol::Crsf => 5 + ext_off,
-        RfProtocol::Cc2500 | RfProtocol::Mpm => 6 + ext_off,
+        RfProtocol::Cc2500 | RfProtocol::Mpm => 6 + ext_off + d16_off,
         RfProtocol::Dsm => {
             #[cfg(feature = "dsm-fwd-prog")]
             {
@@ -879,17 +892,27 @@ pub fn update_rx_setup(
                     }
                 }
                 (RfProtocol::Cc2500 | RfProtocol::Mpm, idx)
-                    if idx == 1 + ext_off || idx == 3 + ext_off || idx == 4 + ext_off =>
+                    if idx == 1 + ext_off
+                        || idx == 3 + ext_off + d16_off
+                        || idx == 4 + ext_off + d16_off =>
                 {
                     ctrl.editing = true;
                     buzzer.click();
                 }
-                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 2 + ext_off => {
+                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx)
+                    if has_d16_opt && idx == 2 + ext_off =>
+                {
+                    buzzer.click();
+                    let next_opt = (storage.active_model.mpm_d16_bind_opt() + 1) & 0x03;
+                    storage.active_model.set_mpm_d16_bind_opt(next_opt);
+                    storage::save_active_model(storage);
+                }
+                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 2 + ext_off + d16_off => {
                     buzzer.click();
                     let next_bind = !crate::rf::is_binding();
                     crate::rf::set_bind_mode(next_bind);
                 }
-                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 5 + ext_off => {
+                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 5 + ext_off + d16_off => {
                     buzzer.click();
                     let next_rc = !storage.active_model.mpm_range_check();
                     storage.active_model.set_mpm_range_check(next_rc);
@@ -952,7 +975,7 @@ pub fn update_rx_setup(
                     }
                 }
             }
-            idx if is_mpm_family && idx == 3 + ext_off => {
+            idx if is_mpm_family && idx == 3 + ext_off + d16_off => {
                 let cur = storage.active_model.mpm_rx_num();
                 if keys.up {
                     storage.active_model.set_mpm_rx_num((cur + 1) & 0x0F);
@@ -962,7 +985,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            idx if is_mpm_family && idx == 4 + ext_off => {
+            idx if is_mpm_family && idx == 4 + ext_off + d16_off => {
                 let cur = storage.active_model.mpm_freq_tune();
                 if keys.up {
                     storage.active_model.set_mpm_freq_tune(cur.saturating_add(1));
@@ -1079,7 +1102,24 @@ pub fn update_rx_setup(
                     );
                     continue;
                 }
-                match idx - ext_off {
+                if has_d16_opt && idx == 2 + ext_off {
+                    let opt_str =
+                        crate::rf::mpm::d16_bind_opt_name(storage.active_model.mpm_d16_bind_opt());
+                    widgets::draw_list_row_right(
+                        lcd,
+                        slot,
+                        idx == ctrl.selected_item,
+                        "Bind Opt:",
+                        Some(opt_str),
+                    );
+                    continue;
+                }
+                let logical_row = if idx <= 1 + ext_off {
+                    idx - ext_off
+                } else {
+                    idx - ext_off - d16_off
+                };
+                match logical_row {
                     1 => {
                         let proto_name = if current_proto == RfProtocol::Mpm {
                             crate::rf::mpm::MpmProtocol::from_u8(
