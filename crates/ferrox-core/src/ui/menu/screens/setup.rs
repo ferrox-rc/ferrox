@@ -689,6 +689,8 @@ pub fn update_rx_setup(
             _ => false,
         };
 
+    let has_fs_thr = HAS_EXT_BAY && storage.active_model.failsafe_mode != 0;
+
     #[derive(Copy, Clone, PartialEq, Eq)]
     enum MpmRow {
         Proto,
@@ -703,10 +705,17 @@ pub fn update_rx_setup(
         AutoBind,
         LowPower,
         RangeCheck,
+        Failsafe,
+        FailsafeThr,
     }
 
     #[inline(always)]
-    const fn mpm_row_at_const(idx: usize, has_ext: bool, has_d16: bool) -> Option<MpmRow> {
+    const fn mpm_row_at_const(
+        idx: usize,
+        has_ext: bool,
+        has_d16: bool,
+        has_fs_thr: bool,
+    ) -> Option<MpmRow> {
         if !has_ext {
             match idx {
                 0 => Some(MpmRow::Proto),
@@ -731,6 +740,8 @@ pub fn update_rx_setup(
                 9 => Some(MpmRow::AutoBind),
                 10 => Some(MpmRow::LowPower),
                 11 => Some(MpmRow::RangeCheck),
+                12 => Some(MpmRow::Failsafe),
+                13 if has_fs_thr => Some(MpmRow::FailsafeThr),
                 _ => None,
             }
         } else {
@@ -745,11 +756,13 @@ pub fn update_rx_setup(
                 7 => Some(MpmRow::AutoBind),
                 8 => Some(MpmRow::LowPower),
                 9 => Some(MpmRow::RangeCheck),
+                10 => Some(MpmRow::Failsafe),
+                11 if has_fs_thr => Some(MpmRow::FailsafeThr),
                 _ => None,
             }
         }
     }
-    let mpm_row_at = |idx: usize| mpm_row_at_const(idx, HAS_EXT_BAY, has_d16_opt);
+    let mpm_row_at = |idx: usize| mpm_row_at_const(idx, HAS_EXT_BAY, has_d16_opt, has_fs_thr);
 
     let item_count = match current_proto {
         RfProtocol::Afhds2a => 6,
@@ -758,9 +771,9 @@ pub fn update_rx_setup(
             if !has_ext_bay {
                 6
             } else if has_d16_opt {
-                12
+                13 + usize::from(has_fs_thr)
             } else {
-                10
+                11 + usize::from(has_fs_thr)
             }
         }
         RfProtocol::Dsm => {
@@ -1003,6 +1016,20 @@ pub fn update_rx_setup(
                         storage.active_model.rf_power = if next_rc { 1 } else { 0 };
                         storage::save_active_model(storage);
                     }
+                    Some(MpmRow::Failsafe) => {
+                        buzzer.click();
+                        storage.active_model.failsafe_mode =
+                            if storage.active_model.failsafe_mode == 0 {
+                                1
+                            } else {
+                                0
+                            };
+                        storage::save_active_model(storage);
+                    }
+                    Some(MpmRow::FailsafeThr) => {
+                        ctrl.editing = true;
+                        buzzer.click();
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -1078,6 +1105,16 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 } else if keys.down {
                     storage.active_model.set_mpm_freq_tune(cur.saturating_sub(1));
+                    buzzer.play_tone(2200, 30);
+                }
+            }
+            idx if is_mpm_family && mpm_row_at(idx) == Some(MpmRow::FailsafeThr) => {
+                let cur = storage.active_model.failsafe_thr;
+                if keys.up {
+                    storage.active_model.failsafe_thr = cur.saturating_add(10).min(2012);
+                    buzzer.play_tone(2200, 30);
+                } else if keys.down {
+                    storage.active_model.failsafe_thr = cur.saturating_sub(10).max(988);
                     buzzer.play_tone(2200, 30);
                 }
             }
@@ -1399,6 +1436,51 @@ pub fn update_rx_setup(
                             idx == ctrl.selected_item,
                             "Range Check:",
                             Some(pwr_str),
+                        );
+                    }
+                    MpmRow::Failsafe => {
+                        let fs_str = if storage.active_model.failsafe_mode != 0 {
+                            "Custom"
+                        } else {
+                            "Hold"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Failsafe:",
+                            Some(fs_str),
+                        );
+                    }
+                    MpmRow::FailsafeThr => {
+                        let thr = storage.active_model.failsafe_thr.clamp(988, 2012);
+                        let mut buf = [0u8; 10];
+                        let mut pos = 0;
+                        if ctrl.editing && idx == ctrl.selected_item {
+                            buf[pos] = b'[';
+                            pos += 1;
+                        }
+                        if thr >= 1000 {
+                            buf[pos] = b'0' + ((thr / 1000) % 10) as u8;
+                            pos += 1;
+                        }
+                        buf[pos] = b'0' + ((thr / 100) % 10) as u8;
+                        buf[pos + 1] = b'0' + ((thr / 10) % 10) as u8;
+                        buf[pos + 2] = b'0' + (thr % 10) as u8;
+                        buf[pos + 3] = b'u';
+                        buf[pos + 4] = b's';
+                        pos += 5;
+                        if ctrl.editing && idx == ctrl.selected_item {
+                            buf[pos] = b']';
+                            pos += 1;
+                        }
+                        let val_str = core::str::from_utf8(&buf[..pos]).unwrap_or("1000us");
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "FS Thr:",
+                            Some(val_str),
                         );
                     }
                     _ => {}
