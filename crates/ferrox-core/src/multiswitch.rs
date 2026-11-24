@@ -152,8 +152,13 @@ impl MultiSwitchController {
 
         if now_ms.wrapping_sub(self.last_keepalive_ms) >= MULTISWITCH_KEEPALIVE_MS {
             self.last_keepalive_ms = now_ms;
-            for slot in 0..NUM_MULTISWITCH_SLOTS {
-                if (0..=255).contains(&model.multiswitch_addresses[slot]) {
+            for (slot, addr) in model
+                .multiswitch_addresses
+                .iter()
+                .enumerate()
+                .take(NUM_MULTISWITCH_SLOTS)
+            {
+                if (0..=255).contains(addr) {
                     self.dirty_mask |= 1u8 << slot;
                 }
             }

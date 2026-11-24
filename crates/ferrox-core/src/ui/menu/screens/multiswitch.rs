@@ -46,7 +46,7 @@ pub fn update(
                 return;
             }
             widgets::draw_header(lcd, "MULTISWITCH");
-            for slot in 0..4 {
+            for (slot, &addr) in storage.active_model.multiswitch_addresses.iter().enumerate() {
                 let title = [b'M', b'S', b' ', b'1' + slot as u8];
                 let mut buf = [0; 3];
                 widgets::draw_list_row(
@@ -54,10 +54,7 @@ pub fn update(
                     slot,
                     ctrl.selected_item == slot,
                     format::ascii_as_str(&title),
-                    Some(address_text(
-                        storage.active_model.multiswitch_addresses[slot],
-                        &mut buf,
-                    )),
+                    Some(address_text(addr, &mut buf)),
                     72,
                 );
             }
