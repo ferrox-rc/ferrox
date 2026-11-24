@@ -134,6 +134,18 @@ impl Buzzer {
         }
     }
 
+    /// Advance hardware driver timers (e.g. amp warm-up / delayed auto-mute).
+    /// Returns `true` if the hardware amplifier is still warming up from mute.
+    fn hardware_tick(&self, elapsed_ms: u16) -> bool {
+        unsafe {
+            if let Some(ref mut out) = TONE_OUTPUT {
+                out.tick(elapsed_ms);
+                return out.is_warming_up();
+            }
+        }
+        false
+    }
+
     /// Play a single tone of `freq_hz` for `duration_ms`.
     pub fn play_tone(&mut self, freq_hz: u16, duration_ms: u16) {
         self.seq_len = 0;
@@ -239,6 +251,10 @@ impl Buzzer {
 
     /// Periodic update advancing active tone playback (called from main loop).
     pub fn tick(&mut self, elapsed_ms: u16) {
+        let warming_up = self.hardware_tick(elapsed_ms);
+        if warming_up && self.remaining_ms > 0 {
+            return;
+        }
         if self.remaining_ms > 0 {
             if self.remaining_ms <= elapsed_ms {
                 self.remaining_ms = 0;
@@ -390,7 +406,7 @@ impl Buzzer {
     /// Trim position adjustment step. Pitch scales with trim value (-25..+25).
     pub fn trim_step(&mut self, step: i8) {
         let freq = (2000i32 + (step as i32 * 20)).clamp(1500, 2500) as u16;
-        self.play_tone(freq, 65);
+        self.play_tone(freq, 25);
     }
 
     /// Trim center reference confirmed. Higher pitch distinct tone.

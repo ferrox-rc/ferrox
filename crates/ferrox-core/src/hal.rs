@@ -13,6 +13,15 @@ pub trait ToneOutput {
 
     /// Turn off hardware audio generation.
     fn off(&mut self);
+
+    /// Periodic tick for drivers that manage amplifier warm-up or delayed auto-mute.
+    fn tick(&mut self, _elapsed_ms: u16) {}
+
+    /// Returns `true` while an external audio amplifier is still waking from mute.
+    /// When `true`, `Buzzer` holds the active tone countdown so short tones are not clipped.
+    fn is_warming_up(&self) -> bool {
+        false
+    }
 }
 
 /// Dummy no-op tone output for tests and quiet operation.

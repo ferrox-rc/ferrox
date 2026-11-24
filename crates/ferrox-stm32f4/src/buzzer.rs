@@ -97,9 +97,19 @@ impl ToneOutput for DacToneBuzzer {
 
         unsafe {
             tim5.cr1.write(|w| w.bits(0));
-            crate::audio::stop_dac1_dma_and_mute();
+            crate::audio::stop_dac1_dma_keep_amp_warm();
         }
 
         self.is_playing = false;
+    }
+
+    fn tick(&mut self, elapsed_ms: u16) {
+        unsafe {
+            crate::audio::tick_amp_power(elapsed_ms, self.is_playing);
+        }
+    }
+
+    fn is_warming_up(&self) -> bool {
+        crate::audio::is_amp_warming_up()
     }
 }

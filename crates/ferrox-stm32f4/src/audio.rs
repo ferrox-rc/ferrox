@@ -5,15 +5,27 @@
 //! during `sync_dma()` so underruns or end-of-clip transitions never replay stale audio.
 //! Coordinates `PA4` pin muxing and `PE12` (`AUDIO_MUTE`) with [`crate::DacToneBuzzer`].
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use ferrox_core::hal::AudioOutput;
 use stm32f4::stm32f407 as pac;
 
 const BUF_LEN: usize = 2048;
 const DAC_MIDPOINT: u16 = 2048;
 
+/// Keep `PE12` (`AUDIO_MUTE`) unmuted for 1000 ms after the last tone/clip ends so
+/// consecutive clicks, trim steps, melody notes, and vario pulses never re-trigger
+/// external amplifier shutdown/wake-up clipping.
+const AMP_MUTE_HOLD_MS: u16 = 1000;
+
+/// Typical external audio power amplifier wake-up / bypass-capacitor charge time
+/// when transitioning `PE12` from muted (HIGH) to unmuted (LOW).
+const AMP_WAKEUP_MS: u16 = 60;
+
 /// Shared flag so `DacToneBuzzer` does not steal `PA4` or mute `PE12` while PCM is streaming.
 static AUDIO_ACTIVE: AtomicBool = AtomicBool::new(false);
+static AMP_UNMUTED: AtomicBool = AtomicBool::new(false);
+static AMP_MUTE_COUNTDOWN_MS: AtomicU16 = AtomicU16::new(0);
+static AMP_WARMUP_MS: AtomicU16 = AtomicU16::new(0);
 
 /// Returns `true` while the PCM DAC driver owns `PA4` and `PE12`.
 pub fn is_active() -> bool {
@@ -109,6 +121,10 @@ pub(crate) unsafe fn init_dac1_hw() {
     // Park DAC1 at midpoint
     dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
     dac.cr.write(|w| w.bits(1 << 0));
+
+    AMP_UNMUTED.store(false, Ordering::Relaxed);
+    AMP_MUTE_COUNTDOWN_MS.store(0, Ordering::Relaxed);
+    AMP_WARMUP_MS.store(0, Ordering::Relaxed);
 }
 
 /// Configure `DMA1_Stream5` (Channel 7) in circular 16-bit M2P mode feeding `DAC_DHR12R1`
@@ -156,25 +172,63 @@ pub(crate) unsafe fn start_dac1_circular_dma(buf_ptr: u32, len: u32, tsel: u32) 
         .write(|w| w.bits((1 << 0) | (1 << 2) | ((tsel & 0x07) << 3) | (1 << 12)));
 }
 
-/// Mute `PE12` (`AUDIO_MUTE` HIGH), stop `DMA1_Stream5`, and park `DAC1` at midpoint (`2048`).
-pub(crate) unsafe fn stop_dac1_dma_and_mute() {
-    let gpioe = &*pac::GPIOE::ptr();
+/// Stop `DMA1_Stream5`, park `DAC1` at midpoint (`2048`), and arm the delayed auto-mute
+/// timer instead of immediately shutting down `PE12` (`AUDIO_MUTE`).
+pub(crate) unsafe fn stop_dac1_dma_keep_amp_warm() {
     let dac = &*pac::DAC::ptr();
     let dma1 = &*pac::DMA1::ptr();
-
-    // Mute audio amp first (PE12 HIGH)
-    gpioe.bsrr.write(|w| w.bits(1 << 12));
 
     dma1.st[5].cr.modify(|r, w| w.bits(r.bits() & !1));
     dac.dhr12r1.write(|w| w.bits(DAC_MIDPOINT as u32));
     dac.cr.write(|w| w.bits(1 << 0)); // EN1 only (holding midpoint)
+
+    if AMP_UNMUTED.load(Ordering::Relaxed) {
+        AMP_MUTE_COUNTDOWN_MS.store(AMP_MUTE_HOLD_MS, Ordering::Relaxed);
+    }
 }
 
-/// Unmute `PE12` (`AUDIO_MUTE` LOW).
+/// Unmute `PE12` (`AUDIO_MUTE` LOW) and start the warm-up timer if waking from mute.
 #[inline]
 pub(crate) unsafe fn unmute_amp() {
-    let gpioe = &*pac::GPIOE::ptr();
-    gpioe.bsrr.write(|w| w.bits(1 << (12 + 16)));
+    AMP_MUTE_COUNTDOWN_MS.store(0, Ordering::Relaxed);
+    if !AMP_UNMUTED.swap(true, Ordering::Relaxed) {
+        let gpioe = &*pac::GPIOE::ptr();
+        gpioe.bsrr.write(|w| w.bits(1 << (12 + 16)));
+        AMP_WARMUP_MS.store(AMP_WAKEUP_MS, Ordering::Relaxed);
+    }
+}
+
+/// Returns `true` while the external audio amplifier is still waking from mute.
+#[inline]
+pub(crate) fn is_amp_warming_up() -> bool {
+    AMP_WARMUP_MS.load(Ordering::Relaxed) > 0
+}
+
+/// Advance amplifier warm-up and idle auto-mute timers.
+/// Asserts `PE12` HIGH (muted) once idle for `AMP_MUTE_HOLD_MS`.
+pub(crate) unsafe fn tick_amp_power(elapsed_ms: u16, tone_playing: bool) {
+    let warmup = AMP_WARMUP_MS.load(Ordering::Relaxed);
+    if warmup > 0 {
+        AMP_WARMUP_MS.store(warmup.saturating_sub(elapsed_ms), Ordering::Relaxed);
+    }
+
+    if tone_playing || is_active() {
+        AMP_MUTE_COUNTDOWN_MS.store(0, Ordering::Relaxed);
+        return;
+    }
+
+    if AMP_UNMUTED.load(Ordering::Relaxed) {
+        let rem = AMP_MUTE_COUNTDOWN_MS.load(Ordering::Relaxed);
+        if rem <= elapsed_ms {
+            let gpioe = &*pac::GPIOE::ptr();
+            gpioe.bsrr.write(|w| w.bits(1 << 12)); // PE12 HIGH = muted
+            AMP_UNMUTED.store(false, Ordering::Relaxed);
+            AMP_MUTE_COUNTDOWN_MS.store(0, Ordering::Relaxed);
+            AMP_WARMUP_MS.store(0, Ordering::Relaxed);
+        } else {
+            AMP_MUTE_COUNTDOWN_MS.store(rem - elapsed_ms, Ordering::Relaxed);
+        }
+    }
 }
 
 impl AudioOutput for Stm32f4AudioDriver {
@@ -235,7 +289,7 @@ impl AudioOutput for Stm32f4AudioDriver {
 
         unsafe {
             tim6.cr1.write(|w| w.bits(0));
-            stop_dac1_dma_and_mute();
+            stop_dac1_dma_keep_amp_warm();
         }
 
         self.active = false;
