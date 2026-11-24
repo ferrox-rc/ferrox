@@ -100,6 +100,9 @@ pub fn for_each_eeprom_page(
         let chunk_size = bytes_in_page.min(total - offset).min(PAGE_SIZE);
 
         write_page(cur_addr, &buf[offset..offset + chunk_size])?;
+        if crate::board::ActiveBoard::HAS_EXTERNAL_MODULE_BAY {
+            crate::rf::mpm::pump_if_due(crate::time::millis());
+        }
 
         offset += chunk_size;
         if offset < total {

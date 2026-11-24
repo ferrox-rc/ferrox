@@ -245,6 +245,11 @@ impl FlightPipeline {
                         rf::is_binding(),
                         active_model.mpm_range_check(),
                         active_model.rf_module_target,
+                        if active_model.failsafe_mode != 0 {
+                            active_model.failsafe_thr
+                        } else {
+                            0
+                        },
                     );
                     rf::mpm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);

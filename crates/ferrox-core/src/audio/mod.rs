@@ -277,10 +277,10 @@ impl AudioPlayer {
             }
         }
 
-        // Stream up to 4 sectors per background tick so we never stall the 4ms RF loop.
+        // Stream at most 1 sector per background tick (~0.5 ms) so we never stall the RF loop.
         let mut sectors_this_tick = 0usize;
         let mut dac_buf = [0u16; 256];
-        while self.cursor.is_some() && out.free_space() >= 64 && sectors_this_tick < 4 {
+        while self.cursor.is_some() && out.free_space() >= 64 && sectors_this_tick < 1 {
             let Some(fmt) = self.fmt else {
                 self.cursor = None;
                 break;
@@ -488,7 +488,9 @@ struct StorageBusBlockDevice;
 
 impl BlockDevice for StorageBusBlockDevice {
     fn read_sector(&mut self, lba: u32, buf: &mut [u8; 512]) -> Result<(), ()> {
-        crate::storage::read_raw_sd_sector(lba, buf)
+        let res = crate::storage::read_raw_sd_sector(lba, buf);
+        crate::rf::mpm::pump_if_due(crate::time::millis());
+        res
     }
 }
 

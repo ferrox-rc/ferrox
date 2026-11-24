@@ -44,7 +44,6 @@ pub fn update_aux_channels(
         if ctrl.editing {
             ctrl.editing = false;
         } else {
-            storage::save_active_model(storage);
             ctrl.return_to_main_menu();
             buzzer.click();
             return;
@@ -85,6 +84,7 @@ pub fn update_aux_channels(
         }
         if keys.ok {
             ctrl.editing = false;
+            storage::save_active_model(storage);
             buzzer.click();
         }
     }
@@ -134,7 +134,6 @@ pub fn update_channel_reverse(
     const CH_COUNT: usize = 18;
 
     if keys.cancel {
-        storage::save_active_model(storage);
         ctrl.return_to_main_menu();
         buzzer.click();
         return;
@@ -151,6 +150,7 @@ pub fn update_channel_reverse(
 
     if keys.ok {
         storage.active_model.channel_reverse ^= 1 << ctrl.selected_item;
+        storage::save_active_model(storage);
         buzzer.click();
     }
 

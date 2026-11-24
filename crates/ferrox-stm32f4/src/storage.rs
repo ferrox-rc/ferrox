@@ -8,6 +8,7 @@ use crate::sdcard::{SpiSdCard, FERROX_TELEM_SECTOR_BASE, SD_SECTOR_SIZE};
 const EEPROM_ADDR: u8 = 0x51; // 7-bit I2C address for M24256 on Q X7 family
 
 pub struct PocketEepromI2cBus<H: Qx7HalDescriptor = PocketHal> {
+    has_i2c_eeprom: bool,
     using_sd: bool,
     sd_card: SpiSdCard<H>,
     raw_gap: Option<ferrox_core::storage::SdRawGap>,
@@ -18,6 +19,7 @@ pub struct PocketEepromI2cBus<H: Qx7HalDescriptor = PocketHal> {
 impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
     pub const fn new() -> Self {
         Self {
+            has_i2c_eeprom: false,
             using_sd: false,
             sd_card: SpiSdCard::new(),
             raw_gap: None,
@@ -371,6 +373,7 @@ impl<H: Qx7HalDescriptor> PocketEepromI2cBus<H> {
             sector_buf[sector_offset..sector_offset + chunk_size]
                 .copy_from_slice(&buf[offset..offset + chunk_size]);
             self.sd_card.write_sector(sector_idx, &sector_buf)?;
+            ferrox_core::rf::mpm::pump_if_due(ferrox_core::time::millis());
 
             cur_addr += chunk_size;
             offset += chunk_size;
@@ -389,10 +392,12 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
     fn init(&mut self) -> bool {
         // 1. Probe I2C1 EEPROM first (FrSky QX7 / X9D+ with onboard M24256)
         if self.init_i2c() {
+            self.has_i2c_eeprom = true;
             self.using_sd = false;
             self.raw_gap = None;
             return true;
         }
+        self.has_i2c_eeprom = false;
 
         // 2. Fall back to SPI2 SD card (RadioMaster Pocket, Boxer, Zorro, TX12 MKII),
         //    STRICTLY verifying a safe MBR pre-partition gap before enabling raw writes!
@@ -417,16 +422,20 @@ impl<H: Qx7HalDescriptor> StorageBus for PocketEepromI2cBus<H> {
     fn read(&mut self, addr: u16, buf: &mut [u8]) -> Result<(), ()> {
         if self.using_sd {
             self.read_sd(addr, buf)
-        } else {
+        } else if self.has_i2c_eeprom {
             self.read_i2c(addr, buf)
+        } else {
+            Err(())
         }
     }
 
     fn write(&mut self, addr: u16, buf: &[u8]) -> Result<(), ()> {
         if self.using_sd {
             self.write_sd(addr, buf)
-        } else {
+        } else if self.has_i2c_eeprom {
             self.write_i2c(addr, buf)
+        } else {
+            Err(())
         }
     }
 

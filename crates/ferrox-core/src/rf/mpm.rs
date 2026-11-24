@@ -7,6 +7,7 @@
 
 #![allow(static_mut_refs)]
 
+use crate::board::BoardProfile;
 use crate::mixer::NUM_CHANNELS;
 pub use crate::rf::cc2500::{Cc2500Protocol, MultiProtoSpec};
 
@@ -239,25 +240,48 @@ pub fn get_telemetry() -> MpmTelemetry {
     unsafe { MPM_TELEM }
 }
 
+static mut LAST_SPEC: Option<&'static MultiProtoSpec> = None;
+static mut LAST_CHS: [u16; NUM_CHANNELS] = [1500; NUM_CHANNELS];
+static mut LAST_RX_FLAGS: u8 = 0;
+static mut LAST_FREQ_TUNE: i8 = 0;
+static mut LAST_BIND_REQ: bool = false;
+static mut LAST_RANGE_CHECK: bool = false;
+static mut LAST_TARGET_FLAGS: u8 = 0;
+static mut LAST_FAILSAFE_THR: u16 = 0;
+static mut FS_COUNTER: u16 = 0;
+
 /// Periodic MPM/CC2500 serial frame transmission (`~111 Hz` / `9 ms` interval).
 ///
 /// `raw_mpm_rx_flags` is `ModelConfig::mpm_rx_num` (`bits 3:0` = rx_num, `5:4` = d16_bind_opt,
 /// `6` = low_power, `7` = ch8_mode); `raw_target_flags` is `ModelConfig::rf_module_target`
-/// (`bit 0` = external_bay, `1` = autobind).
+/// (`bit 0` = external_bay, `1` = autobind); `failsafe_thr_opt` is `0` when disabled or
+/// the CH3 throttle failsafe pulse (`988..=2012` us).
 #[allow(clippy::too_many_arguments)]
 pub fn update_link(
     now_ms: u32,
     channels_us: &[u16; NUM_CHANNELS],
-    spec: &MultiProtoSpec,
+    spec: &'static MultiProtoSpec,
     raw_mpm_rx_flags: u8,
     freq_tune: i8,
     bind_req: bool,
     range_check: bool,
     raw_target_flags: u8,
+    failsafe_thr_opt: u16,
 ) {
     unsafe {
         if !MPM_ENABLED {
             return;
+        }
+
+        if crate::board::ActiveBoard::HAS_EXTERNAL_MODULE_BAY {
+            LAST_SPEC = Some(spec);
+            LAST_CHS = *channels_us;
+            LAST_RX_FLAGS = raw_mpm_rx_flags;
+            LAST_FREQ_TUNE = freq_tune;
+            LAST_BIND_REQ = bind_req;
+            LAST_RANGE_CHECK = range_check;
+            LAST_TARGET_FLAGS = raw_target_flags;
+            LAST_FAILSAFE_THR = failsafe_thr_opt;
         }
 
         if bind_req && !PREV_BIND_REQ {
@@ -296,6 +320,10 @@ pub fn update_link(
             } else {
                 spec.default_sub
             };
+
+            let send_failsafe = failsafe_thr_opt != 0 && !binding && FS_COUNTER == 0;
+            FS_COUNTER = (FS_COUNTER + 1) % 1000;
+
             let mut frame = [0u8; 28];
             let len = pack_mpm_frame(
                 channels_us,
@@ -309,11 +337,37 @@ pub fn update_link(
                 d16_bind_opt,
                 low_power,
                 autobind,
+                send_failsafe,
+                failsafe_thr_opt,
                 &mut frame,
             );
             crate::uart::write_bytes(&frame[..len]);
             MPM_TELEM.packets_sent = MPM_TELEM.packets_sent.wrapping_add(1);
         }
+    }
+}
+
+/// Keep the 9 ms MPM RC link alive during synchronous SD card / EEPROM I/O bursts.
+pub fn pump_if_due(now_ms: u32) {
+    unsafe {
+        if !MPM_ENABLED || now_ms.wrapping_sub(LAST_TX_MS) < 9 {
+            return;
+        }
+        let Some(spec) = LAST_SPEC else {
+            return;
+        };
+        let chs = LAST_CHS;
+        update_link(
+            now_ms,
+            &chs,
+            spec,
+            LAST_RX_FLAGS,
+            LAST_FREQ_TUNE,
+            LAST_BIND_REQ,
+            LAST_RANGE_CHECK,
+            LAST_TARGET_FLAGS,
+            LAST_FAILSAFE_THR,
+        );
     }
 }
 
@@ -324,7 +378,7 @@ pub fn poll_telemetry(now_ms: u32) {
             return;
         }
 
-        let mut budget = 64u8;
+        let mut budget = 128u8;
         while budget > 0 {
             budget -= 1;
             let Some(b) = crate::uart::read_byte() else {
@@ -579,7 +633,7 @@ pub fn process_mpm_packet(pkt_type: u8, payload: &[u8], now_ms: u32, telem: &mut
 }
 
 /// Format a 27- or 28-byte Multi v1.3+ CC2500/4-in-1 serial frame (100,000 baud 8E2):
-/// - Byte 0: `0x55` (`proto_id & 0x20 == 0`) or `0x54` (`proto_id & 0x20 != 0`)
+/// - Byte 0: `0x55`/`0x54` (`| 0x02` when `failsafe` is true -> `0x57`/`0x56`)
 /// - Byte 1: `(bind << 7) | (auto_bind << 6) | (range_check << 5) | (proto_id & 0x1F)`
 /// - Byte 2: `(low_power << 7) | ((sub_proto & 0x07) << 4) | (rx_num & 0x0F)`
 /// - Byte 3: `option` (`-127..+127`, frequency fine tuning)
@@ -600,11 +654,18 @@ pub fn pack_mpm_frame(
     d16_bind_opt: u8,
     low_power: bool,
     autobind: bool,
+    failsafe: bool,
+    failsafe_thr: u16,
     out: &mut [u8; 28],
 ) -> usize {
     let proto_id = spec.wire_id;
-    // MULTI-Module uses 0x55 for bit5==0 (0..31, 64..95) and 0x54 for bit5==1 (32..63, 96..127).
-    out[0] = if (proto_id & 0x20) != 0 { 0x54 } else { 0x55 };
+    // MULTI-Module uses 0x55 for bit5==0 (0..31, 64..95) and 0x54 for bit5==1 (32..63, 96..127);
+    // bit 1 (0x02) marks a MULTI_FAILSAFE packet.
+    let mut header = if (proto_id & 0x20) != 0 { 0x54 } else { 0x55 };
+    if failsafe {
+        header |= 0x02;
+    }
+    out[0] = header;
 
     let mut b1 = proto_id & 0x1F;
     if binding {
@@ -630,7 +691,16 @@ pub fn pack_mpm_frame(
     let mut bits_in_acc: u8 = 0;
     let mut byte_idx = 4;
 
-    for &us in channels_us[..16].iter() {
+    for (ch_i, &live_us) in channels_us[..16].iter().enumerate() {
+        let us = if failsafe {
+            if ch_i == 2 {
+                failsafe_thr
+            } else {
+                1500
+            }
+        } else {
+            live_us
+        };
         let us_clamped = us.clamp(988, 2012) as u32;
         let val11 = (((us_clamped - 988) * 1639) >> 10).saturating_add(172).min(2047);
         bit_acc |= val11 << bits_in_acc;
@@ -647,7 +717,7 @@ pub fn pack_mpm_frame(
     // RX_num |= rx_ok_buff[26] & 0x30, bit 3 = invert telemetry for external bay).
     out[26] = (proto_id & 0xC0) | (rx_num & 0x30) | if external_bay { 0x08 } else { 0x00 };
 
-    if binding && is_d16_protocol(proto_id) {
+    if binding && !failsafe && is_d16_protocol(proto_id) {
         out[27] = d16_bind_opt & 0x03;
         28
     } else {
@@ -676,6 +746,8 @@ mod tests {
             0,
             false,
             false,
+            false,
+            1000,
             &mut frame,
         );
 
@@ -685,6 +757,26 @@ mod tests {
         assert_eq!(frame[2], 0x01); // Sub 0, RxNum 1
         assert_eq!(frame[3] as i8, -15); // Frequency tuning
         assert_eq!(frame[26], 0x00); // Internal: normal telemetry, proto < 64
+
+        // Failsafe packet sets header bit 1 (0x57)
+        let fs_len = pack_mpm_frame(
+            &chs,
+            Cc2500Protocol::FrSkyX.spec(),
+            0,
+            1,
+            0,
+            false,
+            false,
+            true,
+            0,
+            false,
+            false,
+            true,
+            1000,
+            &mut frame,
+        );
+        assert_eq!(fs_len, 27);
+        assert_eq!(frame[0], 0x57);
     }
 
     #[test]
@@ -705,6 +797,8 @@ mod tests {
             3,
             true,
             true,
+            false,
+            1000,
             &mut frame,
         );
 
@@ -727,6 +821,8 @@ mod tests {
             2, // Ch9-16 Telem ON
             false,
             false,
+            false,
+            1000,
             &mut frame,
         );
         assert_eq!(len_d16, 28);
@@ -754,6 +850,8 @@ mod tests {
                 0,
                 false,
                 false,
+                false,
+                1000,
                 &mut frame
             ),
             27
@@ -775,6 +873,8 @@ mod tests {
                 0,
                 false,
                 false,
+                false,
+                1000,
                 &mut frame
             ),
             27
@@ -796,6 +896,8 @@ mod tests {
                 1, // Ch1-8 Telem OFF
                 false,
                 false,
+                false,
+                1000,
                 &mut frame,
             ),
             28

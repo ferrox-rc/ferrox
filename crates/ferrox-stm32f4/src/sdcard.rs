@@ -82,9 +82,12 @@ impl<H: Qx7HalDescriptor> SpiSdCard<H> {
     }
 
     fn wait_ready(&self) -> bool {
-        for _ in 0..250_000 {
+        for i in 0..250_000u32 {
             if self.spi_transfer_byte(0xFF) == 0xFF {
                 return true;
+            }
+            if (i & 0xFF) == 0 {
+                ferrox_core::rf::mpm::pump_if_due(ferrox_core::time::millis());
             }
         }
         false
