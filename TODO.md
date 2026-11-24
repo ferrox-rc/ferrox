@@ -68,45 +68,40 @@ These issues directly affect flight safety or hardware operation and were resolv
 - [ ] **Full Documentation Review *(High Priority — Post-`v1.0.0`)***
   - *Scope:* Comprehensive audit and update of `README.md`, `docs/USER_GUIDE.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and Web Flasher guides to reflect `v1.0.0` features (dual-module UART routing, `CC2500` vs. `MPM 4-in-1` split, custom build `-sd.bin` vs. DFU flashing, restoring EdgeTX bootloader, Mode 1–4 trims, Vario setup, and F5J soaring).
 
-- [ ] **STM32F4 `AUX_SOURCES` Stick Mapping Parity (GitHub Issue #40 — Part 1)**
+- [X] **STM32F4 `AUX_SOURCES` Stick Mapping Parity (GitHub Issue #40 — Part 1)**
   - *Reported by:* WimH ([GitHub Issue #40](https://github.com/ferrox-rc/ferrox/issues/40#issuecomment-6970857477))
   - *Issue:* On Zorro (and other STM32F4 `qx7_family` radios), setting `Wing/Tail` to `Freeform` unlocks `CH1..CH18` in the `CHANNELS` screen, but only cycles through switches (`SA..SH`) and pots (`S1`/`S2`)—omitting the primary sticks (`Roll`, `Pitch`, `Thr`, `Yaw`). On `i6x.rs` and `i6s.rs`, `AUX_SOURCES` includes `1, 2, 3, 4` (`Roll`, `Pitch`, `Thr`, `Yaw`), whereas on `zorro.rs` and the other 10 STM32F4 board profiles, `1, 2, 3, 4` were accidentally omitted from `AUX_SOURCES`.
   - *Focus Files & Functions:*
     - [`crates/ferrox-core/src/board/zorro.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/zorro.rs#L48), [`pocket.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/pocket.rs#L45), [`boxer.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/boxer.rs#L46), [`tx12.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/tx12.rs#L46), [`qx7.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/qx7.rs#L46), [`tprov2.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/tprov2.rs#L48), [`t12.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/t12.rs#L46), [`x9d.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/x9d.rs#L51), [`x9e.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/x9e.rs#L51), [`at9spro.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/at9spro.rs#L51), [`gx12.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/gx12.rs#L48): Prepend `1, 2, 3, 4` (`Roll`, `Pitch`, `Thr`, `Yaw`) after `0` (`None`) in `AUX_SOURCES` to match [`i6x.rs:126`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/i6x.rs#L126) and [`i6s.rs:132`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/i6s.rs#L132).
 
-- [ ] **Rename `"Wing / Mixer"` & `"Wing:"` Menu Labels to Mixer `"Type:"`**
+- [X] **Rename `"Wing / Mixer"` & `"Wing:"` Menu Labels to Mixer `"Type:"`**
   - *Issue:* The template selector (`NORMAL`, `ELEVON`, `V-TAIL`, `FLAPERON`, `FREEFORM`) is currently labeled `"Wing:"` inside `"WING & MIXER"`, which obscures that it selects the overall mixer template / mode (including `FREEFORM`).
   - *Focus Files & Functions:*
-    - [`crates/ferrox-core/src/ui/menu/screens/mixer.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/mixer.rs#L568) (`update_wing_mixer`) & [`line 613`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/mixer.rs#L613) (`render_wing_mixer_row`): Rename `"Wing:"` row label to `"Type:"` (or `"Mix Type:"`) and header `"WING & MIXER"` to `"MIXER"`.
-    - [`crates/ferrox-core/src/board/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/mod.rs#L130) (`MainMenuItem::WingMixer::label`): Rename main menu item from `"Wing / Mixer"` to `"Mixer"`.
+    - [`crates/ferrox-core/src/ui/menu/screens/mixer.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/mixer.rs#L590) (`update_wing_mixer`) & [`line 634`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/mixer.rs#L634) (`render_wing_mixer_row`): Renamed row label to `"Type:"` and header to `"MIXER"`.
+    - [`crates/ferrox-core/src/board/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/board/mod.rs#L141) (`MainMenuItem::WingMixer::title`): Renamed main menu item from `"Wing / Mixer"` to `"Mixer"`.
 
-- [ ] **Timer Triggers & Latch Behavior**
+- [X] **Timer Triggers & Latch Behavior**
   - *Issue:* Throttle timer triggers (`Tht` and `Ths`) only evaluate the throttle stick, and the timer "latch" setting does not hold run state properly.
   - *Focus Files & Functions:*
-    - [`crates/ferrox-core/src/timer.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/timer.rs#L258-L272) (`TimerBank::update`): Bug where `state.is_running = state.latched_running && is_armed;` unconditionally blocks timers on models without an arm switch configured.
-    - [`crates/ferrox-core/src/timer.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/timer.rs#L223-L243): Decouple `Tht`/`Ths` from raw stick value to support channel throttle assignment.
-    - [`crates/ferrox-core/src/runtime.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/runtime.rs#L835-L855): Verify `is_armed_or_unassigned` passed to `self.timers.update()`.
+    - [`crates/ferrox-core/src/timer.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/timer.rs#L223-L271) (`TimerBank::update`): Gated `THs`/`THt` throttle triggers on `is_armed` and removed unconditional `&& is_armed` blocking from latched and switch-triggered timers.
+    - [`crates/ferrox-core/src/runtime.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/runtime.rs#L905-L925): Passes `is_armed_or_unassigned` into `self.timers.update()`.
 
-- [ ] **Horizontal Roller Inversion Consistency**
+- [X] **Horizontal Roller Inversion Consistency**
   - *Issue:* Roller works well for vertical list navigation, but left/right cursor movement or variable adjustment is inverted in certain edit screens.
   - *Focus Files & Functions:*
-    - [`crates/ferrox-stm32f4/src/keys.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-stm32f4/src/keys.rs#L135-L155) (`Qx7KeyDriver::read_keys`): Rotary encoder transition quadrature accumulator and polarity logic.
-    - [`crates/ferrox-core/src/ui/menu/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/mod.rs#L260-L285) & [`lines 411-420`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/mod.rs#L411-L420): Mapping of encoder pulses to `NavKeys` (`up`/`down`).
-    - [`crates/ferrox-core/src/ui/menu/screens/setup.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/setup.rs#L858-L915): Inverted increment/decrement direction during parameter editing.
-    - [`crates/ferrox-core/src/ui/menu/screens/soaring.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/soaring.rs#L126-L165): `let dir: i16 = if keys.up { 1 } else { -1 };`.
+    - [`crates/ferrox-core/src/ui/menu/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/mod.rs#L421-L435): Swapped `up`/`down` in `NavKeys` when `ActiveBoard::HAS_ROTARY_ENCODER && self.editing` so clockwise/right consistently increments values across all edit screens.
 
-- [ ] **Separate Native CC2500 from Multi-Protocol Module (MPM)**
+- [X] **Separate Native CC2500 from Multi-Protocol Module (MPM)**
   - *Issue:* Choosing CC2500 lists protocols unsupported by the CC2500 RF chip because internal CC2500 and serial MPM share a menu enum.
   - *Focus Files & Functions:*
-    - [`crates/ferrox-core/src/rf/mpm.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/rf/mpm.rs#L26-L100) (`Cc2500Protocol`): Currently contains FlySky (A7105) and DSMX (CYRF6936) which are only supported on 4-in-1 MPM, not discrete CC2500. Split into native CC2500 vs MPM 4-in-1 protocol lists.
-    - [`crates/ferrox-core/src/ui/menu/screens/setup.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/setup.rs#L882-L893): Protocol selection and cycling in setup menu.
+    - [`crates/ferrox-core/src/rf/cc2500.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/rf/cc2500.rs) & [`crates/ferrox-core/src/rf/mpm.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/rf/mpm.rs): Split native CC2500 (`Cc2500Protocol`) from 4-in-1 MPM (`MpmProtocol` / `MPM_PROTOCOLS`).
 
-- [ ] **F5J Window Time Granularity (10s Steps) & Rename 10s Window to "Zoom"**
+- [X] **F5J Window Time Granularity (10s Steps) & Rename 10s Window to "Zoom"**
   - *Issue:* Window time step size is 30 seconds; pilots need 10-second steps (e.g., 10:20 or 15:20) to synchronize with competition horn countdowns, and the 10s post-cutoff phase is standardly called "Zoom".
   - *Focus Files & Functions:*
-    - [`crates/ferrox-core/src/ui/menu/screens/model.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/model.rs#L772-L781): Change timer duration edit increment from `+= 30` / `-= 30` to `+= 10` / `-= 10` seconds.
-    - [`crates/ferrox-core/src/soaring/f5j/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/soaring/f5j/mod.rs#L28-L46) (`F5jPhase::Window`): Rename to `F5jPhase::Zoom`, update `as_str()` from `"WIN"` to `"ZOOM"` or `"ZM"`.
-    - [`crates/ferrox-core/src/ui/dashboard/pages/f5j.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/dashboard/pages/f5j.rs#L1-L30): Update dashboard phase text rendering.
+    - [`crates/ferrox-core/src/ui/menu/screens/model.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/model.rs#L787-L795): Changed timer duration edit increment from `+= 30` / `-= 30` to `+= 10` / `-= 10` seconds.
+    - [`crates/ferrox-core/src/soaring/f5j/mod.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/soaring/f5j/mod.rs#L28-L46) (`F5jPhase::Zoom`): Renamed from `F5jPhase::Window` and updated `as_str()` from `"WIN"` to `"ZOOM"`.
+    - [`crates/ferrox-core/src/ui/dashboard/pages/f5j.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/dashboard/pages/f5j.rs#L113): Updated dashboard phase reference.
 
 - [ ] **Documentation & Community Workflow (`v1.0.1`)**
   - **Document & Polish Voice Settings:** Clarify `"Voice Intv"` (periodic telemetry repeat interval) in [`setup.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/ui/menu/screens/setup.rs#L234-L242), [`storage.rs`](file:///home/bryansouza/Repos/ferrox/crates/ferrox-core/src/storage.rs#L415-L445), and [`docs/USER_GUIDE.md`](file:///home/bryansouza/Repos/ferrox/docs/USER_GUIDE.md).

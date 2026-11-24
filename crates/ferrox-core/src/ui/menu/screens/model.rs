@@ -784,13 +784,13 @@ pub fn update_timer_setup(
     } else {
         match ctrl.selected_item {
             1 => {
-                // Target duration edit in 30-sec increments
-                if keys.up && cfg.secs <= 3570 {
-                    cfg.secs += 30;
+                // Target duration edit in 10-sec increments
+                if keys.up && cfg.secs <= 3590 {
+                    cfg.secs += 10;
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
-                } else if keys.down && cfg.secs >= 30 {
-                    cfg.secs -= 30;
+                } else if keys.down && cfg.secs >= 10 {
+                    cfg.secs -= 10;
                     storage.active_model.set_timer_config(timer_idx, cfg);
                     buzzer.play_tone(2200, 20);
                 }

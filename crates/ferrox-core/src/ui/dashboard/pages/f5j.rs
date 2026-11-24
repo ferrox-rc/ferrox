@@ -110,7 +110,7 @@ pub fn render(
     let t_str = ascii_as_str(&t_buf[..tp]);
     let badge_w = (tp as i32) * 4 + 2;
     let badge_x = (w - badge_w - 1).max(0);
-    let invert_badge = f5j.phase == F5jPhase::Motor || f5j.phase == F5jPhase::Window || f5j.landed;
+    let invert_badge = f5j.phase == F5jPhase::Motor || f5j.phase == F5jPhase::Zoom || f5j.landed;
     if invert_badge {
         lcd.fill_rect(badge_x, 11, badge_w as u32, 7, true);
         lcd.draw_str_4x6(badge_x + 1, 12, t_str, true);

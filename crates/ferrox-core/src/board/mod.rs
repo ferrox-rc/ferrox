@@ -138,13 +138,13 @@ impl MainMenuItem {
             Self::ModelSetup => "Model Setup",
             Self::DualRateExpo => "Dual Rate/Expo",
             Self::ThrottleCurve => "Throttle Curve",
-            Self::WingMixer => "Wing / Mixer",
+            Self::WingMixer => "Mixer",
             Self::AuxChannels => "Channels",
             Self::ChannelReverse => "Channel Reverse",
             Self::RadioSetup => "Radio Setup",
             Self::ChannelMonitor => "Channel Monitor",
             Self::Calibration => "Calibration",
-            Self::DiagAnas => "Analog Diag",
+            Self::DiagAnas => "Diagnostics",
             Self::SystemInfo => "System Info",
         }
     }

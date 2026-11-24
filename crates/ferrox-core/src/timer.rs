@@ -222,10 +222,10 @@ impl TimerBank {
             // Evaluate raw start trigger
             let start_active = match cfg.start_src {
                 0 => false,
-                1 => throttle > -900,
+                1 => is_armed && throttle > -900,
                 2 => {
-                    // THt: latches on once throttle exceeds 5%
-                    if throttle > -900 {
+                    // THt: latches on once armed and throttle exceeds 5%
+                    if is_armed && throttle > -900 {
                         state.latched_running = true;
                     }
                     state.latched_running
@@ -263,11 +263,10 @@ impl TimerBank {
                 if stop_edge {
                     state.latched_running = false;
                 }
-                // Also respect THt unlatch if throttle stick drops in unlatched conditions
-                state.is_running = state.latched_running && is_armed;
+                state.is_running = state.latched_running;
             } else {
                 // Level mode: runs while start condition holds AND stop condition does NOT hold
-                state.is_running = start_active && !stop_active && is_armed;
+                state.is_running = start_active && !stop_active;
             }
 
             // Accumulate elapsed time if running

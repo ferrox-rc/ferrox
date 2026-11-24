@@ -26,7 +26,7 @@ pub enum F5jPhase {
     /// Motor running (up to 30 seconds).
     Motor = 2,
     /// 10-second post-motor zoom measurement window.
-    Window = 3,
+    Zoom = 3,
     /// Free glide / thermal flight.
     Glide = 4,
     /// Touchdown automatically detected and flight duration frozen.
@@ -38,7 +38,7 @@ impl F5jPhase {
         match self {
             Self::Idle => "RDY",
             Self::Motor => "MOT",
-            Self::Window => "WIN",
+            Self::Zoom => "ZOOM",
             Self::Glide => "GLD",
             Self::Landed => "LND",
         }
@@ -213,7 +213,7 @@ impl F5jEngine {
             self.motor_started = true;
             self.is_restart = was_in_flight && cfg.is_f5j();
             self.phase = if cfg.is_f3k() {
-                F5jPhase::Window
+                F5jPhase::Zoom
             } else {
                 F5jPhase::Motor
             };
@@ -324,7 +324,7 @@ impl F5jEngine {
                         }
                     }
                     if motor_elapsed_ms >= 30_000 || motor_pct < cfg.motor_off_thr_pct {
-                        self.phase = F5jPhase::Window;
+                        self.phase = F5jPhase::Zoom;
                         self.window_start_ms = now_ms;
                         self.last_window_sec = 0;
                         if audio_en {
@@ -332,7 +332,7 @@ impl F5jEngine {
                         }
                     }
                 }
-                F5jPhase::Window => {
+                F5jPhase::Zoom => {
                     if self.rel_alt_dm > self.f5j_peak_alt_dm {
                         self.f5j_peak_alt_dm = self.rel_alt_dm;
                     }
@@ -406,7 +406,7 @@ impl F5jEngine {
         // Reset motor hysteresis once motor stick/switch returns below OFF threshold
         if matches!(
             self.phase,
-            F5jPhase::Window | F5jPhase::Glide | F5jPhase::Landed
+            F5jPhase::Zoom | F5jPhase::Glide | F5jPhase::Landed
         ) && motor_pct < cfg.motor_off_thr_pct
         {
             self.motor_started = false;
@@ -451,13 +451,13 @@ mod tests {
 
         // Auto-cutoff at 30s motor run (t = 31000 ms) while motor still held high
         engine.update(31_000, &chs, &make_telem(1900), &cfg, &mut buzzer);
-        assert_eq!(engine.phase, F5jPhase::Window);
+        assert_eq!(engine.phase, F5jPhase::Zoom);
         assert_eq!(engine.f5j_peak_alt_dm, 900); // 90.0m at cutoff
 
         // During 10s zoom window, glider zooms to +128.0m at t = 36000 ms
         chs[2] = 988; // pilot cuts motor stick
         engine.update(36_000, &chs, &make_telem(2280), &cfg, &mut buzzer);
-        assert_eq!(engine.phase, F5jPhase::Window);
+        assert_eq!(engine.phase, F5jPhase::Zoom);
         assert_eq!(engine.f5j_peak_alt_dm, 1280);
 
         // At t = 41000 ms (10s window closes), start height freezes at 128m

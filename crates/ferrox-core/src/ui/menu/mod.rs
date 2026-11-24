@@ -418,11 +418,20 @@ impl MenuController {
         let dr_change = switches.detect_dr_switch_change(&self.prev_switches);
         self.prev_switches = *switches;
 
+        // On rotary-encoder radios, rolling clockwise/right emits `down` (natural for
+        // vertical list scrolling), whereas edit mode expects `up` to increment/advance.
+        // Swap `up`/`down` while editing so clockwise/right consistently increments values.
+        let (nav_up, nav_down) = if ActiveBoard::HAS_ROTARY_ENCODER && self.editing {
+            (down_pressed, up_pressed)
+        } else {
+            (up_pressed, down_pressed)
+        };
+
         let nav_keys = NavKeys {
             ok: (newly_pressed & (1 << 10)) != 0,
             cancel: (newly_pressed & (1 << 11)) != 0,
-            up: up_pressed,
-            down: down_pressed,
+            up: nav_up,
+            down: nav_down,
             bind: (newly_pressed & (1 << 12)) != 0,
             sw_change,
             dr_change,

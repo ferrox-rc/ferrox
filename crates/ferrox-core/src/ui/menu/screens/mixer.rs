@@ -587,7 +587,7 @@ pub fn update_wing_mixer(
     let render_gvar_idx = if render_has_param { 2 } else { 1 };
     let render_mix_items = if render_has_param { 35 } else { 34 };
 
-    widgets::draw_header(lcd, "MIXERS & LINES");
+    widgets::draw_header(lcd, "MIXER");
 
     for slot in 0..4 {
         let idx = ctrl.scroll_offset + slot;
@@ -632,8 +632,8 @@ fn render_wing_mixer_row(
     let mut ch_buf = [0u8; 4];
     let kind = storage.active_model.primary_mixer_kind();
     if idx == 0 {
-        lcd.draw_str_6x10(4, y, "Mix:", is_sel);
-        lcd.draw_str_6x10(32, y, kind.name(), is_sel);
+        lcd.draw_str_6x10(4, y, "Type:", is_sel);
+        lcd.draw_str_6x10(38, y, kind.name(), is_sel);
     } else if has_param && idx == 1 {
         if let Some(p_desc) = kind.params().first() {
             let d_str = i8_to_dec(storage.active_model.mixers[0].p[0], &mut b6);
