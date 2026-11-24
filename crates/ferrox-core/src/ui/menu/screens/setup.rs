@@ -673,9 +673,10 @@ pub fn update_rx_setup(
         storage::save_active_model(storage);
     }
 
-    let has_ext_bay = ActiveBoard::HAS_EXTERNAL_MODULE_BAY;
-    let ext_off = usize::from(has_ext_bay);
-    let has_d16_opt = has_ext_bay
+    const HAS_EXT_BAY: bool = ActiveBoard::HAS_EXTERNAL_MODULE_BAY;
+    let has_ext_bay = HAS_EXT_BAY;
+    let ext_off = usize::from(HAS_EXT_BAY);
+    let has_d16_opt = HAS_EXT_BAY
         && match current_proto {
             RfProtocol::Mpm => crate::rf::mpm::is_d16_protocol(
                 crate::rf::mpm::MpmProtocol::from_u8(storage.active_model.rx_serial_proto)
@@ -687,11 +688,81 @@ pub fn update_rx_setup(
             ),
             _ => false,
         };
-    let d16_off = usize::from(has_d16_opt);
+
+    #[derive(Copy, Clone, PartialEq, Eq)]
+    enum MpmRow {
+        Proto,
+        Module,
+        Status,
+        Mode,
+        ChMode,
+        BindOpt,
+        Bind,
+        RxNum,
+        FreqTune,
+        AutoBind,
+        LowPower,
+        RangeCheck,
+    }
+
+    #[inline(always)]
+    const fn mpm_row_at_const(idx: usize, has_ext: bool, has_d16: bool) -> Option<MpmRow> {
+        if !has_ext {
+            match idx {
+                0 => Some(MpmRow::Proto),
+                1 => Some(MpmRow::Mode),
+                2 => Some(MpmRow::Bind),
+                3 => Some(MpmRow::RxNum),
+                4 => Some(MpmRow::FreqTune),
+                5 => Some(MpmRow::RangeCheck),
+                _ => None,
+            }
+        } else if has_d16 {
+            match idx {
+                0 => Some(MpmRow::Proto),
+                1 => Some(MpmRow::Module),
+                2 => Some(MpmRow::Status),
+                3 => Some(MpmRow::Mode),
+                4 => Some(MpmRow::ChMode),
+                5 => Some(MpmRow::BindOpt),
+                6 => Some(MpmRow::Bind),
+                7 => Some(MpmRow::RxNum),
+                8 => Some(MpmRow::FreqTune),
+                9 => Some(MpmRow::AutoBind),
+                10 => Some(MpmRow::LowPower),
+                11 => Some(MpmRow::RangeCheck),
+                _ => None,
+            }
+        } else {
+            match idx {
+                0 => Some(MpmRow::Proto),
+                1 => Some(MpmRow::Module),
+                2 => Some(MpmRow::Status),
+                3 => Some(MpmRow::Mode),
+                4 => Some(MpmRow::Bind),
+                5 => Some(MpmRow::RxNum),
+                6 => Some(MpmRow::FreqTune),
+                7 => Some(MpmRow::AutoBind),
+                8 => Some(MpmRow::LowPower),
+                9 => Some(MpmRow::RangeCheck),
+                _ => None,
+            }
+        }
+    }
+    let mpm_row_at = |idx: usize| mpm_row_at_const(idx, HAS_EXT_BAY, has_d16_opt);
+
     let item_count = match current_proto {
         RfProtocol::Afhds2a => 6,
         RfProtocol::Crsf => 5 + ext_off,
-        RfProtocol::Cc2500 | RfProtocol::Mpm => 6 + ext_off + d16_off,
+        RfProtocol::Cc2500 | RfProtocol::Mpm => {
+            if !has_ext_bay {
+                6
+            } else if has_d16_opt {
+                12
+            } else {
+                10
+            }
+        }
         RfProtocol::Dsm => {
             #[cfg(feature = "dsm-fwd-prog")]
             {
@@ -891,34 +962,49 @@ pub fn update_rx_setup(
                         buzzer.click();
                     }
                 }
-                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx)
-                    if idx == 1 + ext_off
-                        || idx == 3 + ext_off + d16_off
-                        || idx == 4 + ext_off + d16_off =>
-                {
-                    ctrl.editing = true;
-                    buzzer.click();
-                }
-                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx)
-                    if has_d16_opt && idx == 2 + ext_off =>
-                {
-                    buzzer.click();
-                    let next_opt = (storage.active_model.mpm_d16_bind_opt() + 1) & 0x03;
-                    storage.active_model.set_mpm_d16_bind_opt(next_opt);
-                    storage::save_active_model(storage);
-                }
-                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 2 + ext_off + d16_off => {
-                    buzzer.click();
-                    let next_bind = !crate::rf::is_binding();
-                    crate::rf::set_bind_mode(next_bind);
-                }
-                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) if idx == 5 + ext_off + d16_off => {
-                    buzzer.click();
-                    let next_rc = !storage.active_model.mpm_range_check();
-                    storage.active_model.set_mpm_range_check(next_rc);
-                    storage.active_model.rf_power = if next_rc { 1 } else { 0 };
-                    storage::save_active_model(storage);
-                }
+                (RfProtocol::Cc2500 | RfProtocol::Mpm, idx) => match mpm_row_at(idx) {
+                    Some(MpmRow::Mode | MpmRow::RxNum | MpmRow::FreqTune) => {
+                        ctrl.editing = true;
+                        buzzer.click();
+                    }
+                    Some(MpmRow::ChMode) if has_ext_bay => {
+                        buzzer.click();
+                        let next = !storage.active_model.mpm_ch8_mode();
+                        storage.active_model.set_mpm_ch8_mode(next);
+                        storage::save_active_model(storage);
+                    }
+                    Some(MpmRow::BindOpt) if has_ext_bay => {
+                        buzzer.click();
+                        let next_opt = (storage.active_model.mpm_d16_bind_opt() + 1) & 0x03;
+                        storage.active_model.set_mpm_d16_bind_opt(next_opt);
+                        storage::save_active_model(storage);
+                    }
+                    Some(MpmRow::Bind) => {
+                        buzzer.click();
+                        let next_bind = !crate::rf::is_binding();
+                        crate::rf::set_bind_mode(next_bind);
+                    }
+                    Some(MpmRow::AutoBind) if has_ext_bay => {
+                        buzzer.click();
+                        let next = !storage.active_model.mpm_autobind();
+                        storage.active_model.set_mpm_autobind(next);
+                        storage::save_active_model(storage);
+                    }
+                    Some(MpmRow::LowPower) if has_ext_bay => {
+                        buzzer.click();
+                        let next = !storage.active_model.mpm_low_power();
+                        storage.active_model.set_mpm_low_power(next);
+                        storage::save_active_model(storage);
+                    }
+                    Some(MpmRow::RangeCheck) => {
+                        buzzer.click();
+                        let next_rc = !storage.active_model.mpm_range_check();
+                        storage.active_model.set_mpm_range_check(next_rc);
+                        storage.active_model.rf_power = if next_rc { 1 } else { 0 };
+                        storage::save_active_model(storage);
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -950,7 +1036,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            idx if is_mpm_family && idx == 1 + ext_off => {
+            idx if is_mpm_family && mpm_row_at(idx) == Some(MpmRow::Mode) => {
                 if current_proto == RfProtocol::Mpm {
                     let cur = crate::rf::mpm::MpmProtocol::from_u8(
                         storage.active_model.rx_serial_proto,
@@ -975,7 +1061,7 @@ pub fn update_rx_setup(
                     }
                 }
             }
-            idx if is_mpm_family && idx == 3 + ext_off + d16_off => {
+            idx if is_mpm_family && mpm_row_at(idx) == Some(MpmRow::RxNum) => {
                 let cur = storage.active_model.mpm_rx_num();
                 if keys.up {
                     storage.active_model.set_mpm_rx_num((cur + 1) & 0x0F);
@@ -985,7 +1071,7 @@ pub fn update_rx_setup(
                     buzzer.play_tone(2200, 30);
                 }
             }
-            idx if is_mpm_family && idx == 4 + ext_off + d16_off => {
+            idx if is_mpm_family && mpm_row_at(idx) == Some(MpmRow::FreqTune) => {
                 let cur = storage.active_model.mpm_freq_tune();
                 if keys.up {
                     storage.active_model.set_mpm_freq_tune(cur.saturating_add(1));
@@ -1070,57 +1156,78 @@ pub fn update_rx_setup(
                 if idx >= item_count {
                     break;
                 }
-                if idx == 0 {
-                    let proto_val = match (current_proto, ctrl.editing && idx == ctrl.selected_item)
-                    {
-                        (RfProtocol::Mpm, true) => "[MPM 4-in-1]",
-                        (RfProtocol::Mpm, false) => "MPM 4-in-1",
-                        (_, true) => "[CC2500]",
-                        (_, false) => "CC2500",
-                    };
-                    widgets::draw_list_row_right(
-                        lcd,
-                        slot,
-                        idx == ctrl.selected_item,
-                        "Proto:",
-                        Some(proto_val),
-                    );
+                let Some(row) = mpm_row_at(idx) else {
                     continue;
-                }
-                if has_ext_bay && idx == 1 {
-                    let target_str = if storage.active_model.rf_module_target() == 0 {
-                        "Internal"
-                    } else {
-                        "External (Bay)"
-                    };
-                    widgets::draw_list_row_right(
-                        lcd,
-                        slot,
-                        idx == ctrl.selected_item,
-                        "Module:",
-                        Some(target_str),
-                    );
-                    continue;
-                }
-                if has_d16_opt && idx == 2 + ext_off {
-                    let opt_str =
-                        crate::rf::mpm::d16_bind_opt_name(storage.active_model.mpm_d16_bind_opt());
-                    widgets::draw_list_row_right(
-                        lcd,
-                        slot,
-                        idx == ctrl.selected_item,
-                        "Bind Opt:",
-                        Some(opt_str),
-                    );
-                    continue;
-                }
-                let logical_row = if idx <= 1 + ext_off {
-                    idx - ext_off
-                } else {
-                    idx - ext_off - d16_off
                 };
-                match logical_row {
-                    1 => {
+                match row {
+                    MpmRow::Proto => {
+                        let proto_val =
+                            match (current_proto, ctrl.editing && idx == ctrl.selected_item) {
+                                (RfProtocol::Mpm, true) => "[MPM 4-in-1]",
+                                (RfProtocol::Mpm, false) => "MPM 4-in-1",
+                                (_, true) => "[CC2500]",
+                                (_, false) => "CC2500",
+                            };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Proto:",
+                            Some(proto_val),
+                        );
+                    }
+                    MpmRow::Module if has_ext_bay => {
+                        let target_str = if storage.active_model.rf_module_target() == 0 {
+                            "Internal"
+                        } else {
+                            "External (Bay)"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Module:",
+                            Some(target_str),
+                        );
+                    }
+                    MpmRow::Status if has_ext_bay => {
+                        let mt = crate::rf::mpm::get_telemetry();
+                        let mut buf = [0u8; 16];
+                        let status_str = if mt.has_module_status {
+                            let mut pos = 0;
+                            buf[pos] = b'v';
+                            pos += 1;
+                            for (i, &v) in mt.fw_ver.iter().enumerate() {
+                                if i > 0 && pos < buf.len() {
+                                    buf[pos] = b'.';
+                                    pos += 1;
+                                }
+                                if v >= 100 && pos < buf.len() {
+                                    buf[pos] = b'0' + (v / 100);
+                                    pos += 1;
+                                }
+                                if v >= 10 && pos < buf.len() {
+                                    buf[pos] = b'0' + ((v / 10) % 10);
+                                    pos += 1;
+                                }
+                                if pos < buf.len() {
+                                    buf[pos] = b'0' + (v % 10);
+                                    pos += 1;
+                                }
+                            }
+                            core::str::from_utf8(&buf[..pos]).unwrap_or("OK")
+                        } else {
+                            "No Telem"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Status:",
+                            Some(status_str),
+                        );
+                    }
+                    MpmRow::Mode => {
                         let proto_name = if current_proto == RfProtocol::Mpm {
                             crate::rf::mpm::MpmProtocol::from_u8(
                                 storage.active_model.rx_serial_proto,
@@ -1151,7 +1258,33 @@ pub fn update_rx_setup(
                             Some(val_str),
                         );
                     }
-                    2 => {
+                    MpmRow::ChMode if has_ext_bay => {
+                        let ch_str = if storage.active_model.mpm_ch8_mode() {
+                            "CH_8 (1-8)"
+                        } else {
+                            "CH_16 (1-16)"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Ch. Mode:",
+                            Some(ch_str),
+                        );
+                    }
+                    MpmRow::BindOpt if has_ext_bay => {
+                        let opt_str = crate::rf::mpm::d16_bind_opt_name(
+                            storage.active_model.mpm_d16_bind_opt(),
+                        );
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Bind Opt:",
+                            Some(opt_str),
+                        );
+                    }
+                    MpmRow::Bind => {
                         let bind_lbl = if crate::rf::is_binding() {
                             "[Binding... (OK)]"
                         } else {
@@ -1165,7 +1298,7 @@ pub fn update_rx_setup(
                             None,
                         );
                     }
-                    3 => {
+                    MpmRow::RxNum => {
                         let rx_num = storage.active_model.mpm_rx_num();
                         let mut buf = [0u8; 8];
                         let val_str = if ctrl.editing && idx == ctrl.selected_item {
@@ -1187,7 +1320,7 @@ pub fn update_rx_setup(
                             Some(val_str),
                         );
                     }
-                    4 => {
+                    MpmRow::FreqTune => {
                         let tune = storage.active_model.mpm_freq_tune();
                         let abs = tune.unsigned_abs();
                         let mut buf = [0u8; 8];
@@ -1226,7 +1359,35 @@ pub fn update_rx_setup(
                             Some(val_str),
                         );
                     }
-                    5 => {
+                    MpmRow::AutoBind if has_ext_bay => {
+                        let ab_str = if storage.active_model.mpm_autobind() {
+                            "ON"
+                        } else {
+                            "OFF"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "AutoBind:",
+                            Some(ab_str),
+                        );
+                    }
+                    MpmRow::LowPower if has_ext_bay => {
+                        let lp_str = if storage.active_model.mpm_low_power() {
+                            "ON"
+                        } else {
+                            "OFF"
+                        };
+                        widgets::draw_list_row_right(
+                            lcd,
+                            slot,
+                            idx == ctrl.selected_item,
+                            "Low Pwr:",
+                            Some(lp_str),
+                        );
+                    }
+                    MpmRow::RangeCheck => {
                         let pwr_str = if storage.active_model.mpm_range_check() {
                             "ON (LOW)"
                         } else {

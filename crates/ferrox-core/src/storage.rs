@@ -826,7 +826,7 @@ impl ModelConfig {
         self.mpm_rx_num & 0x0F
     }
 
-    /// Set MPM/CC2500 Receiver Number (`0..15`), preserving D16 bind option bits `5:4`.
+    /// Set MPM/CC2500 Receiver Number (`0..15`), preserving upper flag bits `7:4`.
     #[inline(always)]
     pub fn set_mpm_rx_num(&mut self, rx_num: u8) {
         self.mpm_rx_num = (self.mpm_rx_num & 0xF0) | (rx_num & 0x0F);
@@ -839,10 +839,42 @@ impl ModelConfig {
         (self.mpm_rx_num >> 4) & 0x03
     }
 
-    /// Set FrSky D16 bind option (`0..=3`), preserving Receiver Number bits `3:0`.
+    /// Set FrSky D16 bind option (`0..=3`), preserving RX number and other MPM flags.
     #[inline(always)]
     pub fn set_mpm_d16_bind_opt(&mut self, opt: u8) {
-        self.mpm_rx_num = (self.mpm_rx_num & 0x0F) | ((opt & 0x03) << 4);
+        self.mpm_rx_num = (self.mpm_rx_num & !0x30) | ((opt & 0x03) << 4);
+    }
+
+    /// Check if MPM/CC2500 Low Power mode is enabled (bit 6 of `mpm_rx_num`).
+    #[inline(always)]
+    pub const fn mpm_low_power(&self) -> bool {
+        (self.mpm_rx_num & 0x40) != 0
+    }
+
+    /// Set MPM/CC2500 Low Power mode (bit 6 of `mpm_rx_num`).
+    #[inline(always)]
+    pub fn set_mpm_low_power(&mut self, enabled: bool) {
+        if enabled {
+            self.mpm_rx_num |= 0x40;
+        } else {
+            self.mpm_rx_num &= !0x40;
+        }
+    }
+
+    /// Check if FrSky D16 8-channel mode (`CH_8`) is selected instead of `CH_16` (bit 7 of `mpm_rx_num`).
+    #[inline(always)]
+    pub const fn mpm_ch8_mode(&self) -> bool {
+        (self.mpm_rx_num & 0x80) != 0
+    }
+
+    /// Set FrSky D16 channel mode (`false` = `CH_16`, `true` = `CH_8`, bit 7 of `mpm_rx_num`).
+    #[inline(always)]
+    pub fn set_mpm_ch8_mode(&mut self, ch8: bool) {
+        if ch8 {
+            self.mpm_rx_num |= 0x80;
+        } else {
+            self.mpm_rx_num &= !0x80;
+        }
     }
 
     /// Check if MPM/CC2500 reduced-power Range Check mode is active.
@@ -863,10 +895,26 @@ impl ModelConfig {
         self.rf_module_target & 0x01
     }
 
-    /// Set RF Module Target (`0` = Internal Module, `1` = External Module Bay).
+    /// Set RF Module Target (`0` = Internal Module, `1` = External Module Bay), preserving bit 1.
     #[inline(always)]
     pub fn set_rf_module_target(&mut self, target: u8) {
-        self.rf_module_target = target & 0x01;
+        self.rf_module_target = (self.rf_module_target & !0x01) | (target & 0x01);
+    }
+
+    /// Check if MPM/CC2500 AutoBind (Bind on Power-Up / Channel) is enabled (bit 1 of `rf_module_target`).
+    #[inline(always)]
+    pub const fn mpm_autobind(&self) -> bool {
+        (self.rf_module_target & 0x02) != 0
+    }
+
+    /// Set MPM/CC2500 AutoBind mode (bit 1 of `rf_module_target`).
+    #[inline(always)]
+    pub fn set_mpm_autobind(&mut self, enabled: bool) {
+        if enabled {
+            self.rf_module_target |= 0x02;
+        } else {
+            self.rf_module_target &= !0x02;
+        }
     }
 
     /// Get MPM/CC2500 RF Frequency Fine-Tuning offset (`-127..+127`).
@@ -1533,9 +1581,7 @@ impl RadioStorage {
         if m.rf_protocol > crate::board::RfProtocol::MAX_VALUE {
             m.rf_protocol = crate::board::ActiveBoard::DEFAULT_PROTOCOL as u8;
         }
-        if m.rf_module_target > 1 {
-            m.rf_module_target = 0;
-        }
+        m.rf_module_target &= 0x03;
         if m.dsm_sub_proto > 3 {
             m.dsm_sub_proto = 0;
         }

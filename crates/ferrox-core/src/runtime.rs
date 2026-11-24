@@ -230,34 +230,21 @@ impl FlightPipeline {
                 }
                 #[cfg(not(feature = "rf-dsm"))]
                 crate::board::RfProtocol::Dsm => {}
-                crate::board::RfProtocol::Cc2500 => {
-                    let spec = rf::cc2500::Cc2500Protocol::from_u8(active_model.rx_serial_proto).spec();
+                crate::board::RfProtocol::Cc2500 | crate::board::RfProtocol::Mpm => {
+                    let spec = if proto == crate::board::RfProtocol::Mpm {
+                        rf::mpm::MpmProtocol::from_u8(active_model.rx_serial_proto).spec()
+                    } else {
+                        rf::cc2500::Cc2500Protocol::from_u8(active_model.rx_serial_proto).spec()
+                    };
                     rf::mpm::update_link(
                         now,
                         &rf_chs,
                         spec,
-                        active_model.mpm_rx_num(),
+                        active_model.mpm_rx_num,
                         active_model.mpm_freq_tune(),
                         rf::is_binding(),
                         active_model.mpm_range_check(),
-                        active_model.rf_module_target() != 0,
-                        active_model.mpm_d16_bind_opt(),
-                    );
-                    rf::mpm::poll_telemetry(now);
-                    rf::set_channels(&rf_chs);
-                }
-                crate::board::RfProtocol::Mpm => {
-                    let spec = rf::mpm::MpmProtocol::from_u8(active_model.rx_serial_proto).spec();
-                    rf::mpm::update_link(
-                        now,
-                        &rf_chs,
-                        spec,
-                        active_model.mpm_rx_num(),
-                        active_model.mpm_freq_tune(),
-                        rf::is_binding(),
-                        active_model.mpm_range_check(),
-                        active_model.rf_module_target() != 0,
-                        active_model.mpm_d16_bind_opt(),
+                        active_model.rf_module_target,
                     );
                     rf::mpm::poll_telemetry(now);
                     rf::set_channels(&rf_chs);

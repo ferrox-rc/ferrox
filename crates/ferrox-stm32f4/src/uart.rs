@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use ferrox_core::hal::{SerialFraming, SerialPort};
 use stm32f4::stm32f407 as pac;
 use stm32f4::stm32f407::interrupt;
@@ -10,7 +10,13 @@ const RX_BUF_SIZE: usize = 256;
 static mut RX_DMA_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
 static mut RX_TAIL: usize = 0;
 
-/// Max pulse transitions for a 27-byte MPM frame (`27 * 10 = 270`, padded to `320` for margin).
+/// Interrupt-driven RX ring buffer for `USART2` (External Bay Pin 5 telemetry / S.Port),
+/// avoiding DMA1 Stream 5 conflict with DAC1 audio while preventing RX overruns during LCD draws.
+static mut USART2_RX_BUF: [u8; RX_BUF_SIZE] = [0; RX_BUF_SIZE];
+static USART2_RX_HEAD: AtomicUsize = AtomicUsize::new(0);
+static USART2_RX_TAIL: AtomicUsize = AtomicUsize::new(0);
+
+/// Max pulse transitions for a 28-byte MPM frame (`28 * 10 = 280`, padded to `320` for margin).
 const SOFT_PULSE_BUF_SIZE: usize = 320;
 static mut TIM8_PULSE_BUF: [u16; SOFT_PULSE_BUF_SIZE] = [0; SOFT_PULSE_BUF_SIZE];
 static SOFT_TX_BUSY: AtomicBool = AtomicBool::new(false);
@@ -160,9 +166,13 @@ impl<H: Qx7HalDescriptor> Stm32f4SerialPort<H> {
         let tim8 = unsafe { &*pac::TIM8::ptr() };
         let dma2 = unsafe { &*pac::DMA2::ptr() };
 
-        // Disable all 3 USARTs, TIM8 soft-serial, and RX/TX DMA streams before reconfiguring
+        // Disable all 3 USARTs, TIM8 soft-serial, USART2 RX IRQ, and DMA streams before reconfiguring
         unsafe {
             Self::stop_tim8_softserial();
+            cortex_m::peripheral::NVIC::mask(pac::Interrupt::USART2);
+            cortex_m::peripheral::NVIC::unpend(pac::Interrupt::USART2);
+            USART2_RX_HEAD.store(0, Ordering::Release);
+            USART2_RX_TAIL.store(0, Ordering::Release);
             usart1.cr1.write(|w| w.bits(0));
             usart2.cr1.write(|w| w.bits(0));
             usart6.cr1.write(|w| w.bits(0));
@@ -232,13 +242,20 @@ impl<H: Qx7HalDescriptor> Stm32f4SerialPort<H> {
                 BusMode::ExternalSportUsart2 => {
                     // External CRSF Half-Duplex on JR Pin 5 (S.Port):
                     // USART2 (PD5 TX / PD6 RX) with external PD4 direction buffer.
-                    // Uses RXNE polling (avoids DMA1 Stream 5 conflict with DAC1 audio).
+                    // ONEBIT=1 (RM0090 §30.6.6) tolerates slow S.Port transistor inverter edges;
+                    // RXNEIE ISR feeds a 256-byte ring buffer (avoids DMA1 Stream 5 DAC1 conflict).
                     usart2.cr2.write(|w| w.bits(cr2_extra));
-                    usart2.cr3.write(|w| w.bits(0));
+                    usart2.cr3.write(|w| w.bits(1 << 11)); // ONEBIT = 1
                     usart2.brr.write(|w| w.bits(brr_apb1));
-                    usart2
-                        .cr1
-                        .write(|w| w.bits((1 << 13) | (1 << 3) | (1 << 2) | cr1_extra));
+                    let _ = usart2.sr.read().bits();
+                    let _ = usart2.dr.read().bits();
+                    usart2.cr1.write(|w| {
+                        w.bits((1 << 13) | (1 << 5) | (1 << 3) | (1 << 2) | cr1_extra)
+                    });
+                    let mut cp = cortex_m::peripheral::Peripherals::steal();
+                    cp.NVIC.set_priority(pac::Interrupt::USART2, 0x30);
+                    cortex_m::peripheral::NVIC::unpend(pac::Interrupt::USART2);
+                    cortex_m::peripheral::NVIC::unmask(pac::Interrupt::USART2);
                 }
                 BusMode::ExternalFullUsart6 => {
                     // External CRSF Full-Duplex on JR Pins 1/2: USART6 (PC6 TX / PC7 RX)
@@ -317,12 +334,21 @@ impl<H: Qx7HalDescriptor> Stm32f4SerialPort<H> {
                             .write(|w| w.bits((1 << 13) | (1 << 3) | cr1_extra)); // UE | TE
                     }
 
+                    // Pin 5 RX telemetry via USART2: ONEBIT=1 (RM0090 §30.6.6) ignores slow
+                    // discrete S.Port inverter edges; RXNEIE ISR captures every byte without
+                    // overruns during LCD draws.
                     usart2.cr2.write(|w| w.bits(cr2_extra));
-                    usart2.cr3.write(|w| w.bits(0));
+                    usart2.cr3.write(|w| w.bits(1 << 11)); // ONEBIT = 1
                     usart2.brr.write(|w| w.bits(brr_apb1));
+                    let _ = usart2.sr.read().bits();
+                    let _ = usart2.dr.read().bits();
                     usart2
                         .cr1
-                        .write(|w| w.bits((1 << 13) | (1 << 2) | cr1_extra)); // UE | RE
+                        .write(|w| w.bits((1 << 13) | (1 << 5) | (1 << 2) | cr1_extra)); // UE | RXNEIE | RE
+                    let mut cp = cortex_m::peripheral::Peripherals::steal();
+                    cp.NVIC.set_priority(pac::Interrupt::USART2, 0x30);
+                    cortex_m::peripheral::NVIC::unpend(pac::Interrupt::USART2);
+                    cortex_m::peripheral::NVIC::unmask(pac::Interrupt::USART2);
                 }
             }
         }
@@ -636,6 +662,12 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
             }
             BusMode::ExternalSportUsart2 => {
                 let usart2 = unsafe { &*pac::USART2::ptr() };
+                // Pause RX/RXNEIE while PD4 drives TX so local echo never enters USART2_RX_BUF
+                unsafe {
+                    usart2
+                        .cr1
+                        .modify(|r, w| w.bits(r.bits() & !((1 << 5) | (1 << 2))));
+                }
                 Self::set_sport_dir_tx();
                 for &b in bytes {
                     let mut timeout = 50_000;
@@ -644,6 +676,11 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                     }
                     if timeout == 0 {
                         Self::set_sport_dir_rx();
+                        unsafe {
+                            usart2
+                                .cr1
+                                .modify(|r, w| w.bits(r.bits() | (1 << 5) | (1 << 2)));
+                        }
                         self.tx_errors = self.tx_errors.saturating_add(1);
                         return false;
                     }
@@ -658,9 +695,14 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                     tc_timeout -= 1;
                 }
                 Self::set_sport_dir_rx();
-                // Drain any local echo byte received during half-duplex TX
+                // Drain any residual RX byte and re-enable RE | RXNEIE
                 while (usart2.sr.read().bits() & (1 << 5)) != 0 {
                     let _ = usart2.dr.read().bits();
+                }
+                unsafe {
+                    usart2
+                        .cr1
+                        .modify(|r, w| w.bits(r.bits() | (1 << 5) | (1 << 2)));
                 }
                 if tc_timeout == 0 {
                     self.tx_errors = self.tx_errors.saturating_add(1);
@@ -734,11 +776,12 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
                 }
             }
             BusMode::ExternalSportUsart2 | BusMode::ExternalSplitMpm => {
-                let usart2 = unsafe { &*pac::USART2::ptr() };
-                let sr = usart2.sr.read().bits();
-                // Clear ORE/FE/NE if set by reading DR
-                if (sr & ((1 << 5) | (1 << 3))) != 0 {
-                    Some((usart2.dr.read().bits() & 0xFF) as u8)
+                let tail = USART2_RX_TAIL.load(Ordering::Relaxed);
+                let head = USART2_RX_HEAD.load(Ordering::Acquire);
+                if tail != head {
+                    let b = unsafe { core::ptr::read_volatile(&USART2_RX_BUF[tail]) };
+                    USART2_RX_TAIL.store((tail + 1) & (RX_BUF_SIZE - 1), Ordering::Release);
+                    Some(b)
                 } else {
                     None
                 }
@@ -749,6 +792,28 @@ impl<H: Qx7HalDescriptor> SerialPort for Stm32f4SerialPort<H> {
             self.rx_bytes = self.rx_bytes.wrapping_add(1);
         }
         byte
+    }
+}
+
+/// USART2 RXNE ISR for External Bay Pin 5 telemetry (MPM 100k 8E2 and CRSF S.Port).
+/// Drains every incoming byte into `USART2_RX_BUF` with zero DMA1 Stream 5 conflict.
+#[interrupt]
+fn USART2() {
+    unsafe {
+        let usart2 = &*pac::USART2::ptr();
+        let sr = usart2.sr.read().bits();
+        // Reading DR clears RXNE (bit 5) and any ORE/NE/FE error flags (RM0090 §30.6.1)
+        if (sr & ((1 << 5) | (1 << 3) | (1 << 2) | (1 << 1))) != 0 {
+            let b = (usart2.dr.read().bits() & 0xFF) as u8;
+            if (sr & (1 << 5)) != 0 {
+                let head = USART2_RX_HEAD.load(Ordering::Relaxed);
+                let next = (head + 1) & (RX_BUF_SIZE - 1);
+                if next != USART2_RX_TAIL.load(Ordering::Acquire) {
+                    core::ptr::write_volatile(&mut USART2_RX_BUF[head], b);
+                    USART2_RX_HEAD.store(next, Ordering::Release);
+                }
+            }
+        }
     }
 }
 

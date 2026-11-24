@@ -122,6 +122,9 @@ impl MpmProtocol {
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct MpmTelemetry {
     pub connected: bool,
+    pub has_module_status: bool,
+    pub status_flags: u8,
+    pub fw_ver: [u8; 4],
     pub rssi: u8,
     pub lq: u8,
     pub rx_batt_mv: u16,
@@ -144,6 +147,9 @@ impl MpmTelemetry {
     pub const fn new() -> Self {
         Self {
             connected: false,
+            has_module_status: false,
+            status_flags: 0,
+            fw_ver: [0; 4],
             rssi: 0,
             lq: 0,
             rx_batt_mv: 0,
@@ -234,17 +240,20 @@ pub fn get_telemetry() -> MpmTelemetry {
 }
 
 /// Periodic MPM/CC2500 serial frame transmission (`~111 Hz` / `9 ms` interval).
+///
+/// `raw_mpm_rx_flags` is `ModelConfig::mpm_rx_num` (`bits 3:0` = rx_num, `5:4` = d16_bind_opt,
+/// `6` = low_power, `7` = ch8_mode); `raw_target_flags` is `ModelConfig::rf_module_target`
+/// (`bit 0` = external_bay, `1` = autobind).
 #[allow(clippy::too_many_arguments)]
 pub fn update_link(
     now_ms: u32,
     channels_us: &[u16; NUM_CHANNELS],
     spec: &MultiProtoSpec,
-    rx_num: u8,
+    raw_mpm_rx_flags: u8,
     freq_tune: i8,
     bind_req: bool,
     range_check: bool,
-    external_bay: bool,
-    d16_bind_opt: u8,
+    raw_target_flags: u8,
 ) {
     unsafe {
         if !MPM_ENABLED {
@@ -276,17 +285,30 @@ pub fn update_link(
 
         if now_ms.wrapping_sub(LAST_TX_MS) >= 9 {
             LAST_TX_MS = now_ms;
+            let rx_num = raw_mpm_rx_flags & 0x0F;
+            let d16_bind_opt = (raw_mpm_rx_flags >> 4) & 0x03;
+            let low_power = (raw_mpm_rx_flags & 0x40) != 0;
+            let ch8_mode = (raw_mpm_rx_flags & 0x80) != 0;
+            let external_bay = (raw_target_flags & 0x01) != 0;
+            let autobind = (raw_target_flags & 0x02) != 0;
+            let sub_proto = if is_d16_protocol(spec.wire_id) && ch8_mode {
+                spec.default_sub | 0x01
+            } else {
+                spec.default_sub
+            };
             let mut frame = [0u8; 28];
             let len = pack_mpm_frame(
                 channels_us,
                 spec,
-                spec.default_sub,
+                sub_proto,
                 rx_num,
                 freq_tune,
                 binding,
                 range_check,
                 external_bay,
                 d16_bind_opt,
+                low_power,
+                autobind,
                 &mut frame,
             );
             crate::uart::write_bytes(&frame[..len]);
@@ -391,6 +413,11 @@ pub fn process_mpm_packet(pkt_type: u8, payload: &[u8], now_ms: u32, telem: &mut
         // Flags: 0x01=InputDetected, 0x02=SerialMode, 0x04=ProtoValid, 0x08=Binding
         0x01 => {
             if !payload.is_empty() {
+                telem.has_module_status = true;
+                telem.status_flags = payload[0];
+                if payload.len() >= 5 {
+                    telem.fw_ver = [payload[1], payload[2], payload[3], payload[4]];
+                }
                 let in_bind = (payload[0] & 0x08) != 0;
                 unsafe {
                     if in_bind && BIND_START_MS != 0 && PREV_BIND_REQ {
@@ -554,7 +581,7 @@ pub fn process_mpm_packet(pkt_type: u8, payload: &[u8], now_ms: u32, telem: &mut
 /// Format a 27- or 28-byte Multi v1.3+ CC2500/4-in-1 serial frame (100,000 baud 8E2):
 /// - Byte 0: `0x55` (`proto_id & 0x20 == 0`) or `0x54` (`proto_id & 0x20 != 0`)
 /// - Byte 1: `(bind << 7) | (auto_bind << 6) | (range_check << 5) | (proto_id & 0x1F)`
-/// - Byte 2: `(sub_proto << 4) | (rx_num & 0x0F)`
+/// - Byte 2: `(low_power << 7) | ((sub_proto & 0x07) << 4) | (rx_num & 0x0F)`
 /// - Byte 3: `option` (`-127..+127`, frequency fine tuning)
 /// - Bytes 4..26: 16 channels packed as 11-bit values (`0..2047`, 22 bytes total)
 /// - Byte 26 (Multi v1.3+): `(proto_id & 0xC0) | (rx_num & 0x30) | (external_bay << 3)`
@@ -571,6 +598,8 @@ pub fn pack_mpm_frame(
     range_check: bool,
     external_bay: bool,
     d16_bind_opt: u8,
+    low_power: bool,
+    autobind: bool,
     out: &mut [u8; 28],
 ) -> usize {
     let proto_id = spec.wire_id;
@@ -581,12 +610,19 @@ pub fn pack_mpm_frame(
     if binding {
         b1 |= 0x80;
     }
+    if autobind && proto_id != MPM_PROTO_DSM {
+        b1 |= 0x40;
+    }
     if range_check {
         b1 |= 0x20;
     }
     out[1] = b1;
 
-    out[2] = ((sub_proto & 0x07) << 4) | (rx_num & 0x0F);
+    let mut b2 = ((sub_proto & 0x07) << 4) | (rx_num & 0x0F);
+    if low_power {
+        b2 |= 0x80;
+    }
+    out[2] = b2;
     out[3] = freq_tune as u8;
 
     // Pack 16 channels as 11-bit values (988..2012 us -> 172..1811)
@@ -638,6 +674,8 @@ mod tests {
             false,
             false,
             0,
+            false,
+            false,
             &mut frame,
         );
 
@@ -665,29 +703,35 @@ mod tests {
             true,
             true,
             3,
+            true,
+            true,
             &mut frame,
         );
 
         assert_eq!(len, 27);
         assert_eq!(frame[0], 0x55);
-        assert_eq!(frame[1], MPM_PROTO_FRSKY_D | 0x80 | 0x20);
+        assert_eq!(frame[1], MPM_PROTO_FRSKY_D | 0x80 | 0x40 | 0x20);
+        assert_eq!(frame[2], 0x80); // Low power bit 7
         assert_eq!(frame[26], 0x08); // External bay telemetry invert bit
 
         // FrSkyX (D16) appends byte 27 = d16_bind_opt when binding
         let len_d16 = pack_mpm_frame(
             &chs,
             Cc2500Protocol::FrSkyX.spec(),
-            0,
+            1, // CH_8 sub-protocol
             1,
             0,
             true,
             false,
             true,
             2, // Ch9-16 Telem ON
+            false,
+            false,
             &mut frame,
         );
         assert_eq!(len_d16, 28);
         assert_eq!(frame[1], MPM_PROTO_FRSKY_X | 0x80);
+        assert_eq!(frame[2], (1 << 4) | 1);
         assert_eq!(frame[26], 0x08);
         assert_eq!(frame[27], 2);
     }
@@ -708,6 +752,8 @@ mod tests {
                 false,
                 false,
                 0,
+                false,
+                false,
                 &mut frame
             ),
             27
@@ -727,6 +773,8 @@ mod tests {
                 false,
                 false,
                 0,
+                false,
+                false,
                 &mut frame
             ),
             27
@@ -746,6 +794,8 @@ mod tests {
                 false,
                 true,
                 1, // Ch1-8 Telem OFF
+                false,
+                false,
                 &mut frame,
             ),
             28
