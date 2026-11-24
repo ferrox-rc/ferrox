@@ -2002,15 +2002,12 @@ pub fn peek_model_name(slot_idx: usize) -> Option<[u8; 10]> {
     #[cfg(not(test))]
     {
         let addr = model_slot_addr(slot_idx)?;
-        // Read 8-byte header + first 10 bytes (ModelConfig::name) = 18 bytes
-        let mut buf = [0u8; HEADER_SIZE + 10];
-        if EepromI2c::read(addr, &mut buf).is_err() {
+        let mut hdr_buf = [0u8; HEADER_SIZE];
+        if EepromI2c::read(addr, &mut hdr_buf).is_err() {
             return None;
         }
 
-        let hdr = SlotHeader::parse(unsafe {
-            &*(buf[0..HEADER_SIZE].as_ptr() as *const [u8; HEADER_SIZE])
-        });
+        let hdr = SlotHeader::parse(&hdr_buf);
         if hdr.magic != SLOT_MAGIC || hdr.flags != 0 {
             return None;
         }
@@ -2025,7 +2022,10 @@ pub fn peek_model_name(slot_idx: usize) -> Option<[u8; 10]> {
         }
 
         let mut name = [0u8; 10];
-        name.copy_from_slice(&buf[HEADER_SIZE..HEADER_SIZE + 10]);
+        let name_offset = HEADER_SIZE + core::mem::offset_of!(ModelConfig, name);
+        if EepromI2c::read(addr + (name_offset as u16), &mut name).is_err() {
+            return None;
+        }
         Some(name)
     }
 }
