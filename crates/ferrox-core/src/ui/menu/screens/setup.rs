@@ -7,6 +7,7 @@ use crate::buzzer::Buzzer;
 use crate::display::St7567;
 use crate::menu::format::{
     ascii_as_str, format_deci_volt, format_pct_3, format_servo_hz, format_u8_2, u32_to_hex,
+    SWITCH_COND_NAMES,
 };
 use crate::menu::widgets;
 use crate::menu::{MenuController, MenuState, NavKeys};
@@ -608,55 +609,111 @@ pub fn update_telem_setup(
     buzzer: &mut Buzzer,
 ) {
     if keys.cancel {
-        ctrl.state = MenuState::ModelSetup;
-        ctrl.selected_item = 7;
-        ctrl.scroll_offset = 4;
-        buzzer.click();
-        return;
+        if ctrl.editing {
+            ctrl.editing = false;
+            storage::save_active_model(storage);
+            buzzer.click();
+        } else {
+            ctrl.state = MenuState::ModelSetup;
+            ctrl.selected_item = 7;
+            ctrl.scroll_offset = 4;
+            buzzer.click();
+            return;
+        }
     }
 
-    const SLOT_COUNT: usize = 4;
+    const ITEM_COUNT: usize = 6;
 
-    widgets::navigate_4slot_list(
-        &mut ctrl.selected_item,
-        &mut ctrl.scroll_offset,
-        SLOT_COUNT,
-        keys.up,
-        keys.down,
-        buzzer,
-    );
+    if !ctrl.editing {
+        widgets::navigate_4slot_list(
+            &mut ctrl.selected_item,
+            &mut ctrl.scroll_offset,
+            ITEM_COUNT,
+            keys.up,
+            keys.down,
+            buzzer,
+        );
 
-    if keys.ok {
-        let idx = ctrl.selected_item;
-        if idx < SLOT_COUNT {
-            buzzer.click();
-            let current = storage.active_model.telem_slots[idx];
-            storage.active_model.telem_slots[idx] =
-                (current + 1) % (TELEM_SENSOR_NAMES.len() as u8);
-            storage::save_active_model(storage);
+        if keys.ok {
+            let idx = ctrl.selected_item;
+            if idx < 4 {
+                buzzer.click();
+                let current = storage.active_model.telem_slots[idx];
+                storage.active_model.telem_slots[idx] =
+                    (current + 1) % (TELEM_SENSOR_NAMES.len() as u8);
+                storage::save_active_model(storage);
+            } else if idx == 4 {
+                ctrl.editing = true;
+                buzzer.click();
+            } else if idx == 5 {
+                ctrl.request_telem_reset = true;
+                buzzer.play_tone(2400, 100);
+            }
         }
+    } else if ctrl.selected_item == 4 {
+        let cur = storage.active_model.telem_reset_src;
+        if let Some(sw) = keys.sw_change {
+            storage.active_model.telem_reset_src = sw;
+            buzzer.play_tone(2400, 40);
+        } else if keys.up {
+            storage.active_model.telem_reset_src =
+                storage.next_available_switch_cond(cur, SWITCH_COND_NAMES.len());
+            buzzer.play_tone(2200, 20);
+        } else if keys.down {
+            storage.active_model.telem_reset_src =
+                storage.prev_available_switch_cond(cur, SWITCH_COND_NAMES.len());
+            buzzer.play_tone(2200, 20);
+        }
+        if keys.ok {
+            ctrl.editing = false;
+            storage::save_active_model(storage);
+            buzzer.click();
+        }
+    } else {
+        ctrl.editing = false;
     }
 
     widgets::draw_header(lcd, "TELEM DASH SETUP");
 
     for slot in 0..4 {
         let idx = ctrl.scroll_offset + slot;
-        if idx >= SLOT_COUNT {
+        if idx >= ITEM_COUNT {
             break;
         }
         let is_sel = idx == ctrl.selected_item;
-        let sensor_idx =
-            (storage.active_model.telem_slots[idx] as usize).min(TELEM_SENSOR_NAMES.len() - 1);
-        widgets::draw_list_row_right(
-            lcd,
-            slot,
-            is_sel,
-            SLOT_NAMES[idx],
-            Some(TELEM_SENSOR_NAMES[sensor_idx]),
-        );
+        match idx {
+            0..=3 => {
+                let sensor_idx = (storage.active_model.telem_slots[idx] as usize)
+                    .min(TELEM_SENSOR_NAMES.len() - 1);
+                widgets::draw_list_row_right(
+                    lcd,
+                    slot,
+                    is_sel,
+                    SLOT_NAMES[idx],
+                    Some(TELEM_SENSOR_NAMES[sensor_idx]),
+                );
+            }
+            4 => {
+                let sw = storage.active_model.telem_reset_src as usize;
+                let val_str = if sw == 0 || sw >= SWITCH_COND_NAMES.len() {
+                    "NONE"
+                } else {
+                    SWITCH_COND_NAMES[sw]
+                };
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Reset Sw:", Some(val_str));
+            }
+            5 => {
+                widgets::draw_list_row_right(lcd, slot, is_sel, "Action:", Some("[Reset]"));
+            }
+            _ => {}
+        }
     }
 
-    widgets::draw_footer(lcd, "[OK] Cycle Sensor  [ESC] Back");
+    if ctrl.editing {
+        widgets::draw_footer(lcd, "[OK] Save   [UP/DN] Value");
+    } else {
+        widgets::draw_footer(lcd, "[OK] Edit/Cycle    [ESC] Back");
+    }
 }
 
 #[inline(never)]

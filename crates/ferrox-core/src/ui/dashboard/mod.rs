@@ -57,6 +57,14 @@ impl DashboardController {
         }
     }
 
+    /// Reset session telemetry min/max tracking and alarm timers.
+    pub fn reset_telemetry(&mut self) {
+        self.min_rssi = 100;
+        self.min_rx_v_mv = 0xFFFF;
+        self.telem_seen = false;
+        self.rssi_alarm_timer = 0;
+    }
+
     #[allow(unused_mut, unused_variables)]
     pub fn configure_pages(&mut self, storage: &RadioStorage) {
         let mut pages = 5usize;

@@ -76,6 +76,7 @@ pub struct MenuController {
     pub editing: bool,
     pub request_calibration: bool,
     pub request_bind: bool,
+    pub request_telem_reset: bool,
     #[cfg(feature = "multiswitch")]
     pub multiswitch_dirty: bool,
     prev_keys: u16,
@@ -111,6 +112,7 @@ impl MenuController {
             editing: false,
             request_calibration: false,
             request_bind: false,
+            request_telem_reset: false,
             #[cfg(feature = "multiswitch")]
             multiswitch_dirty: false,
             prev_keys: 0xFFFF,
@@ -145,6 +147,7 @@ impl MenuController {
         self.editing = false;
         self.request_calibration = false;
         self.request_bind = false;
+        self.request_telem_reset = false;
         self.waiting_release = true;
         self.prev_keys = 0xFFFF;
         self.up_hold_ms = 0;
@@ -1064,6 +1067,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_telem_setup_reset_switch_and_action() {
+        let mut ctrl = MenuController::new();
+        let mut buzzer = Buzzer::new();
+        let mut lcd = St7567::new();
+        let mut storage = RadioStorage::default_factory();
+
+        ctrl.state = MenuState::TelemSetup;
+        ctrl.selected_item = 4; // Reset Sw:
+        ctrl.scroll_offset = 1;
+
+        let mut nav = NavKeys {
+            ok: true,
+            cancel: false,
+            up: false,
+            down: false,
+            bind: false,
+            sw_change: None,
+            dr_change: None,
+            pot_change: None,
+        };
+
+        // Press OK to edit Reset Sw
+        screens::setup::update_telem_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
+        assert!(ctrl.editing);
+
+        // Flick switch SA down (condition 2)
+        nav.ok = false;
+        nav.sw_change = Some(2);
+        screens::setup::update_telem_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
+        assert_eq!(storage.active_model.telem_reset_src, 2);
+
+        // Press OK to save and exit edit mode
+        nav.sw_change = None;
+        nav.ok = true;
+        screens::setup::update_telem_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
+        assert!(!ctrl.editing);
+
+        // Move down to Action: [Reset] (item 5) and press OK
+        nav.ok = false;
+        nav.down = true;
+        screens::setup::update_telem_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
+        assert_eq!(ctrl.selected_item, 5);
+
+        nav.down = false;
+        nav.ok = true;
+        screens::setup::update_telem_setup(&mut ctrl, &mut lcd, &nav, &mut storage, &mut buzzer);
+        assert!(ctrl.request_telem_reset);
     }
 
     #[test]

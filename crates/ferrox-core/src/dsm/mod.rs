@@ -243,6 +243,14 @@ pub fn get_telemetry() -> DsmTelemetry {
     unsafe { DSM_TELEMETRY }
 }
 
+/// Reset accumulated/stale DSM telemetry state.
+pub fn reset_telemetry() {
+    unsafe {
+        DSM_TELEMETRY = DsmTelemetry::default();
+        LAST_DSM_TELEM_MS = 0;
+    }
+}
+
 /// Decode a 16-byte Spektrum Flight Log payload (`0x7F` or `0xFE`).
 pub fn decode_flight_log(payload: &[u8; 16], telem: &mut DsmTelemetry) {
     // Spektrum 0x7F Flight Log structure:
