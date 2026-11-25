@@ -39,6 +39,7 @@ pub struct FlightSnapshot {
     pub is_armed: bool,
     pub just_armed: bool,
     pub just_disarmed: bool,
+    pub just_telem_reset: bool,
 }
 
 /// Flight pipeline context: manages stick sampling, mixing, and RF/USB publication.
@@ -49,6 +50,11 @@ pub struct FlightPipeline {
     pub vario: Vario,
     pub logical_bank: mixer::LogicalSwitchBank,
     pub last_tick_ms: u32,
+    pub prev_telem_reset_active: bool,
+    pub alt_zero_dm: i16,
+    pub alt_zero_pending: bool,
+    pub pkts_tx_zero: u32,
+    pub pkts_rx_zero: u32,
     #[cfg(any(feature = "multiswitch", test))]
     pub multiswitch: crate::multiswitch::MultiSwitchController,
 }
@@ -57,16 +63,55 @@ impl FlightPipeline {
     pub fn new(storage: &RadioStorage, init_state: &InputState) -> Self {
         let active = storage.active_model();
         let prev_armed = mixer::eval_arm_switch(active.arm_switch, &init_state.switches);
+        let prev_telem_reset_active = active.telem_reset_src > 0
+            && active.telem_reset_src <= 44
+            && mixer::is_switch_active(active.telem_reset_src, &init_state.switches);
         Self {
             prev_armed,
             prev_active_model: storage.radio.active_model,
             telem_reading_idx: 1,
             vario: Vario::new(),
-                    logical_bank: mixer::LogicalSwitchBank::new(),
-                    last_tick_ms: 0,
+            logical_bank: mixer::LogicalSwitchBank::new(),
+            last_tick_ms: 0,
+            prev_telem_reset_active,
+            alt_zero_dm: 0,
+            alt_zero_pending: false,
+            pkts_tx_zero: 0,
+            pkts_rx_zero: 0,
             #[cfg(any(feature = "multiswitch", test))]
             multiswitch: crate::multiswitch::MultiSwitchController::new(),
         }
+    }
+
+    /// Reset external telemetry offsets, protocol caches, and variometer state.
+    pub fn perform_telemetry_reset(
+        &mut self,
+        proto: crate::board::RfProtocol,
+        has_alt: bool,
+        raw_alt_dm: i16,
+        raw_pkts_tx: u32,
+        raw_pkts_rx: u32,
+    ) {
+        if has_alt {
+            self.alt_zero_dm = raw_alt_dm;
+            self.alt_zero_pending = false;
+        } else {
+            self.alt_zero_dm = 0;
+            self.alt_zero_pending = true;
+        }
+        self.pkts_tx_zero = raw_pkts_tx;
+        self.pkts_rx_zero = raw_pkts_rx;
+
+        match proto {
+            crate::board::RfProtocol::Crsf => crsf::reset_telemetry(),
+            #[cfg(feature = "rf-dsm")]
+            crate::board::RfProtocol::Dsm => dsm::reset_telemetry(),
+            crate::board::RfProtocol::Cc2500 | crate::board::RfProtocol::Mpm => {
+                rf::mpm::reset_telemetry()
+            }
+            _ => {}
+        }
+        self.vario.reset();
     }
 
     /// High-rate flight pipeline execution tick (multi-kHz execution speed).
@@ -118,11 +163,19 @@ impl FlightPipeline {
         }
 
         // 2. Resynchronize arm state when active model changes or when exiting settings menu
-        if storage.radio.active_model != self.prev_active_model {
+        let model_changed = storage.radio.active_model != self.prev_active_model;
+        if model_changed {
             self.prev_active_model = storage.radio.active_model;
-                    self.logical_bank.reset();
+            self.logical_bank.reset();
             self.prev_armed = mixer::eval_arm_switch(active_model.arm_switch, &state.switches);
             self.vario.reset();
+            self.alt_zero_dm = 0;
+            self.alt_zero_pending = false;
+            self.pkts_tx_zero = 0;
+            self.pkts_rx_zero = 0;
+            self.prev_telem_reset_active = active_model.telem_reset_src > 0
+                && active_model.telem_reset_src <= 44
+                && mixer::is_switch_active(active_model.telem_reset_src, &state.switches);
         }
 
         // 3. Check configured Arm Switch condition and play Armed/Disarmed chimes
@@ -255,7 +308,7 @@ impl FlightPipeline {
         }
 
         // 7. Map telemetry data based on active protocol
-        let telem = match proto {
+        let mut telem = match proto {
             crate::board::RfProtocol::Crsf => TelemetryData::from_crsf(&crsf::get_telemetry()),
             #[cfg(feature = "rf-dsm")]
             crate::board::RfProtocol::Dsm => TelemetryData::from_dsm(&dsm::get_telemetry(), now),
@@ -264,6 +317,57 @@ impl FlightPipeline {
             }
             _ => rf::get_telemetry_local(&mut self.telem_reading_idx),
         };
+
+        // 7b. Evaluate Telemetry Reset Switch (rising edge) and apply altitude/packet offsets
+        let mut just_telem_reset = model_changed;
+        let reset_src = active_model.telem_reset_src;
+        if reset_src > 0
+            && (reset_src <= ActiveBoard::MAX_MIX_SWITCH || (29..=44).contains(&reset_src))
+        {
+            let reset_active = mixer::is_switch_active(reset_src, &state.switches);
+            if !menu_active && reset_active && !self.prev_telem_reset_active {
+                just_telem_reset = true;
+                self.perform_telemetry_reset(
+                    proto,
+                    telem.last_alt_ms > 0,
+                    telem.alt_dm,
+                    telem.packets_sent,
+                    telem.packets_received,
+                );
+                if proto != crate::board::RfProtocol::Afhds2a {
+                    telem = TelemetryData::new();
+                } else {
+                    telem.alt_dm = 0;
+                    telem.alt_m = 0;
+                    telem.packets_sent = 0;
+                    telem.packets_received = 0;
+                }
+            }
+            self.prev_telem_reset_active = reset_active;
+        } else {
+            self.prev_telem_reset_active = false;
+        }
+
+        if !just_telem_reset {
+            if telem.last_alt_ms > 0 {
+                if self.alt_zero_pending {
+                    self.alt_zero_dm = telem.alt_dm;
+                    self.alt_zero_pending = false;
+                }
+                telem.alt_dm = telem.alt_dm.saturating_sub(self.alt_zero_dm);
+                telem.alt_m = telem.alt_dm / 10;
+            }
+            if telem.packets_sent >= self.pkts_tx_zero {
+                telem.packets_sent -= self.pkts_tx_zero;
+            } else {
+                self.pkts_tx_zero = 0;
+            }
+            if telem.packets_received >= self.pkts_rx_zero {
+                telem.packets_received -= self.pkts_rx_zero;
+            } else {
+                self.pkts_rx_zero = 0;
+            }
+        }
         let is_binding = !is_crsf && rf::is_binding();
 
         // 8. Poll USB subsystem (Joystick HID @ 100Hz, Serial CLI / Telemetry)
@@ -303,6 +407,7 @@ impl FlightPipeline {
             is_armed,
             just_armed,
             just_disarmed,
+            just_telem_reset,
         }
     }
 }
@@ -894,7 +999,15 @@ impl BackgroundIdleManager {
         let model = storage.active_model();
         let timer_configs = model.all_timer_configs();
 
-        if self.prev_timer_model != active_idx {
+        let model_changed = self.prev_timer_model != active_idx;
+        if flight.just_telem_reset {
+            dashboard.reset_telemetry();
+            if !menu_active && !model_changed {
+                buzzer.play_tone(2400, 100);
+            }
+        }
+
+        if model_changed {
             self.prev_timer_model = active_idx;
             self.timers.reset_all(&timer_configs);
             #[cfg(any(feature = "soaring", test))]
@@ -1062,6 +1175,22 @@ impl BackgroundIdleManager {
             calib_wizard,
             rf_ok,
         );
+
+        if menu_controller.request_telem_reset {
+            menu_controller.request_telem_reset = false;
+            let proto = ActiveBoard::resolve_protocol(storage.active_model().rf_protocol);
+            let raw_alt_dm = flight.telem.alt_dm.saturating_add(pipeline.alt_zero_dm);
+            let raw_pkts_tx = flight.telem.packets_sent.saturating_add(pipeline.pkts_tx_zero);
+            let raw_pkts_rx = flight.telem.packets_received.saturating_add(pipeline.pkts_rx_zero);
+            pipeline.perform_telemetry_reset(
+                proto,
+                flight.telem.last_alt_ms > 0,
+                raw_alt_dm,
+                raw_pkts_tx,
+                raw_pkts_rx,
+            );
+            dashboard.reset_telemetry();
+        }
     }
 
     #[inline(never)]
@@ -1577,5 +1706,39 @@ pub fn run(ctx: crate::hal::PlatformContext, on_stable_runtime: Option<fn()>) ->
             crate::audio::set_lang(storage.radio.voice_lang());
             crate::audio::tick(storage.radio.voice_volume_pct());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flight_pipeline_telemetry_reset_zeros_altitude_and_dashboard() {
+        let storage = RadioStorage::default_factory();
+        let init_state = input::read();
+        let mut pipeline = FlightPipeline::new(&storage, &init_state);
+        let mut dashboard = DashboardController::new();
+
+        dashboard.min_rssi = 42;
+        dashboard.min_rx_v_mv = 4850;
+        dashboard.telem_seen = true;
+
+        // 1. Reset with active altitude reading (e.g., 145.3m due to air pressure)
+        pipeline.perform_telemetry_reset(crate::board::RfProtocol::Afhds2a, true, 1453, 120, 95);
+        dashboard.reset_telemetry();
+
+        assert_eq!(pipeline.alt_zero_dm, 1453);
+        assert!(!pipeline.alt_zero_pending);
+        assert_eq!(pipeline.pkts_tx_zero, 120);
+        assert_eq!(pipeline.pkts_rx_zero, 95);
+        assert_eq!(dashboard.min_rssi, 100);
+        assert_eq!(dashboard.min_rx_v_mv, 0xFFFF);
+        assert!(!dashboard.telem_seen);
+
+        // 2. Reset before any altitude packet arrived -> pending zeroing
+        pipeline.perform_telemetry_reset(crate::board::RfProtocol::Crsf, false, 0, 0, 0);
+        assert!(pipeline.alt_zero_pending);
+        assert_eq!(pipeline.alt_zero_dm, 0);
     }
 }

@@ -240,6 +240,13 @@ pub fn get_telemetry() -> MpmTelemetry {
     unsafe { MPM_TELEM }
 }
 
+/// Reset accumulated/stale MPM telemetry state.
+pub fn reset_telemetry() {
+    unsafe {
+        MPM_TELEM = MpmTelemetry::new();
+    }
+}
+
 static mut LAST_SPEC: Option<&'static MultiProtoSpec> = None;
 static mut LAST_CHS: [u16; NUM_CHANNELS] = [1500; NUM_CHANNELS];
 static mut LAST_RX_FLAGS: u8 = 0;

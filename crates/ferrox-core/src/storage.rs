@@ -719,8 +719,9 @@ pub struct ModelConfig {
     pub multiswitch_momentary: [u8; NUM_MULTISWITCH_SLOTS], // 4 B
     pub multiswitch_labels: [[[u8; MULTISWITCH_LABEL_LEN]; NUM_MULTISWITCH_SWITCHES]; NUM_MULTISWITCH_SLOTS], // 128 B
 
-    // --- Reserved v1.x extension tail (10 B) ---
-    pub _reserved: [u8; 10],
+    // --- Reserved v1.x extension tail (10 B -> 9 B) ---
+    pub telem_reset_src: u8, // 0: None, 1..=44: SA^..SWMv, L1..!L8
+    pub _reserved: [u8; 9],
 }
 
 const _: () = assert!(core::mem::size_of::<ModelConfig>() == 760);
@@ -819,7 +820,8 @@ impl ModelConfig {
             logical_switches: [LogicalSwitch::disabled(); NUM_LOGICAL_SWITCHES],
             multiswitch_momentary: [0; NUM_MULTISWITCH_SLOTS],
             multiswitch_labels: default_multiswitch_labels(),
-            _reserved: [0; 10],
+            telem_reset_src: 0,
+            _reserved: [0; 9],
         }
     }
 
@@ -1573,6 +1575,9 @@ impl RadioStorage {
             if *slot > 22 {
                 *slot = 22; // OFF
             }
+        }
+        if m.telem_reset_src > 44 {
+            m.telem_reset_src = 0;
         }
         #[cfg(feature = "baitboat")]
         let max_model_type = 5;
@@ -2398,6 +2403,7 @@ mod tests {
         storage.active_model.vario_motor_mute = 99;
         storage.active_model.timer1_stop_src = 99;
         storage.active_model.timer1_reset_src = 99;
+        storage.active_model.telem_reset_src = 99;
         storage.active_model.timer1_flags = 0xFF;
         storage.active_model.timers_ext[0] = crate::timer::TimerConfig {
             secs: 9999,
@@ -2415,6 +2421,7 @@ mod tests {
         assert_eq!(storage.active_model.vario_motor_mute, 1);
         assert_eq!(storage.active_model.timer1_stop_src, 0);
         assert_eq!(storage.active_model.timer1_reset_src, 0);
+        assert_eq!(storage.active_model.telem_reset_src, 0);
         assert_eq!(
             storage.active_model.timer1_flags,
             crate::timer::TimerConfig::FLAG_AUDIO_BEEPS

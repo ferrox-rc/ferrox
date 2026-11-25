@@ -14,6 +14,7 @@ use protocol::{
 };
 
 static mut TELEMETRY: CrsfTelemetry = CrsfTelemetry::new();
+static mut CAP_ZERO_MAH: u32 = 0;
 static mut CRSF_ENABLED: bool = false;
 static mut CURRENT_BAUD: u8 = 0xFF;
 static mut CURRENT_HALF_DUPLEX: bool = false;
@@ -44,6 +45,7 @@ pub fn set_enabled(enabled: bool, baud_idx: u8, half_duplex: bool) {
 
             if !enabled {
                 TELEMETRY = CrsfTelemetry::new();
+                CAP_ZERO_MAH = 0;
                 RX_LEN = 0;
                 LAST_RX_BYTE_MS = 0;
             }
@@ -1483,7 +1485,25 @@ pub fn get_config_engine() -> &'static CrsfConfigEngine {
 
 /// Get latest decoded CRSF telemetry data.
 pub fn get_telemetry() -> CrsfTelemetry {
-    unsafe { TELEMETRY }
+    unsafe {
+        let mut t = TELEMETRY;
+        if t.rx_capacity_mah >= CAP_ZERO_MAH {
+            t.rx_capacity_mah -= CAP_ZERO_MAH;
+        } else if t.last_vbat_ms > 0 {
+            CAP_ZERO_MAH = 0;
+        } else {
+            t.rx_capacity_mah = 0;
+        }
+        t
+    }
+}
+
+/// Reset accumulated/stale CRSF telemetry state and zero consumed capacity offset.
+pub fn reset_telemetry() {
+    unsafe {
+        CAP_ZERO_MAH = TELEMETRY.rx_capacity_mah;
+        TELEMETRY = CrsfTelemetry::new();
+    }
 }
 
 #[cfg(test)]
@@ -1505,6 +1525,7 @@ mod tests {
             RX_BUF = [0; 64];
             RX_LEN = 0;
             LAST_RX_BYTE_MS = 0;
+            CAP_ZERO_MAH = 0;
             CHUNK_BUF = [0; CHUNK_BUF_SIZE];
             CHUNK_LEN = 0;
             CHUNK_PARAM_ID = 0;
@@ -1513,6 +1534,39 @@ mod tests {
             TELEMETRY = CrsfTelemetry::new();
             uart::mock::clear();
         }
+    }
+
+    #[test]
+    fn test_crsf_reset_telemetry_zeroes_capacity_and_state() {
+        reset_state();
+        unsafe {
+            TELEMETRY.connected = true;
+            TELEMETRY.rx_capacity_mah = 450;
+            TELEMETRY.baro_alt_dm = 1230;
+            TELEMETRY.last_alt_ms = 500;
+        }
+        assert_eq!(get_telemetry().rx_capacity_mah, 450);
+
+        reset_telemetry();
+        let after = get_telemetry();
+        assert!(!after.connected);
+        assert_eq!(after.last_alt_ms, 0);
+        assert_eq!(after.rx_capacity_mah, 0);
+
+        // Subsequent frames reporting cumulative 480 mAh show 30 mAh
+        unsafe {
+            TELEMETRY.connected = true;
+            TELEMETRY.last_vbat_ms = 600;
+            TELEMETRY.rx_capacity_mah = 480;
+        }
+        assert_eq!(get_telemetry().rx_capacity_mah, 30);
+
+        // If FC reboots and reports 10 mAh (< 450), offset auto-resets
+        unsafe {
+            TELEMETRY.last_vbat_ms = 700;
+            TELEMETRY.rx_capacity_mah = 10;
+        }
+        assert_eq!(get_telemetry().rx_capacity_mah, 10);
     }
 
     unsafe fn add_test_param(
