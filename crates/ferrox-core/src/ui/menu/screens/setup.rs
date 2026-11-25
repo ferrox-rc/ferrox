@@ -1451,7 +1451,7 @@ pub fn update_rx_setup(
                             Some(pwr_str),
                         );
                     }
-                    MpmRow::Failsafe => {
+                    MpmRow::Failsafe if HAS_EXT_BAY => {
                         let fs_str = if storage.active_model.failsafe_mode != 0 {
                             "Custom"
                         } else {
@@ -1465,7 +1465,7 @@ pub fn update_rx_setup(
                             Some(fs_str),
                         );
                     }
-                    MpmRow::FailsafeThr => {
+                    MpmRow::FailsafeThr if HAS_EXT_BAY => {
                         let thr = storage.active_model.failsafe_thr.clamp(988, 2012);
                         let mut buf = [0u8; 10];
                         let mut pos = 0;

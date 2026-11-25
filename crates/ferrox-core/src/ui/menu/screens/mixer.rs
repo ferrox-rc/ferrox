@@ -3,7 +3,6 @@
 use crate::buzzer::Buzzer;
 use crate::curve;
 use crate::display::St7567;
-#[cfg(any(feature = "logical-switches", test))]
 use crate::menu::format::LOGICAL_FUNC_NAMES;
 use crate::menu::format::{
     ascii_as_str, i8_to_dec, u8_to_dec, AXIS_NAMES, MODE_NAMES, SOURCE_NAMES, SWITCH_COND_NAMES,
@@ -955,7 +954,6 @@ pub fn update_global_vars(
     widgets::draw_footer(lcd, footer);
 }
 
-#[cfg(any(feature = "logical-switches", test))]
 #[inline(never)]
 pub fn update_logical_switches(
     ctrl: &mut MenuController,

@@ -28,11 +28,6 @@ default = [
     "stm32",
     "touch",
     "rf-afhds2a",
-    "rf-crsf",
-    "rf-cc2500",
-    "rf-dsm",
-    "dsm-fwd-prog",
-    "logical-switches",
 ]
 stm32 = ["ferrox-core/stm32", "ferrox-stm32f0/stm32"]
 apm32 = ["ferrox-core/apm32", "ferrox-stm32f0/apm32"]
@@ -44,5 +39,4 @@ rf-mpm = ["ferrox-core/rf-mpm"]
 rf-dsm = ["ferrox-core/rf-dsm"]
 dsm-fwd-prog = ["ferrox-core/dsm-fwd-prog"]
 soaring = ["ferrox-core/soaring"]
-logical-switches = ["ferrox-core/logical-switches"]
 multiswitch = ["ferrox-core/multiswitch"]

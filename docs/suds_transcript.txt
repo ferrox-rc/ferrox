@@ -1,0 +1,141 @@
+suds [RO3],  — 8:35 AM
+just having a chance to flash the xiao sense-plus. the new script you've built is really nice to use.
+one heads-up, i tried forcing --method uf2 and it still output an .elf file:
+suds@workstation:~/FerroxRC/wingfc-rs-main$ ./scripts/build.sh --method uf2
+======================================================================
+WINGFC-RS FIRMWARE RELEASE BUILDER
+======================================================================
+Target Board     : xiao-sense-plus
+Airframe         : AirframeType::Elevon
+Receiver         : CRSF (failsafe: 500ms)
+Arm Thresholds   : Arm Switch > 1800 μs, Throttle <= 1050 μs
+Servo Output     : 400 Hz PWM
+Loop Timing      : 208 Hz (1666 Hz IMU boxcar 8:1) - Hardware DRDY
+Motor Protocol   : PWM (400 Hz)
+Barometer        : DISABLED
+Compass          : DISABLED
+GPS Navigation   : DISABLED
+Altitude Limits  : Hard deck: 15.0m AGL, Max ceiling: 120.0m AGL
+Cargo Features   : --features crsf
+Output Directory : /home/suds/FerroxRC/wingfc-rs-main/dist
+----------------------------------------------------------------------
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+⚠️   CONFIGURATION & HARDWARE ADVISORIES
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+HARDWARE WARNING: Servo refresh frequency is set to 400 Hz!
+    * Standard analog servos (e.g., SG90, MG90S) CANNOT exceed 50-60 Hz.
+    * Ensure your servos are digital models that support 400 Hz refresh.
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+-> Compiling firmware with LTO and size optimization... DONE (1.9s)
+
+======================================================================
+BUILD SUMMARY & RESOURCE CONSUMPTION
+======================================================================
+Firmware Binary  : wingfc-firmware-crsf-pwm-ultralight.elf
+Flash Memory     : 95.9 KB / 1024 KB (9.4% used, 90.6% free)
+RAM Memory       : 12.9 KB / 256 KB (5.0% used, 95.0% free)
+----------------------------------------------------------------------
+Produced Artifacts:
+  - wingfc-firmware-crsf-pwm-ultralight.elf (SHA256: 0e347d5ef6e0e7cd...)
+----------------------------------------------------------------------
+FLASHING INSTRUCTIONS:
+  USB Drag-and-Drop (UF2 Bootloader):
+    1. Double-tap reset button to mount XIAO-SENSE drive
+    2. Copy 'wingfc-firmware-crsf-pwm-ultralight.uf2' to XIAO-SENSE drive
+       cp /home/suds/FerroxRC/wingfc-rs-main/dist/wingfc-firmware-crsf-pwm-ultralight.uf2 /run/media/$USER/XIAO-SENSE/
+    (Manual conversion: python3 scripts/uf2conv/uf2conv.py -c -f 0xADA52840 wingfc-firmware-crsf-pwm-ultralight.hex -o firmware.uf2)
+  SWD / Debug Probe (probe-rs):
+    probe-rs run --chip nRF52840_xxAA /home/suds/FerroxRC/wingfc-rs-main/dist/wingfc-firmware-crsf-pwm-ultralight.elf
+  Nordic nrfjprog:
+    nrfjprog --program /home/suds/FerroxRC/wingfc-rs-main/dist/wingfc-firmware-crsf-pwm-ultralight.hex --sectorerase --reset
+======================================================================
+suds [RO3],  — 8:45 AM
+argparse is awesome, btw. that's how i do all of my python scripts
+BryanSouza — 9:25 AM
+I did notice something similar with the UF2 arg method. I will look into it. The script is nice.  Thanks
+I have the SeeedStudio XIAO DebugMate so I have been using the script with probe-rs
+BryanSouza — 10:10 AM
+And --method uf2 actually builds the UF2 and flashes it to your device as long as it is properly mounted.
+suds [RO3],  — 11:36 AM
+sweet.... will need to see how to get it properly mounted.
+I connected it the same way I connected the Boxer.
+
+I may be clicking the wrong reset button twice. I remember some of the older boards had two buttons, boot and reset.
+BryanSouza — 11:37 AM
+I updated the tool and the v0.6.0 got the hotfix
+Let me know how it goes
+suds [RO3],  — 11:46 AM
+sweet will do.
+suds [RO3],  — 12:32 PM
+hmm tried it again and still got the "no such file or directory" for the uf2 file
+suds@workstation:~/FerroxRC/wingfc-rs-main$ ./scripts/build.sh flash --method uf2 --mount /dev/bus/usb/001/003
+======================================================================
+WINGFC-RS PRE-FLASH CONFIGURATION VERIFICATION
+======================================================================
+
+... ...
+... ...
+... ...
+
+======================================================================
+WINGFC-RS FIRMWARE FLASH ENGINE: wingfc-firmware-crsf-pwm-gps
+======================================================================
+Copying 'wingfc-firmware-crsf-pwm-gps.uf2' -> '/dev/bus/usb/001/003/wingfc-firmware-crsf-pwm-gps.uf2'...
+ERROR copying UF2 file: [Errno 2] No such file or directory: '/home/suds/FerroxRC/wingfc-rs-main/dist/wingfc-firmware-crsf-pwm-gps.uf2'
+BryanSouza — 12:36 PM
+I will try it right now as well
+suds [RO3],  — 12:39 PM
+i had to specify the path, so maybe that's what is making it do weird things
+BryanSouza — 12:41 PM
+possibly... I am having trouble getting my XIAO to show up as MASS STORAGE...
+suds [RO3],  — 12:42 PM
+this is what it shows up on mine...
+suds@workstation:~/FerroxRC/wingfc-rs-main$ lsusb
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 003: ID 2886:0045 Seeed Technology Co., Ltd. XIAO nRF52840 Sense
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+BryanSouza — 12:42 PM
+I have been using the DebugMate and probe-rs so maybe that messed with my bootloader... I will figure this out.
+The script was supposed to be fairly automatic with the appropriate fallbacks and messaging to the user to get it going but it clearly needs a little bit of work
+suds [RO3],  — 12:43 PM
+in windows it shows up as mass storage, so it's not that as an issue i don't think:
+PS C:\Users\sudhir> usbipd list
+Connected:
+BUSID  VID:PID    DEVICE                                                        STATE
+4-9    2886:0045  USB Serial Device (COM4), USB Mass Storage Device             Attached
+ohh maybe i don't have the right setting inside usbip? it's showing unknown product... (but it showed that for the Boxer radio and it was fine)
+suds@workstation:~/FerroxRC/wingfc-rs-main$ sudo usbip port
+[sudo] password for suds:
+Imported USB devices
+====================
+Port 00: <Port in Use> at Full Speed(12Mbps)
+       Seeed Technology Co., Ltd. : unknown product (2886:0045)
+       1-1 -> usbip://127.0.0.1:3240/4-9
+           -> remote bus/dev 004/009
+BryanSouza — 12:48 PM
+Maybe... I think I may have updated my udev.rules
+suds [RO3],  — 1:23 PM
+i thought maybe it was an issue of libudev for rust not being installed, so i installed it and tried again... still no luck.
+suds@workstation:~/FerroxRC/wingfc-rs-main$ ./scripts/build.sh flash --method uf2 --mount /dev/bus/usb/001/003
+======================================================================
+WINGFC-RS PRE-FLASH CONFIGURATION VERIFICATION
+======================================================================
+======================================================================
+WINGFC-RS CONFIGURATION CHECK
+
+message.txt
+6 KB
+(also thought maybe it was an issue with not having elf2uf2-rs installed... so installed that as well)
+BryanSouza — 3:24 PM
+Maybe a web-flashing tool is in order! lol
+
+https://ferroxrc.com/flasher
+Ferrox-RC Web Flasher — Browser STM32 DFU Firmware Installer
+Flash Ferrox-RC bare-metal Rust firmware directly to STM32F4 and STM32F0 transmitters from your browser via WebUSB DFU—no CLI tools required.
+I will work on this script today and really make it foolproof
+suds [RO3],  — 3:36 PM
+sweet!

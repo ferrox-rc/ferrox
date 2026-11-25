@@ -507,6 +507,16 @@ impl Buzzer {
         }
     }
 
+    /// Telemetry reconnected chime (ascending two-tone chirp when RF telemetry link recovers).
+    pub fn chime_telemetry_reconnected(&mut self) {
+        if self.tone_style == ToneStyle::Rich {
+            static MELODY: [Note; 2] = [Note::new(1600, 45, 25), Note::new(2200, 65, 0)];
+            self.play_sequence(&MELODY);
+        } else {
+            self.play_tone_pattern(2000, 50, 30, 2);
+        }
+    }
+
     /// Telemetry lost warning alert (recurring alarm when RF telemetry connection drops).
     pub fn warn_telemetry_lost(&mut self) {
         if self.tone_style == ToneStyle::Rich {

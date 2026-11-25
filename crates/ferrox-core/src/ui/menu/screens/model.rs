@@ -120,8 +120,7 @@ enum SetupItem {
     SdLog,
     #[cfg(any(feature = "soaring", test))]
     Soaring,
-    #[cfg(any(feature = "logical-switches", test))]
-    LogicalSwitches,
+        LogicalSwitches,
     Reset,
 }
 
@@ -138,8 +137,7 @@ const SETUP_ITEMS: &[SetupItem] = &[
     SetupItem::SdLog,
     #[cfg(any(feature = "soaring", test))]
     SetupItem::Soaring,
-    #[cfg(any(feature = "logical-switches", test))]
-    SetupItem::LogicalSwitches,
+        SetupItem::LogicalSwitches,
     SetupItem::Reset,
 ];
 
@@ -276,8 +274,7 @@ fn render_setup_row(
                 64,
             );
         }
-        #[cfg(any(feature = "logical-switches", test))]
-        SetupItem::LogicalSwitches => {
+                SetupItem::LogicalSwitches => {
             widgets::draw_list_row(lcd, slot, inverted, "Logic Sw: [L1..L8]", None, 0);
         }
         SetupItem::Reset => {
@@ -381,8 +378,7 @@ pub fn update_setup(
                     ctrl.scroll_offset = 0;
                     buzzer.click();
                 }
-                #[cfg(any(feature = "logical-switches", test))]
-                SetupItem::LogicalSwitches => {
+                                SetupItem::LogicalSwitches => {
                     // Open Logical Switches (L1..L8) submenu
                     ctrl.state = MenuState::LogicalSwitches;
                     ctrl.selected_item = 0;

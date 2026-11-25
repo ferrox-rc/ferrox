@@ -292,7 +292,7 @@ const fn enabled_features_buf() -> ([u8; 32], usize) {
         (b"DS", cfg!(feature = "rf-dsm")),
         (b"FP", cfg!(feature = "dsm-fwd-prog")),
         (b"SR", cfg!(feature = "soaring")),
-        (b"LS", cfg!(feature = "logical-switches")),
+        (b"LS", true),
         (b"MS", cfg!(feature = "multiswitch")),
         (b"VX", cfg!(feature = "voice-audio")),
         (b"SD", cfg!(feature = "sd-logging")),

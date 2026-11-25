@@ -47,9 +47,7 @@ pub struct FlightPipeline {
     pub prev_active_model: u8,
     pub telem_reading_idx: u8,
     pub vario: Vario,
-    #[cfg(any(feature = "logical-switches", test))]
     pub logical_bank: mixer::LogicalSwitchBank,
-    #[cfg(any(feature = "logical-switches", test))]
     pub last_tick_ms: u32,
     #[cfg(any(feature = "multiswitch", test))]
     pub multiswitch: crate::multiswitch::MultiSwitchController,
@@ -64,10 +62,8 @@ impl FlightPipeline {
             prev_active_model: storage.radio.active_model,
             telem_reading_idx: 1,
             vario: Vario::new(),
-            #[cfg(any(feature = "logical-switches", test))]
-            logical_bank: mixer::LogicalSwitchBank::new(),
-            #[cfg(any(feature = "logical-switches", test))]
-            last_tick_ms: 0,
+                    logical_bank: mixer::LogicalSwitchBank::new(),
+                    last_tick_ms: 0,
             #[cfg(any(feature = "multiswitch", test))]
             multiswitch: crate::multiswitch::MultiSwitchController::new(),
         }
@@ -95,8 +91,7 @@ impl FlightPipeline {
         let controls = state.flight_controls(stick_mode);
 
         // 1b. Update Logical Switches L1..L8 with millisecond delay & duration timers
-        #[cfg(any(feature = "logical-switches", test))]
-        {
+            {
             let dt_ms = if self.last_tick_ms == 0 {
                 0
             } else {
@@ -125,8 +120,7 @@ impl FlightPipeline {
         // 2. Resynchronize arm state when active model changes or when exiting settings menu
         if storage.radio.active_model != self.prev_active_model {
             self.prev_active_model = storage.radio.active_model;
-            #[cfg(any(feature = "logical-switches", test))]
-            self.logical_bank.reset();
+                    self.logical_bank.reset();
             self.prev_armed = mixer::eval_arm_switch(active_model.arm_switch, &state.switches);
             self.vario.reset();
         }
@@ -581,6 +575,9 @@ impl BackgroundIdleManager {
         // 4b. Telemetry Lost Edge Detection & RSSI Range Alarms (checked on all screens)
         if flight.telem.connected {
             self.telem_was_seen = true;
+            if !self.prev_telem_connected && self.telem_was_seen && !flight.is_binding && rf_ok {
+                buzzer.chime_telemetry_reconnected();
+            }
             if flight.telem.rssi < 20 {
                 if tick_periodic_alarm(&mut self.rssi_alarm_timer_ms, 3000, dt_ms) {
                     buzzer.warn_rssi_critical();
