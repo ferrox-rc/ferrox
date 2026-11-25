@@ -49,6 +49,19 @@ pub const fn switch_rect(index: u8) -> (i32, i32, u32, u32) {
     )
 }
 
+/// Hit-tests screen coordinates against the 8 MultiSwitch tiles, returning `0..8`.
+pub fn switch_at_point(x: i32, y: i32) -> Option<usize> {
+    let mut index = 0u8;
+    while index < SWITCH_COUNT {
+        let (rx, ry, rw, rh) = switch_rect(index);
+        if x >= rx && x < rx + rw as i32 && y >= ry && y < ry + rh as i32 {
+            return Some(index as usize);
+        }
+        index += 1;
+    }
+    None
+}
+
 pub fn label_text<'a>(
     label: &[u8; MULTISWITCH_LABEL_LEN],
     index: u8,

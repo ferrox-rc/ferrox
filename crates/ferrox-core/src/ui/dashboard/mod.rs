@@ -96,6 +96,19 @@ impl DashboardController {
         }
     }
 
+    #[cfg(feature = "multiswitch")]
+    pub fn multiswitch_touch_slot(&self, storage: &RadioStorage) -> Option<usize> {
+        if !crate::board::ActiveBoard::HAS_TOUCH
+            || crate::usb::is_sim_mode()
+            || crate::board::ActiveBoard::resolve_protocol(storage.active_model().rf_protocol)
+                != crate::board::RfProtocol::Crsf
+        {
+            None
+        } else {
+            self.multiswitch_slot(storage)
+        }
+    }
+
     /// Advance to the next dashboard page.
     pub fn next_page(&mut self, buzzer: &mut Buzzer) {
         self.page = (self.page + 1) % self.max_pages.max(1);

@@ -352,6 +352,8 @@ pub struct BackgroundIdleManager {
     pub audio_callouts: crate::audio::CalloutScheduler,
     #[cfg(feature = "multiswitch")]
     pub prev_ms_ok: bool,
+    #[cfg(all(feature = "multiswitch", feature = "touch"))]
+    pub prev_ms_touch: Option<(usize, usize)>,
     pub board_idle: <ActiveBoard as BoardProfile>::IdleState,
 }
 
@@ -430,6 +432,8 @@ impl BackgroundIdleManager {
             audio_callouts: crate::audio::CalloutScheduler::new(),
             #[cfg(feature = "multiswitch")]
             prev_ms_ok: false,
+            #[cfg(all(feature = "multiswitch", feature = "touch"))]
+            prev_ms_touch: None,
             board_idle: ActiveBoard::create_idle_state(),
         }
     }
@@ -694,6 +698,58 @@ impl BackgroundIdleManager {
                 }
             }
             self.prev_ms_ok = ok_raw;
+
+            #[cfg(feature = "touch")]
+            {
+                let tap_point = crate::touch::nav::take_tap_point();
+                if !menu_active {
+                    if let Some(slot) = dashboard.multiswitch_touch_slot(storage) {
+                        let active_sw = crate::touch::nav::active_touch_point()
+                            .and_then(|(x, y)| crate::multiswitch::switch_at_point(x as i32, y as i32));
+                        let active_momentary = active_sw.and_then(|sw| {
+                            if (storage.active_model().multiswitch_momentary[slot] & (1 << sw)) != 0 {
+                                Some((slot, sw))
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some((prev_slot, prev_sw)) = self.prev_ms_touch {
+                            if active_momentary != Some((prev_slot, prev_sw)) {
+                                pipeline.multiswitch.set_switch(prev_slot, prev_sw, false);
+                                self.prev_ms_touch = None;
+                            }
+                        }
+
+                        if let Some((m_slot, m_sw)) = active_momentary {
+                            if self.prev_ms_touch != Some((m_slot, m_sw)) {
+                                pipeline.multiswitch.set_switch(m_slot, m_sw, true);
+                                buzzer.click();
+                                self.prev_ms_touch = Some((m_slot, m_sw));
+                            }
+                        }
+
+                        if let Some((tap_x, tap_y)) = tap_point {
+                            if let Some(sw) =
+                                crate::multiswitch::switch_at_point(tap_x as i32, tap_y as i32)
+                            {
+                                let is_momentary =
+                                    (storage.active_model().multiswitch_momentary[slot] & (1 << sw))
+                                        != 0;
+                                if !is_momentary {
+                                    pipeline.multiswitch.toggle(slot, sw);
+                                    buzzer.click();
+                                }
+                            }
+                        }
+                    } else if let Some((prev_slot, prev_sw)) = self.prev_ms_touch.take() {
+                        pipeline.multiswitch.set_switch(prev_slot, prev_sw, false);
+                    }
+                } else if let Some((prev_slot, prev_sw)) = self.prev_ms_touch.take() {
+                    pipeline.multiswitch.set_switch(prev_slot, prev_sw, false);
+                }
+            }
+
             dashboard.multiswitch_states = pipeline.multiswitch.states;
         }
 

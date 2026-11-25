@@ -58,6 +58,7 @@ pub struct SwipeTracker {
     pub last_packet_ms: u32,
     pub last_scroll_ms: u32,
     pub last_move_ms: u32,
+    pub pending_tap: Option<(u8, u8)>,
 }
 
 impl SwipeTracker {
@@ -101,6 +102,7 @@ static mut GLOBAL_SWIPE_TRACKER: SwipeTracker = SwipeTracker {
     last_packet_ms: 0,
     last_scroll_ms: 0,
     last_move_ms: 0,
+    pending_tap: None,
 };
 
 /// Evaluates a valid touch sample and screen tap zones into UI navigation key flags.
@@ -275,6 +277,7 @@ pub fn touch_to_nav_keys_with_tracker(
                 if tracker.active && !tracker.swiped {
                     let tap_x = tracker.start_x;
                     let tap_y = tracker.start_y;
+                    tracker.pending_tap = Some((tap_x, tap_y));
                     keys |= evaluate_tap_zones(tap_x, tap_y, menu_active);
                 }
                 tracker.clear();
@@ -294,6 +297,7 @@ pub fn touch_to_nav_keys_with_tracker(
     } else {
         // Touch point is None: finger released / lifted
         if tracker.active && !tracker.swiped {
+            tracker.pending_tap = Some((tracker.start_x, tracker.start_y));
             keys |= evaluate_tap_zones(tracker.start_x, tracker.start_y, menu_active);
         }
         tracker.clear();
@@ -371,11 +375,28 @@ pub fn process_touch_release(menu_active: bool) -> u16 {
     let tracker = unsafe { &mut *core::ptr::addr_of_mut!(GLOBAL_SWIPE_TRACKER) };
     let mut keys = 0u16;
     if tracker.active && !tracker.swiped {
+        tracker.pending_tap = Some((tracker.start_x, tracker.start_y));
         keys |= evaluate_tap_zones(tracker.start_x, tracker.start_y, menu_active);
     }
     tracker.active = false;
     tracker.swiped = false;
     keys
+}
+
+/// Returns the current active non-swiped touch coordinates `(x, y)` if a finger is held down.
+pub fn active_touch_point() -> Option<(u8, u8)> {
+    let tracker = unsafe { &*core::ptr::addr_of!(GLOBAL_SWIPE_TRACKER) };
+    if tracker.active && !tracker.swiped {
+        Some((tracker.start_x, tracker.start_y))
+    } else {
+        None
+    }
+}
+
+/// Takes and clears the most recent non-swiped tap coordinates `(x, y)` if one occurred.
+pub fn take_tap_point() -> Option<(u8, u8)> {
+    let tracker = unsafe { &mut *core::ptr::addr_of_mut!(GLOBAL_SWIPE_TRACKER) };
+    tracker.pending_tap.take()
 }
 
 /// Evaluates modifier trims using Left Front (`PA9`) and Right Front (`PA10`) buttons
