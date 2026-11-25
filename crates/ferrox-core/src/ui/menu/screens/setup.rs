@@ -678,10 +678,12 @@ pub fn update_rx_setup(
     let ext_off = usize::from(HAS_EXT_BAY);
     let has_d16_opt = HAS_EXT_BAY
         && match current_proto {
+            #[cfg(feature = "rf-mpm")]
             RfProtocol::Mpm => crate::rf::mpm::is_d16_protocol(
                 crate::rf::mpm::MpmProtocol::from_u8(storage.active_model.rx_serial_proto)
                     .mpm_proto_id(),
             ),
+            #[cfg(feature = "rf-cc2500")]
             RfProtocol::Cc2500 => crate::rf::mpm::is_d16_protocol(
                 crate::rf::cc2500::Cc2500Protocol::from_u8(storage.active_model.rx_serial_proto)
                     .mpm_proto_id(),
@@ -765,8 +767,11 @@ pub fn update_rx_setup(
     let mpm_row_at = |idx: usize| mpm_row_at_const(idx, HAS_EXT_BAY, has_d16_opt, has_fs_thr);
 
     let item_count = match current_proto {
+        #[cfg(feature = "rf-afhds2a")]
         RfProtocol::Afhds2a => 6,
+        #[cfg(feature = "rf-crsf")]
         RfProtocol::Crsf => 5 + ext_off,
+        #[cfg(any(feature = "rf-cc2500", feature = "rf-mpm"))]
         RfProtocol::Cc2500 | RfProtocol::Mpm => {
             if !has_ext_bay {
                 6
@@ -776,6 +781,7 @@ pub fn update_rx_setup(
                 11 + usize::from(has_fs_thr)
             }
         }
+        #[cfg(feature = "rf-dsm")]
         RfProtocol::Dsm => {
             #[cfg(feature = "dsm-fwd-prog")]
             {
@@ -786,6 +792,8 @@ pub fn update_rx_setup(
                 4 + ext_off
             }
         }
+        #[allow(unreachable_patterns)]
+        _ => 1,
     };
 
     if keys.cancel {
@@ -1064,6 +1072,7 @@ pub fn update_rx_setup(
                 }
             }
             idx if is_mpm_family && mpm_row_at(idx) == Some(MpmRow::Mode) => {
+                #[cfg(feature = "rf-mpm")]
                 if current_proto == RfProtocol::Mpm {
                     let cur = crate::rf::mpm::MpmProtocol::from_u8(
                         storage.active_model.rx_serial_proto,
@@ -1075,7 +1084,9 @@ pub fn update_rx_setup(
                         storage.active_model.rx_serial_proto = cur.prev().as_u8();
                         buzzer.play_tone(2200, 30);
                     }
-                } else {
+                }
+                #[cfg(feature = "rf-cc2500")]
+                if current_proto == RfProtocol::Cc2500 {
                     let cur = crate::rf::cc2500::Cc2500Protocol::from_u8(
                         storage.active_model.rx_serial_proto,
                     );
@@ -1265,16 +1276,18 @@ pub fn update_rx_setup(
                         );
                     }
                     MpmRow::Mode => {
-                        let proto_name = if current_proto == RfProtocol::Mpm {
-                            crate::rf::mpm::MpmProtocol::from_u8(
+                        let proto_name = match current_proto {
+                            #[cfg(feature = "rf-mpm")]
+                            RfProtocol::Mpm => crate::rf::mpm::MpmProtocol::from_u8(
                                 storage.active_model.rx_serial_proto,
                             )
-                            .name()
-                        } else {
-                            crate::rf::cc2500::Cc2500Protocol::from_u8(
+                            .name(),
+                            #[cfg(feature = "rf-cc2500")]
+                            RfProtocol::Cc2500 => crate::rf::cc2500::Cc2500Protocol::from_u8(
                                 storage.active_model.rx_serial_proto,
                             )
-                            .name()
+                            .name(),
+                            _ => "",
                         };
                         let mut buf = [0u8; 16];
                         let val_str = if ctrl.editing && idx == ctrl.selected_item {
@@ -1499,6 +1512,7 @@ pub fn update_rx_setup(
             };
             widgets::draw_footer(lcd, footer);
         }
+        #[cfg(feature = "rf-dsm")]
         RfProtocol::Dsm => {
             for slot in 0..4 {
                 let idx = ctrl.scroll_offset + slot;
@@ -1596,6 +1610,8 @@ pub fn update_rx_setup(
             };
             widgets::draw_footer(lcd, footer);
         }
+        #[allow(unreachable_patterns)]
+        _ => {}
     }
 }
 
