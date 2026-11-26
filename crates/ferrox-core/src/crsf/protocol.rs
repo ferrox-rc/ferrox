@@ -59,6 +59,11 @@ pub const CRSF_FRAMETYPE_PARAMETER_SETTINGS_ENTRY: u8 = 0x2B;
 pub const CRSF_FRAMETYPE_PARAMETER_READ: u8 = 0x2C;
 pub const CRSF_FRAMETYPE_PARAMETER_WRITE: u8 = 0x2D;
 pub const CRSF_FRAMETYPE_ELRS_STATUS: u8 = 0x2E;
+pub const CRSF_FRAMETYPE_COMMAND: u8 = 0x32;
+
+// CRSF 0x32 Command / Subcommand IDs
+pub const CRSF_COMMAND_ID_RX: u8 = 0x10;
+pub const CRSF_COMMAND_SUBCMD_RX_MODEL_SELECT: u8 = 0x05;
 
 // Parameter data types
 pub const CRSF_TYPE_UINT8: u8 = 0;
@@ -82,6 +87,7 @@ pub const STATUS_CONFIRM: u8 = 4;
 pub const STATUS_CANCEL: u8 = 5;
 pub const STATUS_POLL: u8 = 6;
 
+pub const CRSF_MODEL_SELECT_FRAME_SIZE: usize = 10;
 pub const CRSF_FRAME_MAX_SIZE: usize = 64;
 pub const CRSF_RC_FRAME_SIZE: usize = 26; // 1 (addr) + 1 (len) + 1 (type) + 22 (payload) + 1 (crc)
 pub const CRSF_RC_EXT_FRAME_SIZE: usize = 27; // 1 (addr) + 1 (len) + 1 (type) + 23 (payload) + 1 (crc)
@@ -211,49 +217,96 @@ pub fn crc8(data: &[u8]) -> u8 {
     }
     crc
 }
+/// Calculate CRC8 using polynomial 0xBA (used for inner CRSF 0x32 command frames).
+/// Kept bitwise to avoid a second 256-byte LUT in Flash.
+pub fn crc8_ba(data: &[u8]) -> u8 {
+    let mut crc = 0u8;
+    for &byte in data {
+        crc ^= byte;
+        for _ in 0..8 {
+            crc = if crc & 0x80 != 0 {
+                (crc << 1) ^ 0xBA
+            } else {
+                crc << 1
+            };
+        }
+    }
+    crc
+}
+
+/// Build an extended CRSF frame (0x28..0x32):
+/// [Sync (0xC8)] [Len] [Type] [Dest] [Orig (0xEA)] [Payload...] [CRC8-D5]
+pub fn build_ext_frame(frame_type: u8, dest: u8, payload: &[u8], out_frame: &mut [u8]) -> usize {
+    let total_len = 6 + payload.len();
+    if out_frame.len() < total_len || payload.len() > CRSF_FRAME_MAX_SIZE - 6 {
+        return 0;
+    }
+    out_frame[0] = CRSF_SYNC_BYTE;
+    out_frame[1] = (4 + payload.len()) as u8;
+    out_frame[2] = frame_type;
+    out_frame[3] = dest;
+    out_frame[4] = CRSF_ADDRESS_RADIO_TRANSMITTER;
+    let end = 5 + payload.len();
+    out_frame[5..end].copy_from_slice(payload);
+    out_frame[end] = crc8(&out_frame[2..end]);
+    total_len
+}
+
+/// Build a CRSF 0x32 Command frame with inner 0xBA command CRC and outer 0xD5 frame CRC:
+/// [Sync (0xC8)] [Len] [0x32] [Dest] [Orig (0xEA)] [Cmd] [Subcmd] [Payload...] [CRC8-BA] [CRC8-D5]
+pub fn build_command_frame(
+    dest: u8,
+    cmd_id: u8,
+    subcmd: u8,
+    payload: &[u8],
+    out_frame: &mut [u8],
+) -> usize {
+    let total_len = 9 + payload.len();
+    if out_frame.len() < total_len || payload.len() > CRSF_FRAME_MAX_SIZE - 9 {
+        return 0;
+    }
+    out_frame[0] = CRSF_SYNC_BYTE;
+    out_frame[1] = (7 + payload.len()) as u8;
+    out_frame[2] = CRSF_FRAMETYPE_COMMAND;
+    out_frame[3] = dest;
+    out_frame[4] = CRSF_ADDRESS_RADIO_TRANSMITTER;
+    out_frame[5] = cmd_id;
+    out_frame[6] = subcmd;
+    let payload_end = 7 + payload.len();
+    out_frame[7..payload_end].copy_from_slice(payload);
+    out_frame[payload_end] = crc8_ba(&out_frame[2..payload_end]);
+    out_frame[payload_end + 1] = crc8(&out_frame[2..payload_end + 1]);
+    total_len
+}
 
 /// Build the CRSF MultiSwitch Set4 command: eight 2-bit output states, big-endian.
-/// Command CRC (0xBA) covers bytes 2..10; outer CRSF CRC (0xD5) covers bytes 2..11.
 #[cfg(any(feature = "multiswitch", test))]
-pub fn build_set4(
-    address: u8,
-    switches: u8,
-    frame: &mut [u8; CRSF_SET4_FRAME_SIZE],
-) -> usize {
+pub fn build_set4(address: u8, switches: u8, frame: &mut [u8; CRSF_SET4_FRAME_SIZE]) -> usize {
     let mut state = 0u16;
     for index in 0..8 {
         if switches & (1 << index) != 0 {
             state |= 1 << (2 * index);
         }
     }
-    *frame = [
-        CRSF_SYNC_BYTE,
-        10,
-        0x32,
+    build_command_frame(
         CRSF_ADDRESS_BROADCAST,
-        CRSF_ADDRESS_RADIO_TRANSMITTER,
         0xA1,
         0x07,
-        address,
-        (state >> 8) as u8,
-        state as u8,
-        0,
-        0,
-    ];
-    let mut command_crc = 0u8;
-    for &byte in &frame[2..10] {
-        command_crc ^= byte;
-        for _ in 0..8 {
-            command_crc = if command_crc & 0x80 != 0 {
-                (command_crc << 1) ^ 0xBA
-            } else {
-                command_crc << 1
-            };
-        }
-    }
-    frame[10] = command_crc;
-    frame[11] = crc8(&frame[2..11]);
-    CRSF_SET4_FRAME_SIZE
+        &[address, (state >> 8) as u8, state as u8],
+        frame,
+    )
+}
+
+/// Build a CRSF Model Select command (0x32, Cmd 0x10, Subcmd 0x05) for ExpressLRS Model Match.
+/// `model_id` is typically 0..=63 (EdgeTX Receiver No.).
+pub fn build_model_select_frame(model_id: u8, out_frame: &mut [u8]) -> usize {
+    build_command_frame(
+        CRSF_ADDRESS_CRSF_TRANSMITTER,
+        CRSF_COMMAND_ID_RX,
+        CRSF_COMMAND_SUBCMD_RX_MODEL_SELECT,
+        &[model_id],
+        out_frame,
+    )
 }
 
 /// Convert a microsecond pulse width (CHANNEL_MIN_US..CHANNEL_MAX_US, center CHANNEL_CENTER_US)
@@ -270,25 +323,14 @@ pub fn us_to_crsf(us: u16) -> u16 {
     val.clamp(0, CRSF_CHANNEL_VALUE_MAX as i32) as u16
 }
 
-/// Build a packed 16-channel CRSF RC packet (Type 0x16) into `out_frame`.
-/// Returns the number of bytes written (always 26 bytes).
-pub fn build_channels_frame(
-    channels: &[u16; crate::mixer::NUM_CHANNELS],
-    out_frame: &mut [u8; CRSF_RC_FRAME_SIZE],
-) -> usize {
-    // Header
-    out_frame[0] = CRSF_SYNC_BYTE; // 0xC8 per TBS CRSF spec
-    out_frame[1] = 24; // Length: Type (1) + Payload (22) + CRC (1) = 24
-    out_frame[2] = CRSF_FRAMETYPE_RC_CHANNELS_PACKED; // 0x16
-
-    // Convert first 16 radio channels to 16 CRSF 11-bit values (channels 17 & 18 ignored by CRSF 16-ch packet)
+/// Pack the first 16 radio channels (us) into 22 bytes of 11-bit CRSF channel data.
+#[inline]
+fn pack_channels_11bit(channels: &[u16; crate::mixer::NUM_CHANNELS], p: &mut [u8; 22]) {
     let mut ch11 = [CRSF_CHANNEL_CENTER; 16];
     for i in 0..16 {
         ch11[i] = us_to_crsf(channels[i]);
     }
 
-    // 16 channels * 11 bits = 176 bits = 22 bytes
-    let p = &mut out_frame[3..25];
     p[0] = (ch11[0] & 0x07FF) as u8;
     p[1] = ((ch11[0] >> 8) | (ch11[1] << 3)) as u8;
     p[2] = ((ch11[1] >> 5) | (ch11[2] << 6)) as u8;
@@ -311,76 +353,65 @@ pub fn build_channels_frame(
     p[19] = ((ch11[13] >> 9) | (ch11[14] << 2)) as u8;
     p[20] = ((ch11[14] >> 6) | (ch11[15] << 5)) as u8;
     p[21] = (ch11[15] >> 3) as u8;
+}
 
-    // CRC8 is calculated over Type (byte 2) and Payload (bytes 3..25)
+pub fn build_channels_frame(
+    channels: &[u16; crate::mixer::NUM_CHANNELS],
+    out_frame: &mut [u8; CRSF_RC_FRAME_SIZE],
+) -> usize {
+    out_frame[0] = CRSF_SYNC_BYTE;
+    out_frame[1] = 24;
+    out_frame[2] = CRSF_FRAMETYPE_RC_CHANNELS_PACKED;
+    pack_channels_11bit(channels, (&mut out_frame[3..25]).try_into().unwrap());
     out_frame[25] = crc8(&out_frame[2..25]);
-
     CRSF_RC_FRAME_SIZE
 }
 
-/// Build a packed 16-channel CRSF RC packet (Type 0x16) with optional ExpressLRS switch-based arming status byte.
-///
-/// If `arm_mode_switch` is false (standard mode), writes 26 bytes (`frame[1] = 24`, 22-byte payload).
-/// If `arm_mode_switch` is true (ExpressLRS 4.0+ switch arming mode), writes 27 bytes (`frame[1] = 25`, 23-byte payload with arm flag at byte 25).
 pub fn build_channels_frame_ext(
     channels: &[u16; crate::mixer::NUM_CHANNELS],
     arm_mode_switch: bool,
     is_armed: bool,
     out_frame: &mut [u8; CRSF_RC_EXT_FRAME_SIZE],
 ) -> usize {
-    // Header
-    out_frame[0] = CRSF_SYNC_BYTE; // 0xC8 per TBS CRSF spec
-    out_frame[2] = CRSF_FRAMETYPE_RC_CHANNELS_PACKED; // 0x16
-
-    // Convert first 16 radio channels to 16 CRSF 11-bit values (channels 17 & 18 ignored by CRSF 16-ch packet)
-    let mut ch11 = [CRSF_CHANNEL_CENTER; 16];
-    for i in 0..16 {
-        ch11[i] = us_to_crsf(channels[i]);
-    }
-
-    // 16 channels * 11 bits = 176 bits = 22 bytes
-    let p = &mut out_frame[3..25];
-    p[0] = (ch11[0] & 0x07FF) as u8;
-    p[1] = ((ch11[0] >> 8) | (ch11[1] << 3)) as u8;
-    p[2] = ((ch11[1] >> 5) | (ch11[2] << 6)) as u8;
-    p[3] = (ch11[2] >> 2) as u8;
-    p[4] = ((ch11[2] >> 10) | (ch11[3] << 1)) as u8;
-    p[5] = ((ch11[3] >> 7) | (ch11[4] << 4)) as u8;
-    p[6] = ((ch11[4] >> 4) | (ch11[5] << 7)) as u8;
-    p[7] = (ch11[5] >> 1) as u8;
-    p[8] = ((ch11[5] >> 9) | (ch11[6] << 2)) as u8;
-    p[9] = ((ch11[6] >> 6) | (ch11[7] << 5)) as u8;
-    p[10] = (ch11[7] >> 3) as u8;
-    p[11] = (ch11[8] & 0x07FF) as u8;
-    p[12] = ((ch11[8] >> 8) | (ch11[9] << 3)) as u8;
-    p[13] = ((ch11[9] >> 5) | (ch11[10] << 6)) as u8;
-    p[14] = (ch11[10] >> 2) as u8;
-    p[15] = ((ch11[10] >> 10) | (ch11[11] << 1)) as u8;
-    p[16] = ((ch11[11] >> 7) | (ch11[12] << 4)) as u8;
-    p[17] = ((ch11[12] >> 4) | (ch11[13] << 7)) as u8;
-    p[18] = (ch11[13] >> 1) as u8;
-    p[19] = ((ch11[13] >> 9) | (ch11[14] << 2)) as u8;
-    p[20] = ((ch11[14] >> 6) | (ch11[15] << 5)) as u8;
-    p[21] = (ch11[15] >> 3) as u8;
+    out_frame[0] = CRSF_SYNC_BYTE;
+    out_frame[2] = CRSF_FRAMETYPE_RC_CHANNELS_PACKED;
+    pack_channels_11bit(channels, (&mut out_frame[3..25]).try_into().unwrap());
 
     if arm_mode_switch {
-        // Length: Type (1) + Payload (23) + CRC (1) = 25
         out_frame[1] = 25;
-        // Byte 25 is the arm status flag byte: bit 0 = ARMED, bit 1 = ARMING_MODE_CH5 (0 for switch mode)
         out_frame[25] = if is_armed {
             CRSF_CHANNELS_STATUS_ARMED
         } else {
             0
         };
-        // CRC8 calculated over Type (byte 2) and Payload (bytes 3..26)
         out_frame[26] = crc8(&out_frame[2..26]);
         CRSF_RC_EXT_FRAME_SIZE
     } else {
-        // Standard 26-byte frame: Length = 24
         out_frame[1] = 24;
         out_frame[25] = crc8(&out_frame[2..25]);
         CRSF_RC_FRAME_SIZE
     }
+}
+
+#[inline]
+pub fn build_ping_frame(out_frame: &mut [u8]) -> usize {
+    build_ext_frame(
+        CRSF_FRAMETYPE_DEVICE_PING,
+        CRSF_ADDRESS_BROADCAST,
+        &[],
+        out_frame,
+    )
+}
+
+#[inline]
+pub fn build_param_ext_frame(
+    target: u8,
+    frame_type: u8,
+    param_id: u8,
+    val_or_chunk: u8,
+    out_frame: &mut [u8],
+) -> usize {
+    build_ext_frame(frame_type, target, &[param_id, val_or_chunk], out_frame)
 }
 
 /// Parse incoming telemetry frame and update telemetry state.
@@ -656,44 +687,6 @@ pub fn device_role_str(addr: u8) -> Option<&'static str> {
     }
 }
 
-/// Build a Device Ping frame (0x28) to discover connected CRSF/ELRS modules.
-/// Wire frame format per TBS spec: [Sync (0xC8)] [Len (4)] [Type (0x28)] [Dest (0x00)] [Orig (0xEA)] [CRC]
-pub fn build_ping_frame(out_frame: &mut [u8]) -> usize {
-    if out_frame.len() < 6 {
-        return 0;
-    }
-    out_frame[0] = CRSF_SYNC_BYTE;
-    out_frame[1] = 4; // Type (1) + Payload (2) + CRC (1)
-    out_frame[2] = CRSF_FRAMETYPE_DEVICE_PING;
-    out_frame[3] = CRSF_ADDRESS_BROADCAST;
-    out_frame[4] = CRSF_ADDRESS_RADIO_TRANSMITTER;
-    out_frame[5] = crc8(&out_frame[2..5]);
-    6
-}
-
-/// Build an Extended Parameter frame (Read 0x2C or Write 0x2D).
-/// Wire frame format per TBS spec: [Sync (0xC8)] [Len (6)] [Type] [Dest (Target)] [Orig (0xEA)] [Param] [Payload] [CRC]
-pub fn build_param_ext_frame(
-    target: u8,
-    frame_type: u8,
-    param_id: u8,
-    val_or_chunk: u8,
-    out_frame: &mut [u8],
-) -> usize {
-    if out_frame.len() < 8 {
-        return 0;
-    }
-    out_frame[0] = CRSF_SYNC_BYTE;
-    out_frame[1] = 6; // Type (1) + Dest (1) + Orig (1) + Param (1) + Value/Chunk (1) + CRC (1) = 6
-    out_frame[2] = frame_type;
-    out_frame[3] = target;
-    out_frame[4] = CRSF_ADDRESS_RADIO_TRANSMITTER;
-    out_frame[5] = param_id;
-    out_frame[6] = val_or_chunk;
-    out_frame[7] = crc8(&out_frame[2..7]);
-    8
-}
-
 /// Build a Parameter Read frame (0x2C) requesting metadata/options for `param_id`.
 #[inline]
 pub fn build_param_read_frame(target: u8, param_id: u8, chunk: u8, out_frame: &mut [u8]) -> usize {
@@ -749,10 +742,34 @@ mod tests {
     #[test]
     fn test_set4_reference_vectors_and_double_crc() {
         let vectors = [
-            (0, 0, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x00, 0x00, 0x00, 0x7E, 0xDE]),
-            (0, 1, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x00, 0x00, 0x01, 0xC4, 0x9A]),
-            (255, 0x80, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0xFF, 0x40, 0x00, 0x1C, 0x1E]),
-            (42, 0xFF, [0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x2A, 0x55, 0x55, 0xFE, 0xC0]),
+            (
+                0,
+                0,
+                [
+                    0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x00, 0x00, 0x00, 0x7E, 0xDE,
+                ],
+            ),
+            (
+                0,
+                1,
+                [
+                    0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x00, 0x00, 0x01, 0xC4, 0x9A,
+                ],
+            ),
+            (
+                255,
+                0x80,
+                [
+                    0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0xFF, 0x40, 0x00, 0x1C, 0x1E,
+                ],
+            ),
+            (
+                42,
+                0xFF,
+                [
+                    0xC8, 0x0A, 0x32, 0x00, 0xEA, 0xA1, 0x07, 0x2A, 0x55, 0x55, 0xFE, 0xC0,
+                ],
+            ),
         ];
         for (address, switches, expected) in vectors {
             let mut frame = [0xFF; CRSF_SET4_FRAME_SIZE];
@@ -762,6 +779,34 @@ mod tests {
             assert_eq!(frame[11], crc8(&frame[2..11]));
             assert_ne!(frame[11], crc8(&frame[2..10]));
         }
+    }
+
+    #[test]
+    fn test_build_model_select_frame_and_double_crc() {
+        for model_id in [0u8, 1, 7, 63] {
+            let mut frame = [0xFFu8; CRSF_MODEL_SELECT_FRAME_SIZE];
+            let len = build_model_select_frame(model_id, &mut frame);
+
+            assert_eq!(len, CRSF_MODEL_SELECT_FRAME_SIZE);
+            assert_eq!(frame[0], CRSF_SYNC_BYTE);
+            assert_eq!(frame[1], 8); // Type + Dest + Orig + Cmd + Subcmd + ModelID + CRC_BA + CRC_D5
+            assert_eq!(frame[2], CRSF_FRAMETYPE_COMMAND); // 0x32
+            assert_eq!(frame[3], CRSF_ADDRESS_CRSF_TRANSMITTER); // 0xEE
+            assert_eq!(frame[4], CRSF_ADDRESS_RADIO_TRANSMITTER); // 0xEA
+            assert_eq!(frame[5], CRSF_COMMAND_ID_RX); // 0x10
+            assert_eq!(frame[6], CRSF_COMMAND_SUBCMD_RX_MODEL_SELECT); // 0x05
+            assert_eq!(frame[7], model_id);
+
+            // Inner 0xBA CRC covers bytes 2..8
+            assert_eq!(frame[8], crc8_ba(&frame[2..8]));
+            // Outer 0xD5 CRC covers bytes 2..9 (including inner CRC)
+            assert_eq!(frame[9], crc8(&frame[2..9]));
+            assert_ne!(frame[9], crc8(&frame[2..8]));
+        }
+
+        // Short buffer safety
+        let mut short = [0u8; 9];
+        assert_eq!(build_model_select_frame(5, &mut short), 0);
     }
 
     #[test]

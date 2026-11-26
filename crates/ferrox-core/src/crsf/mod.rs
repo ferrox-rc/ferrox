@@ -1,6 +1,6 @@
-//! CRSF / ExpressLRS protocol subsystem for FlySky FS-i6X.
+//! CRSF / ExpressLRS protocol subsystem for Ferrox.
 //!
-//! Handles USART2 hardware setup on PD5/PA15, PC13 module power management,
+//! Handles internal and external CRSF/ELRS module power management,
 //! periodic channel packet framing, and incoming telemetry processing.
 
 #![allow(dead_code)]
@@ -145,6 +145,20 @@ unsafe fn send_param_write_buf(target: u8, param_id: u8, payload: &[u8]) {
     }
 }
 
+/// Transmit CRSF 0x32 Model Select command (RX ID 0..=63) to the external TX module.
+pub fn send_model_select(model_id: u8) {
+    unsafe {
+        if !CRSF_ENABLED {
+            return;
+        }
+        let mut buf = [0u8; protocol::CRSF_MODEL_SELECT_FRAME_SIZE];
+        let len = protocol::build_model_select_frame(model_id, &mut buf);
+        if len > 0 {
+            uart::write_bytes(&buf[..len]);
+        }
+    }
+}
+
 /// Extract null-terminated string from `data` starting at `offset` into `dest`,
 /// returning (offset_after_null, length_copied).
 fn extract_null_string(data: &[u8], offset: usize, dest: &mut [u8]) -> (usize, u8) {
@@ -157,6 +171,19 @@ fn extract_null_string(data: &[u8], offset: usize, dest: &mut [u8]) -> (usize, u
     dest[..copy_len].copy_from_slice(&data[offset..offset + copy_len]);
     let next_offset = if end < data.len() { end + 1 } else { end };
     (next_offset, copy_len as u8)
+}
+
+/// Return `(start, len)` of a null-terminated slice within `data` starting at `start`.
+#[inline]
+fn cstr_slice_bounds(data: &[u8], start: usize) -> (usize, usize) {
+    if start >= data.len() {
+        return (start, 0);
+    }
+    let mut end = start;
+    while end < data.len() && data[end] != 0 {
+        end += 1;
+    }
+    (start, end - start)
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -435,6 +462,37 @@ impl CrsfConfigEngine {
         let len = (self.cmd_info_len as usize).min(self.cmd_info.len());
         core::str::from_utf8(&self.cmd_info[..len]).unwrap_or("")
     }
+
+    #[inline]
+    pub fn device_timeout_ms(&self) -> u32 {
+        if self.device_id == protocol::CRSF_ADDRESS_CRSF_RECEIVER {
+            1000
+        } else {
+            500
+        }
+    }
+
+    pub fn reset_folder_cache(&mut self) {
+        self.params_len = 0;
+        self.string_pool_len = 0;
+        self.current_chunk = 0;
+        self.expect_chunks_remain = 0;
+        self.retry_count = 0;
+    }
+
+    pub fn reset_session(&mut self) {
+        self.reset_folder_cache();
+        self.folder_stack_len = 0;
+        self.current_folder = 0;
+        self.folder_loading = false;
+        self.folder_name = [0; MAX_FOLDER_NAME_LEN];
+        self.folder_name_len = 0;
+        self.parent_map = [0xFF; MAX_PARAM_MAP];
+        self.has_root_folder = false;
+        self.active_cmd = ActiveCommandState::Idle;
+        self.cmd_info = [0; 24];
+        self.cmd_info_len = 0;
+    }
 }
 
 /// Helper: Find the next parameter ID in `(current_id + 1)..=param_count` that belongs to `target_folder`.
@@ -465,6 +523,40 @@ pub fn next_param_for_folder(
 }
 
 static mut CONFIG_ENGINE: CrsfConfigEngine = CrsfConfigEngine::new();
+
+#[inline]
+unsafe fn reset_chunk_acc() {
+    CHUNK_LEN = 0;
+    CHUNK_PARAM_ID = 0;
+}
+
+/// Request the next parameter in `current_folder` after `after_id`, or transition to `Ready`.
+unsafe fn advance_folder_load(after_id: u8, now_ms: u32, mark_folder_loading: bool) {
+    CONFIG_ENGINE.current_chunk = 0;
+    CONFIG_ENGINE.expect_chunks_remain = 0;
+    CONFIG_ENGINE.retry_count = 0;
+    reset_chunk_acc();
+
+    if let Some(next_id) = next_param_for_folder(
+        after_id,
+        CONFIG_ENGINE.current_folder,
+        CONFIG_ENGINE.param_count,
+        &CONFIG_ENGINE.parent_map,
+        CONFIG_ENGINE.has_root_folder,
+    ) {
+        CONFIG_ENGINE.state = CrsfConfigState::LoadingParam(next_id);
+        if mark_folder_loading {
+            CONFIG_ENGINE.folder_loading = true;
+        }
+        let timeout = CONFIG_ENGINE.device_timeout_ms();
+        CONFIG_ENGINE.last_req_ms = now_ms;
+        CONFIG_ENGINE.next_req_ms = now_ms.wrapping_add(timeout);
+        send_param_read(CONFIG_ENGINE.device_id, next_id, 0);
+    } else {
+        CONFIG_ENGINE.state = CrsfConfigState::Ready;
+        CONFIG_ENGINE.folder_loading = false;
+    }
+}
 
 /// Poll USART2 for incoming telemetry bytes from external module.
 pub fn poll_telemetry(now_ms: u32) {
@@ -658,60 +750,28 @@ unsafe fn parse_and_store_parameter(chunk: &[u8], param_id: u8, now_ms: u32) {
                 val = chunk[rest_start] as i32;
                 min_val = chunk[rest_start + 1] as i32;
                 max_val = chunk[rest_start + 2] as i32;
-                let unit_start = rest_start + 4;
-                if unit_start < chunk.len() {
-                    let mut unit_end = unit_start;
-                    while unit_end < chunk.len() && chunk[unit_end] != 0 {
-                        unit_end += 1;
-                    }
-                    opt_slice_start = unit_start;
-                    opt_slice_len = unit_end.saturating_sub(unit_start);
-                }
+                (opt_slice_start, opt_slice_len) = cstr_slice_bounds(chunk, rest_start + 4);
             }
         } else if p_type == protocol::CRSF_TYPE_INT8 {
             if rest_start + 3 <= chunk.len() {
                 val = (chunk[rest_start] as i8) as i32;
                 min_val = (chunk[rest_start + 1] as i8) as i32;
                 max_val = (chunk[rest_start + 2] as i8) as i32;
-                let unit_start = rest_start + 4;
-                if unit_start < chunk.len() {
-                    let mut unit_end = unit_start;
-                    while unit_end < chunk.len() && chunk[unit_end] != 0 {
-                        unit_end += 1;
-                    }
-                    opt_slice_start = unit_start;
-                    opt_slice_len = unit_end.saturating_sub(unit_start);
-                }
+                (opt_slice_start, opt_slice_len) = cstr_slice_bounds(chunk, rest_start + 4);
             }
         } else if p_type == protocol::CRSF_TYPE_UINT16 {
             if rest_start + 6 <= chunk.len() {
                 val = u16::from_be_bytes([chunk[rest_start], chunk[rest_start + 1]]) as i32;
                 min_val = u16::from_be_bytes([chunk[rest_start + 2], chunk[rest_start + 3]]) as i32;
                 max_val = u16::from_be_bytes([chunk[rest_start + 4], chunk[rest_start + 5]]) as i32;
-                let unit_start = rest_start + 8;
-                if unit_start < chunk.len() {
-                    let mut unit_end = unit_start;
-                    while unit_end < chunk.len() && chunk[unit_end] != 0 {
-                        unit_end += 1;
-                    }
-                    opt_slice_start = unit_start;
-                    opt_slice_len = unit_end.saturating_sub(unit_start);
-                }
+                (opt_slice_start, opt_slice_len) = cstr_slice_bounds(chunk, rest_start + 8);
             }
         } else if p_type == protocol::CRSF_TYPE_INT16 {
             if rest_start + 6 <= chunk.len() {
                 val = i16::from_be_bytes([chunk[rest_start], chunk[rest_start + 1]]) as i32;
                 min_val = i16::from_be_bytes([chunk[rest_start + 2], chunk[rest_start + 3]]) as i32;
                 max_val = i16::from_be_bytes([chunk[rest_start + 4], chunk[rest_start + 5]]) as i32;
-                let unit_start = rest_start + 8;
-                if unit_start < chunk.len() {
-                    let mut unit_end = unit_start;
-                    while unit_end < chunk.len() && chunk[unit_end] != 0 {
-                        unit_end += 1;
-                    }
-                    opt_slice_start = unit_start;
-                    opt_slice_len = unit_end.saturating_sub(unit_start);
-                }
+                (opt_slice_start, opt_slice_len) = cstr_slice_bounds(chunk, rest_start + 8);
             }
         } else if p_type == protocol::CRSF_TYPE_COMMAND {
             status = chunk[rest_start];
@@ -774,22 +834,9 @@ unsafe fn parse_and_store_parameter(chunk: &[u8], param_id: u8, now_ms: u32) {
                 _ => {}
             }
         } else if p_type == protocol::CRSF_TYPE_INFO {
-            let mut info_end = rest_start;
-            while info_end < chunk.len() && chunk[info_end] != 0 {
-                info_end += 1;
-            }
-            opt_slice_start = rest_start;
-            opt_slice_len = info_end.saturating_sub(rest_start);
+            (opt_slice_start, opt_slice_len) = cstr_slice_bounds(chunk, rest_start);
         } else if p_type == protocol::CRSF_TYPE_STRING {
-            let val_start = rest_start + 1;
-            if val_start < chunk.len() {
-                let mut val_end = val_start;
-                while val_end < chunk.len() && chunk[val_end] != 0 {
-                    val_end += 1;
-                }
-                opt_slice_start = val_start;
-                opt_slice_len = val_end.saturating_sub(val_start);
-            }
+            (opt_slice_start, opt_slice_len) = cstr_slice_bounds(chunk, rest_start + 1);
         } else if p_type == protocol::CRSF_TYPE_FOLDER {
             if param_id == 0 {
                 CONFIG_ENGINE.has_root_folder = true;
@@ -926,11 +973,7 @@ unsafe fn handle_param_entry_frame(payload: &[u8], now_ms: u32) {
         CONFIG_ENGINE.current_chunk += 1;
         CONFIG_ENGINE.expect_chunks_remain = chunks_remain - 1;
         CONFIG_ENGINE.retry_count = 0;
-        let timeout: u32 = if CONFIG_ENGINE.device_id == protocol::CRSF_ADDRESS_CRSF_RECEIVER {
-            1000
-        } else {
-            500
-        };
+        let timeout = CONFIG_ENGINE.device_timeout_ms();
         CONFIG_ENGINE.last_req_ms = now_ms;
         CONFIG_ENGINE.next_req_ms = now_ms.wrapping_add(timeout);
         send_param_read(
@@ -952,32 +995,7 @@ unsafe fn handle_param_entry_frame(payload: &[u8], now_ms: u32) {
     // Only advance loading sequence if engine was actively in initial loading phase
     if let CrsfConfigState::LoadingParam(loading_id) = CONFIG_ENGINE.state {
         if param_id == loading_id {
-            if let Some(next_id) = next_param_for_folder(
-                param_id,
-                CONFIG_ENGINE.current_folder,
-                CONFIG_ENGINE.param_count,
-                &CONFIG_ENGINE.parent_map,
-                CONFIG_ENGINE.has_root_folder,
-            ) {
-                CONFIG_ENGINE.state = CrsfConfigState::LoadingParam(next_id);
-                CONFIG_ENGINE.current_chunk = 0;
-                CONFIG_ENGINE.expect_chunks_remain = 0;
-                CONFIG_ENGINE.retry_count = 0;
-                CHUNK_LEN = 0;
-                CHUNK_PARAM_ID = 0;
-                let timeout: u32 =
-                    if CONFIG_ENGINE.device_id == protocol::CRSF_ADDRESS_CRSF_RECEIVER {
-                        1000
-                    } else {
-                        500
-                    };
-                CONFIG_ENGINE.last_req_ms = now_ms;
-                CONFIG_ENGINE.next_req_ms = now_ms.wrapping_add(timeout);
-                send_param_read(CONFIG_ENGINE.device_id, next_id, 0);
-            } else {
-                CONFIG_ENGINE.state = CrsfConfigState::Ready;
-                CONFIG_ENGINE.folder_loading = false;
-            }
+            advance_folder_load(param_id, now_ms, false);
         }
     }
 }
@@ -1011,12 +1029,7 @@ unsafe fn crsf_tick(now_ms: u32) {
         CrsfConfigState::LoadingParam(id)
             if now_ms.wrapping_sub(CONFIG_ENGINE.next_req_ms) < 0x8000_0000 =>
         {
-            let timeout: u32 = if CONFIG_ENGINE.device_id == protocol::CRSF_ADDRESS_CRSF_RECEIVER {
-                1000
-            } else {
-                500
-            };
-
+            let timeout = CONFIG_ENGINE.device_timeout_ms();
             let max_retries = if id == 0 { 2 } else { 4 };
             if CONFIG_ENGINE.retry_count < max_retries {
                 CONFIG_ENGINE.retry_count += 1;
@@ -1025,40 +1038,11 @@ unsafe fn crsf_tick(now_ms: u32) {
                 send_param_read(CONFIG_ENGINE.device_id, id, CONFIG_ENGINE.current_chunk);
             } else {
                 // Retries exhausted for this parameter (packet lost over the air).
-                // Advance to next parameter immediately to avoid freezing UI permanently.
-                CONFIG_ENGINE.retry_count = 0;
-                CONFIG_ENGINE.current_chunk = 0;
-                CONFIG_ENGINE.expect_chunks_remain = 0;
-                CHUNK_LEN = 0;
-                CHUNK_PARAM_ID = 0;
+                // If Param 0 (root folder) timed out, fall back to legacy sequential scan.
                 if id == 0 {
-                    // Device does not support Parameter 0 root folder.
-                    // Fall back to legacy sequential discovery starting at param 1.
                     CONFIG_ENGINE.has_root_folder = false;
-                    if CONFIG_ENGINE.param_count >= 1 {
-                        CONFIG_ENGINE.state = CrsfConfigState::LoadingParam(1);
-                        CONFIG_ENGINE.last_req_ms = now_ms;
-                        CONFIG_ENGINE.next_req_ms = now_ms.wrapping_add(timeout);
-                        send_param_read(CONFIG_ENGINE.device_id, 1, 0);
-                    } else {
-                        CONFIG_ENGINE.state = CrsfConfigState::Ready;
-                        CONFIG_ENGINE.folder_loading = false;
-                    }
-                } else if let Some(next_id) = next_param_for_folder(
-                    id,
-                    CONFIG_ENGINE.current_folder,
-                    CONFIG_ENGINE.param_count,
-                    &CONFIG_ENGINE.parent_map,
-                    CONFIG_ENGINE.has_root_folder,
-                ) {
-                    CONFIG_ENGINE.state = CrsfConfigState::LoadingParam(next_id);
-                    CONFIG_ENGINE.last_req_ms = now_ms;
-                    CONFIG_ENGINE.next_req_ms = now_ms.wrapping_add(timeout);
-                    send_param_read(CONFIG_ENGINE.device_id, next_id, 0);
-                } else {
-                    CONFIG_ENGINE.state = CrsfConfigState::Ready;
-                    CONFIG_ENGINE.folder_loading = false;
                 }
+                advance_folder_load(id, now_ms, false);
             }
         }
         _ => {}
@@ -1112,25 +1096,10 @@ pub fn start_config() {
         CONFIG_ENGINE.device_id = 0;
         CONFIG_ENGINE.devices_len = 0;
         CONFIG_ENGINE.selected_device_idx = 0;
-        CONFIG_ENGINE.params_len = 0;
-        CONFIG_ENGINE.string_pool_len = 0;
         CONFIG_ENGINE.last_req_ms = now;
         CONFIG_ENGINE.next_req_ms = now.wrapping_add(1000);
-        CONFIG_ENGINE.current_chunk = 0;
-        CONFIG_ENGINE.expect_chunks_remain = 0;
-        CONFIG_ENGINE.retry_count = 0;
-        CONFIG_ENGINE.folder_stack_len = 0;
-        CONFIG_ENGINE.current_folder = 0;
-        CONFIG_ENGINE.folder_loading = false;
-        CONFIG_ENGINE.folder_name = [0; MAX_FOLDER_NAME_LEN];
-        CONFIG_ENGINE.folder_name_len = 0;
-        CONFIG_ENGINE.parent_map = [0xFF; MAX_PARAM_MAP];
-        CONFIG_ENGINE.has_root_folder = false;
-        CHUNK_LEN = 0;
-        CHUNK_PARAM_ID = 0;
-        CONFIG_ENGINE.active_cmd = ActiveCommandState::Idle;
-        CONFIG_ENGINE.cmd_info = [0; 24];
-        CONFIG_ENGINE.cmd_info_len = 0;
+        CONFIG_ENGINE.reset_session();
+        reset_chunk_acc();
         send_ping();
     }
 }
@@ -1150,33 +1119,13 @@ pub fn select_device(idx: usize) -> bool {
         CONFIG_ENGINE.device_name[..n_len].copy_from_slice(&dev.name[..n_len]);
         CONFIG_ENGINE.device_name_len = n_len as u8;
         CONFIG_ENGINE.param_count = dev.param_count;
-        CONFIG_ENGINE.params_len = 0;
-        CONFIG_ENGINE.string_pool_len = 0;
-        CONFIG_ENGINE.current_chunk = 0;
-        CONFIG_ENGINE.expect_chunks_remain = 0;
-        CONFIG_ENGINE.retry_count = 0;
-        CONFIG_ENGINE.folder_stack_len = 0;
-        CONFIG_ENGINE.current_folder = 0;
-        CONFIG_ENGINE.folder_loading = false;
-        CONFIG_ENGINE.folder_name = [0; MAX_FOLDER_NAME_LEN];
-        CONFIG_ENGINE.folder_name_len = 0;
-        CONFIG_ENGINE.parent_map = [0xFF; MAX_PARAM_MAP];
-        CONFIG_ENGINE.has_root_folder = false;
-        CHUNK_LEN = 0;
-        CHUNK_PARAM_ID = 0;
-        CONFIG_ENGINE.active_cmd = ActiveCommandState::Idle;
-        CONFIG_ENGINE.cmd_info = [0; 24];
-        CONFIG_ENGINE.cmd_info_len = 0;
+        CONFIG_ENGINE.reset_session();
+        reset_chunk_acc();
         CONFIG_ENGINE.last_req_ms = now;
 
         if dev.param_count > 0 {
             CONFIG_ENGINE.state = CrsfConfigState::LoadingParam(0);
-            let timeout: u32 = if CONFIG_ENGINE.device_id == protocol::CRSF_ADDRESS_CRSF_RECEIVER {
-                1000
-            } else {
-                500
-            };
-            CONFIG_ENGINE.last_req_ms = now;
+            let timeout = CONFIG_ENGINE.device_timeout_ms();
             CONFIG_ENGINE.next_req_ms = now.wrapping_add(timeout);
             send_param_read(CONFIG_ENGINE.device_id, 0, 0);
         } else {
@@ -1186,39 +1135,13 @@ pub fn select_device(idx: usize) -> bool {
     }
 }
 
-/// Select a discovered device by its physical address (e.g. 0xEE for TX, 0xEC for RX).
-pub fn select_device_by_addr(addr: u8) -> bool {
-    unsafe {
-        for (i, dev) in CONFIG_ENGINE.devices.iter().enumerate().take(CONFIG_ENGINE.devices_len) {
-            if dev.address == addr {
-                return select_device(i);
-            }
-        }
-        false
-    }
-}
-
 /// Return from parameter view back to the Device Selection screen.
 pub fn return_to_device_list() {
     unsafe {
         let now = crate::time::millis();
         CONFIG_ENGINE.state = CrsfConfigState::Discovering;
-        CONFIG_ENGINE.params_len = 0;
-        CONFIG_ENGINE.string_pool_len = 0;
-        CONFIG_ENGINE.current_chunk = 0;
-        CONFIG_ENGINE.expect_chunks_remain = 0;
-        CONFIG_ENGINE.folder_stack_len = 0;
-        CONFIG_ENGINE.current_folder = 0;
-        CONFIG_ENGINE.folder_loading = false;
-        CONFIG_ENGINE.folder_name = [0; MAX_FOLDER_NAME_LEN];
-        CONFIG_ENGINE.folder_name_len = 0;
-        CONFIG_ENGINE.parent_map = [0xFF; MAX_PARAM_MAP];
-        CONFIG_ENGINE.has_root_folder = false;
-        CHUNK_LEN = 0;
-        CHUNK_PARAM_ID = 0;
-        CONFIG_ENGINE.active_cmd = ActiveCommandState::Idle;
-        CONFIG_ENGINE.cmd_info = [0; 24];
-        CONFIG_ENGINE.cmd_info_len = 0;
+        CONFIG_ENGINE.reset_session();
+        reset_chunk_acc();
         CONFIG_ENGINE.last_req_ms = now;
         CONFIG_ENGINE.next_req_ms = now.wrapping_add(1000);
         send_ping();
@@ -1241,36 +1164,8 @@ pub fn enter_folder(folder_id: u8, name: &str) {
         CONFIG_ENGINE.folder_name[..n_len].copy_from_slice(&name.as_bytes()[..n_len]);
         CONFIG_ENGINE.folder_name_len = n_len as u8;
 
-        CONFIG_ENGINE.params_len = 0;
-        CONFIG_ENGINE.string_pool_len = 0;
-        CONFIG_ENGINE.current_chunk = 0;
-        CONFIG_ENGINE.expect_chunks_remain = 0;
-        CONFIG_ENGINE.retry_count = 0;
-        CHUNK_LEN = 0;
-        CHUNK_PARAM_ID = 0;
-
-        if let Some(first_id) = next_param_for_folder(
-            0,
-            folder_id,
-            CONFIG_ENGINE.param_count,
-            &CONFIG_ENGINE.parent_map,
-            CONFIG_ENGINE.has_root_folder,
-        ) {
-            CONFIG_ENGINE.state = CrsfConfigState::LoadingParam(first_id);
-            CONFIG_ENGINE.folder_loading = true;
-            let timeout: u32 = if CONFIG_ENGINE.device_id == protocol::CRSF_ADDRESS_CRSF_RECEIVER {
-                1000
-            } else {
-                500
-            };
-            let now = crate::time::millis();
-            CONFIG_ENGINE.last_req_ms = now;
-            CONFIG_ENGINE.next_req_ms = now.wrapping_add(timeout);
-            send_param_read(CONFIG_ENGINE.device_id, first_id, 0);
-        } else {
-            CONFIG_ENGINE.state = CrsfConfigState::Ready;
-            CONFIG_ENGINE.folder_loading = false;
-        }
+        CONFIG_ENGINE.reset_folder_cache();
+        advance_folder_load(0, crate::time::millis(), true);
     }
 }
 
@@ -1280,46 +1175,33 @@ pub fn exit_current_folder() -> bool {
         if CONFIG_ENGINE.folder_stack_len > 0 {
             CONFIG_ENGINE.folder_stack_len -= 1;
             let top = &CONFIG_ENGINE.folder_stack[CONFIG_ENGINE.folder_stack_len];
-            let parent_id = top.id;
-            CONFIG_ENGINE.current_folder = parent_id;
+            CONFIG_ENGINE.current_folder = top.id;
             CONFIG_ENGINE.folder_name = top.name;
             CONFIG_ENGINE.folder_name_len = top.name_len;
 
-            CONFIG_ENGINE.params_len = 0;
-            CONFIG_ENGINE.string_pool_len = 0;
-            CONFIG_ENGINE.current_chunk = 0;
-            CONFIG_ENGINE.expect_chunks_remain = 0;
-            CONFIG_ENGINE.retry_count = 0;
-            CHUNK_LEN = 0;
-            CHUNK_PARAM_ID = 0;
-
-            if let Some(first_id) = next_param_for_folder(
-                0,
-                parent_id,
-                CONFIG_ENGINE.param_count,
-                &CONFIG_ENGINE.parent_map,
-                CONFIG_ENGINE.has_root_folder,
-            ) {
-                CONFIG_ENGINE.state = CrsfConfigState::LoadingParam(first_id);
-                CONFIG_ENGINE.folder_loading = true;
-                let timeout: u32 =
-                    if CONFIG_ENGINE.device_id == protocol::CRSF_ADDRESS_CRSF_RECEIVER {
-                        1000
-                    } else {
-                        500
-                    };
-                let now = crate::time::millis();
-                CONFIG_ENGINE.last_req_ms = now;
-                CONFIG_ENGINE.next_req_ms = now.wrapping_add(timeout);
-                send_param_read(CONFIG_ENGINE.device_id, first_id, 0);
-            } else {
-                CONFIG_ENGINE.state = CrsfConfigState::Ready;
-                CONFIG_ENGINE.folder_loading = false;
-            }
+            CONFIG_ENGINE.reset_folder_cache();
+            advance_folder_load(0, crate::time::millis(), true);
             true
         } else {
             false
         }
+    }
+}
+
+/// Select a discovered device by its physical address (e.g. 0xEE for TX, 0xEC for RX).
+pub fn select_device_by_addr(addr: u8) -> bool {
+    unsafe {
+        for (i, dev) in CONFIG_ENGINE
+            .devices
+            .iter()
+            .enumerate()
+            .take(CONFIG_ENGINE.devices_len)
+        {
+            if dev.address == addr {
+                return select_device(i);
+            }
+        }
+        false
     }
 }
 
@@ -3991,5 +3873,25 @@ mod tests {
 
         set_enabled(false, 2, false);
         uart::configure_route(false, fd_route);
+    }
+
+    #[test]
+    fn test_send_model_select_tx_and_disabled_guard() {
+        reset_state();
+
+        // When CRSF is enabled, transmits 10-byte 0x32 Model Select frame
+        send_model_select(12);
+        let tx = uart::mock::take_tx();
+        assert_eq!(tx.len(), 1);
+        assert_eq!(tx[0].len(), protocol::CRSF_MODEL_SELECT_FRAME_SIZE);
+        assert_eq!(tx[0][2], protocol::CRSF_FRAMETYPE_COMMAND);
+        assert_eq!(tx[0][5], protocol::CRSF_COMMAND_ID_RX);
+        assert_eq!(tx[0][6], protocol::CRSF_COMMAND_SUBCMD_RX_MODEL_SELECT);
+        assert_eq!(tx[0][7], 12);
+
+        // When CRSF is disabled, transmits nothing
+        set_enabled(false, 2, false);
+        send_model_select(12);
+        assert_eq!(uart::mock::take_tx().len(), 0);
     }
 }
