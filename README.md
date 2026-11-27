@@ -24,7 +24,7 @@ Ferrox delivers memory-safe, deterministic, sub-millisecond latency firmware for
 ### 1. Flash via Browser (Easiest & Recommended)
 Use the **[Ferrox-RC Web Flasher](https://ferroxrc.com/flasher)** to flash firmware directly from Chrome, Edge, or Opera via WebUSB DFU — **no CLI tools or driver installation required**:
 1. Put your transmitter into bootloader mode (see [DFU Combinations](#transmitter-shortcuts--dfu-bootloader)).
-2. Connect the transmitter's top USB data port to your computer.
+2. Connect the transmitter's top USB data port to your computer or smartphone.
 3. Open **[ferroxrc.com/flasher](https://ferroxrc.com/flasher)**, select your radio model, and click **Flash**.
 4. **Optional — Custom Build:** Use the **Custom Build** tab to enable only the protocols and features you use (e.g. `CRSF`, `CC2500`, `MPM 4-in-1`, `DSM Forward Prog`, `Soaring`, `Voice Audio`) in ~2 minutes with no local compiler. *(Leave `edgetx-bootloader` unchecked for WebUSB DFU; check it to download an `-sd.bin` image for SD card flashing.)*
 
